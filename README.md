@@ -1,11 +1,30 @@
-## k8shelld
+# K8shelld 
 
-**k8shelld** is the init process running as PID 1 within the workspace container. It provides the following core capabilities:
+**K8shelld** is init process for the k8shell workspace. It is a a secure, container-native development environment framework built on top of Kubernetes. It provides remote shell access, development tooling, and runtime control within isolated Kubernetes pods—while preserving compatibility with standard developer workflows.
 
-* **gRPC API services**: Maps to SSH protocol channels, including: shell with PTY and agent forwarding, exec, port forwarding, sFTP subsystem
+This repository contains the following core components:
 
-* **Process management**. Reaps zombie and orphaned processes.
+- **`k8shelld`** – the workspace init process (PID 1) responsible for handling gRPC and REST APIs, session orchestration (`shell`, `exec`, `sftp`, `port-forward`), and system monitoring.
+- **`kbox`** – a CLI utility running inside the container that interacts with `k8shelld` through a Unix socket, giving users local-like control over the workspace.
 
-* **`kbox` CLI**. A companion command-line tool that allows the workspace to interact with `k8shelld` via a Unix socket.
+---
 
-* **Resource monitoring**. Collects CPU and memory usage statistics directly from the container’s cgroup v2 interface.
+## Features
+
+- SSH-based access via gRPC channel multiplexing
+- Support for `shell`, `exec`, `sftp`, `port-forward` channels
+- Built-in PTY and agent-forwarding support
+- Docker-in-Docker support for isolated container builds
+- Lightweight, self-contained init process (`k8shelld`)
+- `kbox` CLI for interacting with the workspace runtime
+- cgroups-based CPU and memory usage stats
+- API server and SSH proxy integration
+
+---
+
+## Architecture
+
+The following diagram shows how `k8shelld`, `kbox`, and supporting services work together inside a Kubernetes pod:
+
+![K8shell Architecture](docs/k8shelld.png)
+
