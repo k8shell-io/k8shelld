@@ -50,8 +50,8 @@ func main() {
 		logger.Error("Error running kbox tools-init: %v", err)
 	}
 
-	server, err := server.NewServer(config, keys, opts.ApiTCPPort, opts.UnixSocketPath, opts.ServerKeyPath, opts.ServerCertPath,
-		opts.KeyLogFilePath, opts.DefaultDNS, opts.InitScriptsDir)
+	server, err := server.NewServer(config, keys, opts.ApiTCPPort, opts.UnixSocketPath, opts.ServerKeyPath,
+		opts.ServerCertPath, opts.KeyLogFilePath, opts.DefaultDNS, opts.InitScriptsDir)
 	if err != nil {
 		logger.Fatal("Error creating server: %v", err)
 	}
