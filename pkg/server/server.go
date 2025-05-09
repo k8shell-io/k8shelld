@@ -12,18 +12,20 @@ import (
 )
 
 type Server struct {
-	logger  *Logger
-	restApi *RESTApiService
-	grpcApi *GRPCApiService
-	scripts *InitScripts
-	dns     *DockerDNS
-	proc    *ProcessWatcher
-	pprof   bool
+	logger    *Logger
+	restApi   *RESTApiService
+	grpcApi   *GRPCApiService
+	scripts   *InitScripts
+	dns       *DockerDNS
+	proc      *ProcessWatcher
+	pprof     bool
+	sysInfo   *SystemInfo
+	sysInfoMu sync.Mutex
 }
 
 func NewServer(config *Config, keys *Keys, grpcApiListenPort int, serverKeyPath string, serverCertPath string,
 	keyLogFilePath string, restpApiUnixSocket string, defaultDNS string, initScriptsDir string) (*Server, error) {
-	server := &Server{logger: NewLogger("k8shelld"), pprof: config.System.PProf}
+	server := &Server{logger: NewLogger("k8shelld"), pprof: config.System.PProf, sysInfo: nil}
 	var err error
 
 	// Default to real execution
@@ -114,6 +116,32 @@ func (s *Server) Serve() {
 	go func() {
 		defer wg.Done()
 		s.proc.Handler(ctx)
+	}()
+
+	// Start system info handler
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				s.sysInfoMu.Lock()
+				newInfo, err := UpdateSystemInfo(s.sysInfo)
+				if err != nil {
+					s.logger.Warn("Failed to update system info: %v", err)
+					s.sysInfoMu.Unlock()
+					continue
+				}
+				s.sysInfo = newInfo
+				s.sysInfoMu.Unlock()
+			case <-ctx.Done():
+				s.logger.Info("System info updater stopped.")
+				return
+			}
+		}
 	}()
 
 	// Start pprof if enabled
