@@ -2,12 +2,14 @@
 
 **K8shelld** is init process for the k8shell workspace. It is a a secure, container-native development environment framework built on top of Kubernetes. It provides remote shell access, development tooling, and runtime control within isolated Kubernetes pods—while preserving compatibility with standard developer workflows.
 
+The following diagram shows how `k8shelld`, `kbox`, and supporting services work together inside a Kubernetes pod:
+
+![K8shell Architecture](docs/k8shelld.png)
+
 This repository contains the following core components:
 
 - **`k8shelld`** – the workspace init process (PID 1) responsible for handling gRPC and REST APIs, session orchestration (`shell`, `exec`, `sftp`, `port-forward`), and system monitoring.
 - **`kbox`** – a CLI utility running inside the container that interacts with `k8shelld` through a Unix socket, giving users local-like control over the workspace.
-
----
 
 ## Features
 
@@ -20,11 +22,4 @@ This repository contains the following core components:
 - cgroups-based CPU and memory usage stats
 - API server and SSH proxy integration
 
----
-
-## Architecture
-
-The following diagram shows how `k8shelld`, `kbox`, and supporting services work together inside a Kubernetes pod:
-
-![K8shell Architecture](docs/k8shelld.png)
 
