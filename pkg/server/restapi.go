@@ -22,8 +22,7 @@ type RESTApiService struct {
 	unixSocketPath string
 	user           MainUser
 	logger         *Logger
-	grpcApi        *GRPCApiService
-	dns            *DockerDNS
+	server         *Server
 }
 
 // responseRecorder is a wrapper for http.ResponseWriter
@@ -46,9 +45,8 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 	return rec.ResponseWriter.Write(data)
 }
 
-func NewRESTAPI(apiServerToken string, unixSocketPath string, user MainUser,
-	grpcApi *GRPCApiService, dns *DockerDNS) (*RESTApiService, error) {
-
+// NewRESTAPI creates a new REST API service
+func NewRESTAPI(apiServerToken string, unixSocketPath string, user MainUser, server *Server) (*RESTApiService, error) {
 	logger := NewLogger("api")
 
 	return &RESTApiService{
@@ -56,8 +54,7 @@ func NewRESTAPI(apiServerToken string, unixSocketPath string, user MainUser,
 		unixSocketPath: unixSocketPath,
 		user:           user,
 		logger:         logger,
-		grpcApi:        grpcApi,
-		dns:            dns,
+		server:         server,
 	}, nil
 }
 
@@ -159,12 +156,12 @@ func (a *RESTApiService) UpdateDockerDNS(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if a.dns != nil {
+	if a.server.dns != nil {
 		switch dnsRequest.Status {
 		case "enabled":
-			a.dns.Enable()
+			a.server.dns.Enable()
 		case "disabled":
-			a.dns.Disable()
+			a.server.dns.Disable()
 		default:
 			http.Error(w, "Invalid status", http.StatusBadRequest)
 			return
@@ -175,8 +172,8 @@ func (a *RESTApiService) UpdateDockerDNS(w http.ResponseWriter, r *http.Request)
 
 func (a *RESTApiService) GetDockerDNS(w http.ResponseWriter, r *http.Request) {
 	var status string
-	if a.dns != nil {
-		if a.dns.enabled {
+	if a.server.dns != nil {
+		if a.server.dns.enabled {
 			status = "enabled"
 		} else {
 			status = "disabled"
@@ -215,7 +212,7 @@ func (a *RESTApiService) GetDockerCredsHelper(w http.ResponseWriter, r *http.Req
 }
 
 func (a *RESTApiService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {
-	response, err := a.grpcApi.getAllChannelStoreData()
+	response, err := a.server.grpcApi.getAllChannelStoreData()
 	if err != nil {
 		a.logger.Error("Failed to get channels data: %v", err)
 		http.Error(w, "Failed to get channels data", http.StatusInternalServerError)

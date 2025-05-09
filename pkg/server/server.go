@@ -68,7 +68,7 @@ func NewServer(config *Config, keys *Keys, grpcApiListenPort int, serverKeyPath 
 	}
 
 	// Create API service
-	server.restApi, err = NewRESTAPI(keys.A2Key, restpApiUnixSocket, config.MainUser, server.grpcApi, server.dns)
+	server.restApi, err = NewRESTAPI(keys.A2Key, restpApiUnixSocket, config.MainUser, server)
 	if err != nil {
 		return nil, fmt.Errorf("error creating REST API: %v", err)
 	}
