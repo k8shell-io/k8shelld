@@ -1,4 +1,4 @@
-# K8shelld 
+# k8shelld 
 
 **K8shelld** is init process for the k8shell workspace. It is a a secure, container-native development environment framework built on top of Kubernetes. It provides remote shell access, development tooling, and runtime control within isolated Kubernetes pods—while preserving compatibility with standard developer workflows.
 
