@@ -1,0 +1,142 @@
+syntax = "proto3";
+
+package k8shelld;
+
+// InfoService definition
+service InfoService {
+  // Version gets the version of the service
+  rpc Version (VersionRequest) returns (VersionResponse);
+}
+
+// VersionRequest message
+message VersionRequest {
+}
+
+// VersionResponse message
+message VersionResponse {
+  string version = 1; // Version of the service
+  string commit = 2;  // Commit hash of the service
+}
+
+// RemoteOSService definition
+service RemoteOSService {
+  // Shell starts a shell session
+  rpc Shell (stream ShellRequest) returns (stream ShellResponse);
+
+  // ResizeTerminal resizes the terminal in a shell session
+  rpc ResizeTerminal (ResizeTerminalRequest) returns (ResizeTerminalResponse);
+
+  // PortForward forwards a port to the specified destination IP and port
+  rpc PortForward (stream PortForwardRequest) returns (stream PortForwardResponse);
+
+  // Exec executes a command 
+  rpc Exec(stream ExecRequest) returns (stream ExecResponse);
+
+  // UnixSocket reads/writes to a Unix socket in the remote OS
+  // This is primarily used for SSH agent forwarding
+  rpc UnixSocket (stream UnixSocketRequest) returns (stream UnixSocketResponse);
+
+}
+
+// ShellRequest message
+message ShellRequest {
+  oneof request {
+    ShellStartRequest start_request = 1; // Start shell request
+    bytes data = 3; // Data to send to the shell
+  }
+}
+
+// ShellRequest message
+message ShellResponse {
+  oneof response {
+    bytes data = 1; // Data to send to the shell
+    bool terminate = 2; // Terminate the shell session
+  }
+}
+
+// ShellStartRequest message
+message ShellStartRequest {
+  string cmdShell = 1;              // Command to run the shell
+  repeated string setEnvVars = 2;   // Environment variables to be set in the the shell
+  bool usePty = 3;                  // True to use a pseudo-terminal
+  uint32 width = 4;                 // Terminal width
+  uint32 height = 5;                // Terminal height
+}
+
+// ResizeTerminalRequest message
+message ResizeTerminalRequest {
+  uint32 width = 2;             // Terminal width
+  uint32 height = 3;            // Terminal height
+}
+
+// ResizeTerminalResponse message
+message ResizeTerminalResponse {
+}
+
+// Request for the Exec operation
+message ExecRequest {
+  oneof request {
+    CommandDetails command_details = 1;  // Command details including command and shell binary
+    bytes input = 2;                     // Input to send to the command
+    string signal = 3;                   // Signal to send to the command
+  }
+}
+
+// Response for the Exec operation
+message ExecResponse {
+  oneof response {
+    bytes stdout = 1;    // Standard output
+    bytes stderr = 2;    // Standard error
+    int32 exit_code = 3; // Exit code when the process exits
+  }
+}
+
+// Command details message
+message CommandDetails {
+  string command = 1;       // Initial command with arguments
+  string shell_binary = 2;  // Optional shell binary to use (e.g., "/bin/sh"), empty for none
+  repeated string setEnvVars = 3;   // Environment variables to be set for the command
+}
+
+// Request for the PortForward operation
+message PortForwardRequest {
+  oneof request { 
+    Destination destination = 1; // Destination details
+    bytes data = 2;               // Data to send to the destination
+  }
+}
+
+// Response for the PortForward operation
+message PortForwardResponse {
+  oneof response { 
+    bytes data = 1;     // Data received from the destination
+    bool terminate = 2; // Terminate the port forward session
+  }
+}
+
+// Destination details message
+message Destination {
+  string ip = 1; // Destination IP address
+  uint32 port = 2; // Destination port
+}
+
+// Request for the UnixSocket operation
+message UnixSocketRequest {
+  oneof request {
+    UnixSocketStartRequest start_request = 1; // Start Unix socket request
+    bytes data = 2; // Data to send to the Unix socket
+  }
+}
+
+// Response for the UnixSocket operation
+message UnixSocketResponse {
+  oneof response {
+    bytes data = 1; // Data to send to the Unix socket
+    bool terminate = 2; // Terminate the Unix socket session
+  }
+}
+
+// UnixSocketStartRequest message
+message UnixSocketStartRequest {
+  string socketPath = 2; // Unix socket path
+}

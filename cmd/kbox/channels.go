@@ -1,0 +1,127 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/k8shell-io/k8shelld/pkg/client"
+	"github.com/k8shell-io/k8shelld/pkg/table"
+	"github.com/spf13/cobra"
+)
+
+func rowColorFunc(row map[string]interface{}) string {
+	if row["status"] == "STOPPED" {
+		return "\033[2m" // Dimmed/shaded for stopped status
+	}
+	return "" // No color o
+}
+
+var tableFields = []table.FieldDefinition{
+	{
+		Name:  "id",
+		Width: 17,
+	},
+	{
+		Name:        "created",
+		Width:       15,
+		DisplayFunc: table.DisplayDateTime,
+		Type:        table.Time,
+		Format:      time.RFC3339,
+	},
+	{
+		Name:        "duration",
+		Width:       10,
+		DisplayFunc: table.DisplayDuration,
+	},
+	{
+		Name:  "status",
+		Width: 8,
+	},
+	{
+		Name:        "bytes_in",
+		Type:        table.Int,
+		Width:       8,
+		DisplayFunc: table.DisplayBytes,
+	},
+	{
+		Name:        "bytes_out",
+		Type:        table.Int,
+		Width:       8,
+		DisplayFunc: table.DisplayBytes,
+	},
+	{
+		Name:  "params",
+		Width: 200,
+	},
+}
+
+var ChannelsCmd = &cobra.Command{
+	Use:   "channels",
+	Short: "Display SSH channels",
+	Long: `Display SSH channels created from the k8shell proxy (shell, port-forward, exec, unix-socket).
+
+The command displays the following fields:
+- id: Channel ID
+- created: Channel creation time
+- duration: Channel duration
+- status: Channel status (ACTIVE, STOPPED)
+- bytes_in: Bytes received
+- bytes_out: Bytes sent
+- params: Channel parameters
+
+Use the --sort flag to sort the output by one or more fields. Prefix the field name with '-' for descending order.`,
+
+	Run: func(cmd *cobra.Command, args []string) {
+		url := "/ssh/channels"
+		resp, err := client.MakeRequest("GET", url, nil, nil)
+		if err != nil {
+			fmt.Printf("Failed to get GRPC status: %v\n", err)
+			return
+		}
+		defer resp.Body.Close()
+
+		bodyBytes, _ := io.ReadAll(resp.Body)
+
+		var t *table.Table
+		if noAnsi, _ := cmd.Flags().GetBool("no-ansi"); noAnsi {
+			t = table.NewTable(tableFields, nil)
+		} else {
+			t = table.NewTable(tableFields, rowColorFunc)
+		}
+
+		// Parse the JSON data
+		err = t.ParseJsonData(bodyBytes)
+		if err != nil {
+			fmt.Printf("Error parsing JSON data: %v\n", err)
+			return
+		}
+
+		// Sort the table
+		sort := cmd.Flag("sort").Value.String()
+		err = t.Sort(strings.Split(sort, ","))
+		if err != nil {
+			fmt.Printf("Error sorting table: %v\n", err)
+			return
+		}
+
+		// Display the table
+		if json, _ := cmd.Flags().GetBool("json"); json {
+			if err := t.DisplayJSON(); err != nil {
+				fmt.Printf("Error displaying JSON: %v\n", err)
+			}
+			return
+		}
+
+		if err := t.DisplayTable(); err != nil {
+			fmt.Printf("Error displaying table: %v\n", err)
+		}
+	},
+}
+
+func init() {
+	ChannelsCmd.Flags().String("sort", "-created", "Comma separated list of fields to sort by, prefix with '-' for descending order")
+	ChannelsCmd.Flags().Bool("json", false, "Display output in JSON format")
+	ChannelsCmd.Flags().Bool("no-ansi", false, "Disable ANSI color output")
+}
