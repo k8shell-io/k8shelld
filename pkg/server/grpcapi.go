@@ -13,7 +13,6 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -52,7 +51,7 @@ type GRPCApiService struct {
 	tcpPort            int                  // The TCP port that the gRPC server listens on
 	cert               tls.Certificate      // The TLS certificate and key pair
 	KeyLogFilePath     string               // The path to the key log file for debugging
-	user               MainUser             // The main workspace user
+	user               User                 // The main workspace user
 	portForwadingRules []PortForwardingRule // The port forwarding rules that are allowed
 	execStore          *sync.Map            // The store for the exec data
 	portForwardStore   *sync.Map            // The store for the port forwarding data
@@ -94,7 +93,8 @@ func DecryptAES(accessKey string, encryptedData []byte) ([]byte, error) {
 
 	const prefix = "ENC[AES256]"
 	if !strings.HasPrefix(encryptedStr, prefix) {
-		return nil, errors.New("invalid encryption format: missing ENC[AES256] prefix")
+		//return nil, errors.New("invalid encryption format: missing ENC[AES256] prefix")
+		return []byte(encryptedStr), nil
 	}
 	encryptedStr = strings.TrimPrefix(encryptedStr, prefix)
 
@@ -164,7 +164,7 @@ func LoadDecryptedKeyPair(serverCertPath, encryptedKeyPath, accessKey string) (t
 }
 
 // NewGRPCAPI creates a new GRPCApiService
-func NewGRPCAPI(tcpPort int, accessKey string, user MainUser,
+func NewGRPCAPI(tcpPort int, accessKey string, user User,
 	serverKeyPath string, serverCertPath string, keyLogFilePath string,
 	portForwardingRules []PortForwardingRule) (*GRPCApiService, error) {
 

@@ -28,6 +28,7 @@ type Options struct {
 	InitScriptsDir string
 	KeyLogFilePath string
 	showVersion    bool
+	test           bool
 }
 
 var (
@@ -98,6 +99,7 @@ func getOptions(version string, commit_id string) (*Options, error) {
 	flag.StringVar(&options.UnixSocketPath, "socket", options.UnixSocketPath, "Unix socket path")
 	flag.StringVar(&options.InitScriptsDir, "init-scripts", options.InitScriptsDir, "Directory for init scripts")
 	flag.StringVar(&options.KeyLogFilePath, "keylog", options.KeyLogFilePath, "File to log TLS master secrets in NSS key log format")
+	flag.BoolVar(&options.test, "test", false, "Enable test mode")
 	flag.BoolVar(&options.showVersion, "v", false, "Show version information")
 
 	// Print usage
@@ -113,7 +115,8 @@ func getOptions(version string, commit_id string) (*Options, error) {
 		fmt.Fprintf(os.Stderr, "  --server-key <file>     Server key file (default: %s)\n", options.ServerKeyPath)
 		fmt.Fprintf(os.Stderr, "  --init-scripts <dir>    Directory for init scripts (default: %s)\n", options.InitScriptsDir)
 		fmt.Fprint(os.Stderr, "  --keylog <file>         File to log TLS master secrets in NSS key log format\n", options.KeyLogFilePath)
-		fmt.Fprintf(os.Stderr, "  -v                      Show version and exit\n")
+		fmt.Fprint(os.Stderr, "  --test                  Enable test mode\n")
+		fmt.Fprint(os.Stderr, "  -v                      Show version and exit\n")
 	}
 
 	// Parse the flags
@@ -162,9 +165,11 @@ func ValidateAndLoadConfig(configPath string, accessKey string) (*server.Config,
 		}
 		yamlData = decryptedData
 	} else {
-		yamlData, err = base64.StdEncoding.DecodeString(string(yamlData))
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode base64 config file: %v", err)
+		decoded, err := base64.StdEncoding.DecodeString(string(yamlData))
+		if err == nil {
+			yamlData = decoded
+		} else {
+			yamlData = []byte(string(yamlData))
 		}
 	}
 

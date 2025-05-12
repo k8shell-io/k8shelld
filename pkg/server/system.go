@@ -17,6 +17,7 @@ const (
 )
 
 // Usage struct to hold CPU & Memory metrics
+// The metrics are collected from cgroups v2 files
 type SystemInfo struct {
 	CPUUsageUsec       int64     // CPU usage in microseconds
 	CPUUsageMillicores float64   // CPU usage in mCPU
@@ -92,7 +93,7 @@ func GetStartTimeFromProcStat() (time.Time, error) {
 		return time.Time{}, err
 	}
 
-	// Most systems use 100 clock ticks/sec
+	// Assume 100 clock ticks/sec
 	const clockTicksPerSecond = 100
 	startSeconds := float64(startTimeTicks) / float64(clockTicksPerSecond)
 
@@ -129,7 +130,7 @@ func getCPUUsage(previousUsage int64, prevTime time.Time) (float64, float64, int
 	elapsedTime := now.Sub(prevTime).Seconds()
 	if previousUsage > 0 && elapsedTime > 0 {
 		usageDelta := usageUsec - previousUsage
-		cpuUsage := (float64(usageDelta) / (elapsedTime * 1000)) // Convert to millicores
+		cpuUsage := (float64(usageDelta) / (elapsedTime * 1000))
 		return cpuUsage, cpuUsageSeconds, usageUsec, now, nil
 	}
 
@@ -164,7 +165,7 @@ func getMemoryUsage() (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return float64(memBytes) / (1024 * 1024), nil // Convert bytes to MiB
+	return float64(memBytes) / (1024 * 1024), nil
 }
 
 // getMemoryLimit retrieves memory limits (if defined)
@@ -180,7 +181,7 @@ func getMemoryLimit() (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return float64(memBytes) / (1024 * 1024), nil // Convert bytes to MiB
+	return float64(memBytes) / (1024 * 1024), nil
 }
 
 // Retrieve all usage metrics

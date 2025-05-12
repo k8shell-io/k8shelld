@@ -10,6 +10,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var UseJSONFormatter = true
+
 type LogMessageRequest struct {
 	Time      string `json:"time"`
 	Level     string `json:"level"`
@@ -58,7 +60,14 @@ type Logger struct {
 func NewLogger(component string) *Logger {
 	log := logrus.New()
 	log.SetOutput(os.Stdout)
-	log.SetFormatter(&OrderedJSONFormatter{})
+	if UseJSONFormatter {
+		log.SetFormatter(&OrderedJSONFormatter{})
+	} else {
+		log.SetFormatter(&logrus.TextFormatter{
+			DisableColors: false,
+			DisableQuote:  true,
+		})
+	}
 	log.SetLevel(LogLevel)
 	return &Logger{
 		logger:    log,

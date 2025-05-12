@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,7 +16,6 @@ type Server struct {
 	logger    *Logger
 	restApi   *RESTApiService
 	grpcApi   *GRPCApiService
-	scripts   *InitScripts
 	dns       *DockerDNS
 	proc      *ProcessWatcher
 	pprof     bool
@@ -24,27 +24,9 @@ type Server struct {
 }
 
 func NewServer(config *Config, keys *Keys, grpcApiListenPort int, serverKeyPath string, serverCertPath string,
-	keyLogFilePath string, restpApiUnixSocket string, defaultDNS string, initScriptsDir string) (*Server, error) {
+	keyLogFilePath string, restpApiUnixSocket string, defaultDNS string) (*Server, error) {
 	server := &Server{logger: NewLogger("k8shelld"), pprof: config.System.PProf, sysInfo: nil}
 	var err error
-
-	// Default to real execution
-	runner := &RealCommandRunner{}
-
-	// Default to real filesystem
-	filesystem := &RealFileSystem{}
-
-	// Default to real user lookup
-	userlookup := &RealUserLookup{}
-
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	// Create main user
-	if err := CreateMainUser(ctx, runner, filesystem, userlookup, config.MainUser); err != nil {
-		return nil, fmt.Errorf("error creating main user: %v", err)
-	}
 
 	// Create GRPC API service
 	server.grpcApi, err = NewGRPCAPI(grpcApiListenPort, keys.A1Key, config.MainUser, serverKeyPath,
@@ -69,12 +51,10 @@ func NewServer(config *Config, keys *Keys, grpcApiListenPort int, serverKeyPath 
 
 	// Create API service
 	server.restApi, err = NewRESTAPI(keys.A2Key, restpApiUnixSocket, config.MainUser, server)
+	errors.Is(err, context.Canceled)
 	if err != nil {
 		return nil, fmt.Errorf("error creating REST API: %v", err)
 	}
-
-	// Initialize the init scripts
-	server.scripts = NewInitScripts(config.MainUser, initScriptsDir)
 
 	// Create process watcher
 	server.proc = NewProcessWatcher(config.TerminateOrphans.Enabled, config.ReapZombies.Enabled,
@@ -90,11 +70,6 @@ func (s *Server) Serve() {
 	// Context will be canceled on SIGTERM or SIGINT
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	// Run workspace init scripts
-	s.scripts.Run()
-
-	// Create a wait group to wait for all goroutines to finish
 	var wg sync.WaitGroup
 
 	// Start gRPC handler

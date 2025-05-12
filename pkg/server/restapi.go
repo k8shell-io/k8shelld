@@ -20,7 +20,7 @@ const APIServerBaseUrl = "http://api-internal/api/v1"
 type RESTApiService struct {
 	apiServerToken string // Token for API server authentication
 	unixSocketPath string
-	user           MainUser
+	user           User
 	logger         *Logger
 	server         *Server
 }
@@ -46,7 +46,7 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 }
 
 // NewRESTAPI creates a new REST API service
-func NewRESTAPI(apiServerToken string, unixSocketPath string, user MainUser, server *Server) (*RESTApiService, error) {
+func NewRESTAPI(apiServerToken string, unixSocketPath string, user User, server *Server) (*RESTApiService, error) {
 	logger := NewLogger("api")
 
 	return &RESTApiService{
@@ -224,6 +224,34 @@ func (a *RESTApiService) GetSSHChannels(w http.ResponseWriter, r *http.Request) 
 }
 
 func (a *RESTApiService) GetUptime(w http.ResponseWriter, r *http.Request) {
+	a.server.sysInfoMu.Lock()
+	defer a.server.sysInfoMu.Unlock()
+
+	uptime, err := GetStartTimeFromProcStat()
+	if err != nil {
+		a.logger.Error("Failed to get uptime: %v", err)
+		http.Error(w, "Failed to get uptime", http.StatusInternalServerError)
+		return
+	}
+
+	var cpuUsage, memUsage float64 = 0, 0
+	var collected_at time.Time = time.Now()
+	if a.server.sysInfo != nil {
+		cpuUsage = a.server.sysInfo.CPUUsageMillicores
+		memUsage = a.server.sysInfo.MemoryUsageMiB
+		collected_at = a.server.sysInfo.CollectedAt
+	}
+
+	response := map[string]interface{}{
+		"uptime":       uptime,
+		"cpu_usage":    cpuUsage,
+		"memory_usage": memUsage,
+		"collected_at": collected_at.Format(time.RFC3339),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusOK)
 }
 
 // Initialize the router
@@ -279,6 +307,7 @@ func (a *RESTApiService) manageUnixSocket(ctx context.Context, router http.Handl
 		select {
 		case <-ctx.Done():
 			a.logger.Info("Context cancelled, stopping Unix socket server loop.")
+			os.Remove(a.unixSocketPath)
 			return
 		default:
 		}

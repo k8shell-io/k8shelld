@@ -16,7 +16,7 @@ const (
 )
 
 type InitScripts struct {
-	user       MainUser
+	user       User
 	scriptsDir string
 	mu         sync.Mutex
 	pids       []int
@@ -26,7 +26,7 @@ type InitScripts struct {
 var ScriptsPIDs = []int{}
 var ScriptsPIDsMutex sync.Mutex
 
-func NewInitScripts(user MainUser, scriptsDir string) *InitScripts {
+func NewInitScripts(user User, scriptsDir string) *InitScripts {
 	return &InitScripts{
 		user:       user,
 		scriptsDir: scriptsDir,
@@ -36,7 +36,7 @@ func NewInitScripts(user MainUser, scriptsDir string) *InitScripts {
 	}
 }
 
-func NewCommand(cmdstr string, user MainUser) *exec.Cmd {
+func NewCommand(cmdstr string, user User) *exec.Cmd {
 	cmd := exec.Command("/bin/sh", "-c", cmdstr)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
@@ -75,7 +75,7 @@ func (is *InitScripts) checkScriptState(cmd *exec.Cmd, flagFile string, scriptNa
 }
 
 // runBackgroundScript executes a script in the background
-func (is *InitScripts) runBackgroundScript(user MainUser, scriptDir, scriptName, flagFile string) {
+func (is *InitScripts) runBackgroundScript(user User, scriptDir, scriptName, flagFile string) {
 	cmd := NewCommand(fmt.Sprintf("%s/%s &>/tmp/%s.out", scriptDir, scriptName, scriptName), user)
 	err := cmd.Start()
 	AddPIDIgnoreTerminate(cmd.Process.Pid)
@@ -89,7 +89,7 @@ func (is *InitScripts) runBackgroundScript(user MainUser, scriptDir, scriptName,
 }
 
 // runForegroundScript executes a script in the foreground
-func (is *InitScripts) runForegroundScript(user MainUser, scriptDir, scriptName, flagFile string) {
+func (is *InitScripts) runForegroundScript(user User, scriptDir, scriptName, flagFile string) {
 	cmd := NewCommand(fmt.Sprintf("%s/%s", scriptDir, scriptName), user)
 
 	stdout, _ := cmd.StdoutPipe()

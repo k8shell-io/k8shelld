@@ -22,7 +22,7 @@ import (
 // SessionData stores the data of a shell session.
 type SessionData struct {
 	Id       string
-	user     MainUser
+	user     User
 	CmdShell string
 	Cmd      *exec.Cmd
 	Ptmx     *os.File
@@ -110,7 +110,7 @@ func (s *RemoteOSServiceServer) Shell(stream k8shelldpb.RemoteOSService_ShellSer
 	}
 
 	// Get the login shell for the user
-	shell, err := getUserLoginShell(&RealFileSystem{}, s.grpcApi.user.Username)
+	shell, err := getUserLoginShell(s.grpcApi.user.Username)
 	if err != nil {
 		shell = shellReq.StartRequest.CmdShell
 	}

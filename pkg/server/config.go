@@ -69,7 +69,7 @@ type PortForwardingRule struct {
 // Config represents the main configuration file structure
 type Config struct {
 	System              System           `yaml:"system"`
-	MainUser            MainUser         `yaml:"mainUser"`
+	MainUser            User             `yaml:"mainUser"`
 	Env                 Env              `yaml:"env"`
 	DockerDNS           DockerDNSConf    `yaml:"dockerDNS"`
 	PortForwarding      []string         `yaml:"portForwarding"`
