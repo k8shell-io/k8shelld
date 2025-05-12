@@ -1,0 +1,38 @@
+# k8shelld configuration file
+# system settings
+system:
+  # true to enable profiling
+  # if enabled, pprof will be available at localhost:6060
+  pprof: false
+
+# workspace user
+mainUser:
+  username: vitvatom
+  fullname: Tomáš Vitvar
+  uid: 252553
+  gid: 252553
+  shell: /bin/bash
+  sudo: True
+
+# docker DNS
+dockerDNS:
+  enabled: False
+  fqdn: True
+  containerId: True
+  containerName: True
+  dnsNames: True
+
+# port forwarding rules
+portForwarding:
+  - localnetworks:0
+
+# reap zombie processes
+reapZombies:
+  enabled: False
+
+# terminate orphaned processes, i.e. processes that were reparented to init (pid 1)
+terminateOrphans:
+  enabled: False
+  checkInterval: 5
+  exclude:
+  - .*JetBrains.*
