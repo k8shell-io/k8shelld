@@ -343,7 +343,7 @@ func (a *RESTApiService) manageUnixSocket(ctx context.Context, router http.Handl
 
 		select {
 		case <-ctx.Done():
-			a.logger.Info("Context cancelled. Shutting down Unix socket server...")
+			a.logger.Info("Shutting down Unix socket server...")
 			server.Shutdown(context.Background())
 			unixListener.Close()
 			return
