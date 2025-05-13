@@ -114,14 +114,20 @@ func DockerCredsHelper(operation string) {
 		url := fmt.Sprintf("/docker/creds-helper?address=%s", address)
 		headers := map[string]string{"Accept": "application/json"}
 
-		creds, err := client.MakeRequest("GET", url, headers, nil)
+		resp, err := client.MakeRequest("GET", url, headers, nil)
 		if err != nil {
 			logger.Warn("Cannot retrieve credentials: %v", err)
 			fmt.Println("{}")
 			os.Exit(0)
 		}
 
-		fmt.Println(creds)
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			logger.Warn("Failed to read response body: %v", err)
+			fmt.Println("{}")
+			os.Exit(0)
+		}
+		fmt.Println(string(bodyBytes))
 
 	case "store":
 		logger.Debug("Request to store credentials, operation not supported.")
