@@ -16,6 +16,51 @@ var (
 	since  bool
 )
 
+func init() {
+	UptimeCmd.Flags().BoolVarP(&pretty, "pretty", "p", false, "Show uptime in pretty format")
+	UptimeCmd.Flags().BoolVarP(&since, "since", "s", false, "System up since")
+}
+
+// uptimeCmd represents the uptime command
+var UptimeCmd = &cobra.Command{
+	Use:   "uptime",
+	Short: "Display workspace uptime",
+	Long:  "Display workspace uptime.",
+
+	Run: func(cmd *cobra.Command, args []string) {
+		resp, err := client.MakeRequest("GET", "/sysinfo", nil, nil)
+		if err != nil {
+			fmt.Println("Error fetching uptime:", err)
+			return
+		}
+
+		var data common.SystemInfoResponse
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			fmt.Println("Error parsing response:", err)
+			return
+		}
+
+		startTime, err := time.Parse(time.RFC3339, data.Uptime)
+		if err != nil {
+			fmt.Println("Error parsing uptime:", err)
+			return
+		}
+
+		var output = ""
+
+		if pretty {
+			output = formatDuration(time.Since(startTime))
+		} else if since {
+			output = startTime.Format("2006-01-02 15:04:05")
+		} else {
+			output = fmt.Sprintf("%s, %d users, load average: %.2f, %.2f, %.2f", formatUptimeClassic(startTime),
+				data.Users, data.CPUAvg1Min, data.CPUAvg5Min, data.CPUAvg15Min)
+		}
+
+		println(output)
+	},
+}
+
 // formatDuration returns a human-readable duration (e.g. "2 days, 3 hours, 10 minutes")
 func formatDuration(d time.Duration) string {
 	days := d / (24 * time.Hour)
@@ -58,13 +103,12 @@ func formatDuration(d time.Duration) string {
 	return strings.Join(parts, ", ")
 }
 
+// formatUptimeClassic formats the uptime in a classic uptime format
 func formatUptimeClassic(startTime time.Time) string {
 	now := time.Now()
 	uptime := now.Sub(startTime)
-
 	currentTime := now.Format("15:04:05")
 
-	// Uptime duration
 	days := int(uptime.Hours()) / 24
 	hours := int(uptime.Hours()) % 24
 	minutes := int(uptime.Minutes()) % 60
@@ -77,49 +121,4 @@ func formatUptimeClassic(startTime time.Time) string {
 	}
 
 	return fmt.Sprintf("%s %s", currentTime, uptimeStr)
-}
-
-func init() {
-	UptimeCmd.Flags().BoolVarP(&pretty, "pretty", "p", false, "Show uptime in pretty format")
-	UptimeCmd.Flags().BoolVarP(&since, "since", "s", false, "System up since")
-}
-
-// uptimeCmd represents the uptime command
-var UptimeCmd = &cobra.Command{
-	Use:   "uptime",
-	Short: "Display workspace uptime",
-	Long:  "Display workspace uptime.",
-
-	Run: func(cmd *cobra.Command, args []string) {
-		resp, err := client.MakeRequest("GET", "/sysinfo", nil, nil)
-		if err != nil {
-			fmt.Println("Error fetching uptime:", err)
-			return
-		}
-
-		var data common.SystemInfoResponse
-		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-			fmt.Println("Error parsing response:", err)
-			return
-		}
-
-		startTime, err := time.Parse(time.RFC3339, data.Uptime)
-		if err != nil {
-			fmt.Println("Error parsing uptime:", err)
-			return
-		}
-
-		var output = ""
-
-		if pretty {
-			output = formatDuration(time.Since(startTime))
-		} else if since {
-			output = startTime.Format("2006-01-02 15:04:05")
-		} else {
-			output = fmt.Sprintf("%s, 0 users, load average: %.2f, %.2f, %.2f", formatUptimeClassic(startTime),
-				data.CPUAvg1Min, data.CPUAvg5Min, data.CPUAvg15Min)
-		}
-
-		println(output)
-	},
 }

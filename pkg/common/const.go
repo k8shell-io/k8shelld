@@ -12,4 +12,5 @@ type SystemInfoResponse struct {
 	CPUAvg1Min         float64 `json:"cpuAvg1min"`
 	CPUAvg5Min         float64 `json:"cpuAvg5min"`
 	CPUAvg15Min        float64 `json:"cpuAvg15min"`
+	Users              int     `json:"users"`
 }

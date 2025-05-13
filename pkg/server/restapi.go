@@ -241,6 +241,15 @@ func (a *RESTApiService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		sysInfo = *a.server.sysInfo
 	}
 
+	var users int = 0
+	a.server.grpcApi.sessionStore.Range(func(key, value any) bool {
+		record, ok := value.(*SessionData)
+		if ok && record.Deleted.UTC().IsZero() {
+			users += 1
+		}
+		return true
+	})
+
 	response := common.SystemInfoResponse{
 		Uptime:             uptime.Format(time.RFC3339),
 		CPUUsageMillicores: sysInfo.CPUUsageMillicores,
@@ -250,6 +259,7 @@ func (a *RESTApiService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		CPUAvg1Min:         math.Round(sysInfo.CPUAvg1Min*100) / 100,
 		CPUAvg5Min:         math.Round(sysInfo.CPUAvg5Min*100) / 100,
 		CPUAvg15Min:        math.Round(sysInfo.CPUAvg15Min*100) / 100,
+		Users:              users,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
