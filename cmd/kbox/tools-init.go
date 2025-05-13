@@ -63,11 +63,6 @@ These scripts wrap the corresponding sub-commands in the kbox CLI.`,
 				Template:    wrapperScriptGeneralTemplateHelp,
 			},
 			{
-				CommandName: "log",
-				ScriptName:  "log",
-				Template:    wrapperScriptGeneralTemplateHelp,
-			},
-			{
 				CommandName: "docker creds",
 				ScriptName:  "docker-credential-k8shell",
 				Template:    wrapperScriptGeneralTemplateNoHelp,
