@@ -53,7 +53,7 @@ func CreateUser(user User) error {
 		return fmt.Errorf("failed to check main group: %v", err)
 	} else if !exists {
 		if err := addGroup(ctx, user.Username, user.Gid); err != nil {
-			return fmt.Errorf("failed to create user main group: %v", err)
+			return fmt.Errorf("failed to add the user main group: %v", err)
 		}
 		logger.Info("Main group created: %s (%d)", user.Username, user.Gid)
 	}
@@ -64,12 +64,12 @@ func CreateUser(user User) error {
 	} else if !exists {
 		if err := addUser(ctx, user.Username, user.Uid, user.Gid,
 			fmt.Sprintf("/home/%s", user.Username), user.Shell); err != nil {
-			return fmt.Errorf("failed to create main user: %v", err)
+			return fmt.Errorf("failed to add user: %v", err)
 		}
 		logger.Info("Main user created: %s (%d)", user.Username, user.Uid)
 	}
 
-	// Add the main user to the specified groups
+	// Add the user to the specified groups
 	if user.Groups != nil && len(*user.Groups) > 0 {
 		for _, group := range *user.Groups {
 			if exists, err := groupExists(strconv.Itoa(group.Gid)); err != nil {
