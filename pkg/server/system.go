@@ -16,16 +16,59 @@ const (
 	memMaxPath     = "/sys/fs/cgroup/memory.max"
 )
 
+const MaxCPUSamples = 100 // Maximum number of CPU samples to keep in history
+
 // Usage struct to hold CPU & Memory metrics
 // The metrics are collected from cgroups v2 files
 type SystemInfo struct {
-	CPUUsageUsec       int64     // CPU usage in microseconds
-	CPUUsageMillicores float64   // CPU usage in mCPU
-	MemoryUsageMiB     float64   // Memory usage in MiB
-	CPULimitMillicores float64   // CPU limit in mCPU (if set)
-	MemLimitMiB        float64   // Memory limit in MiB (if set)
-	CPUUsageSeconds    float64   // CPU usage in seconds
-	CollectedAt        time.Time // Time of collection
+	CollectedAt        time.Time    // Time of collection
+	CPUUsageUsec       int64        // CPU usage in microseconds
+	CPUUsageMillicores float64      // CPU usage in mCPU
+	MemoryUsageMiB     float64      // Memory usage in MiB
+	CPULimitMillicores float64      // CPU limit in mCPU (if set)
+	MemLimitMiB        float64      // Memory limit in MiB (if set)
+	CPUUsageSeconds    float64      // CPU usage in seconds
+	CPUAvg1Min         float64      // CPU usage average over 1 minute
+	CPUAvg5Min         float64      // CPU usage average over 5 minutes
+	CPUAvg15Min        float64      // CPU usage average over 15 minutes
+	stats              *SystemStats // System statistics
+}
+
+// CPUSample represents a CPU usage sample
+type CPUSample struct {
+	Timestamp time.Time
+	Usage     float64
+}
+
+// SystemStats holds the history of CPU usage samples
+type SystemStats struct {
+	CPUHistory []CPUSample
+	MaxSamples int
+}
+
+// NewSystemStats initializes a new SystemStats instance
+func (s *SystemStats) AddSample(sample CPUSample) {
+	s.CPUHistory = append(s.CPUHistory, sample)
+	if len(s.CPUHistory) > s.MaxSamples {
+		s.CPUHistory = s.CPUHistory[len(s.CPUHistory)-s.MaxSamples:]
+	}
+}
+
+// GetAverage returns the average CPU usage in millicores over the specified duration
+func (s *SystemStats) GetAverage(duration time.Duration) float64 {
+	cutoff := time.Now().Add(-duration)
+	var total float64
+	var count int64
+	for _, sample := range s.CPUHistory {
+		if sample.Timestamp.After(cutoff) {
+			total += sample.Usage
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+	return float64(total) / float64(count)
 }
 
 // Utility functions
@@ -65,13 +108,6 @@ func readStringFromFile(path string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(data)), nil
-}
-
-// Convert CPU usage seconds to `MM:SS` format (like `ps` command)
-func formatCPUTime(seconds float64) string {
-	minutes := int(seconds) / 60
-	secs := int(seconds) % 60
-	return fmt.Sprintf("%02d:%02d", minutes, secs)
 }
 
 // Uptime
@@ -193,7 +229,7 @@ func UpdateSystemInfo(systemInfo *SystemInfo) (*SystemInfo, error) {
 		prevUsage = systemInfo.CPUUsageUsec
 		prevTime = systemInfo.CollectedAt
 	} else {
-		systemInfo = &SystemInfo{}
+		systemInfo = &SystemInfo{stats: &SystemStats{MaxSamples: MaxCPUSamples}}
 	}
 
 	cpuUsage, cpuUsageSeconds, newUsage, newTime, err := getCPUUsage(prevUsage, prevTime)
@@ -224,6 +260,16 @@ func UpdateSystemInfo(systemInfo *SystemInfo) (*SystemInfo, error) {
 	systemInfo.CPUUsageSeconds = cpuUsageSeconds
 	systemInfo.CollectedAt = newTime
 
-	return systemInfo, nil
+	// Add CPU sample and calculate averages
+	if cpuLimit > 0 {
+		systemInfo.stats.AddSample(CPUSample{Timestamp: newTime, Usage: (cpuUsage / cpuLimit) * 100})
+	} else {
+		systemInfo.stats.AddSample(CPUSample{Timestamp: newTime, Usage: 0})
+	}
 
+	systemInfo.CPUAvg1Min = systemInfo.stats.GetAverage(1 * time.Minute)
+	systemInfo.CPUAvg5Min = systemInfo.stats.GetAverage(5 * time.Minute)
+	systemInfo.CPUAvg15Min = systemInfo.stats.GetAverage(15 * time.Minute)
+
+	return systemInfo, nil
 }

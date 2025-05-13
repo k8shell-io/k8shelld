@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/k8shell-io/k8shelld/pkg/common"
 )
 
 const APIServerBaseUrl = "http://api-internal/api/v1"
@@ -223,7 +225,7 @@ func (a *RESTApiService) GetSSHChannels(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusOK)
 }
 
-func (a *RESTApiService) GetUptime(w http.ResponseWriter, r *http.Request) {
+func (a *RESTApiService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	a.server.sysInfoMu.Lock()
 	defer a.server.sysInfoMu.Unlock()
 
@@ -234,19 +236,20 @@ func (a *RESTApiService) GetUptime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var cpuUsage, memUsage float64 = 0, 0
-	var collected_at time.Time = time.Now()
+	var sysInfo SystemInfo
 	if a.server.sysInfo != nil {
-		cpuUsage = a.server.sysInfo.CPUUsageMillicores
-		memUsage = a.server.sysInfo.MemoryUsageMiB
-		collected_at = a.server.sysInfo.CollectedAt
+		sysInfo = *a.server.sysInfo
 	}
 
-	response := map[string]interface{}{
-		"uptime":       uptime,
-		"cpu_usage":    cpuUsage,
-		"memory_usage": memUsage,
-		"collected_at": collected_at.Format(time.RFC3339),
+	response := common.SystemInfoResponse{
+		Uptime:             uptime.Format(time.RFC3339),
+		CPUUsageMillicores: sysInfo.CPUUsageMillicores,
+		CPULimitMillicores: sysInfo.CPULimitMillicores,
+		MemoryUsageMiB:     sysInfo.MemoryUsageMiB,
+		MemLimitMiB:        sysInfo.MemLimitMiB,
+		CPUAvg1Min:         math.Round(sysInfo.CPUAvg1Min*100) / 100,
+		CPUAvg5Min:         math.Round(sysInfo.CPUAvg5Min*100) / 100,
+		CPUAvg15Min:        math.Round(sysInfo.CPUAvg15Min*100) / 100,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -269,7 +272,7 @@ func (a *RESTApiService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/docker/dns", a.GetDockerDNS).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/docker/creds-helper", a.GetDockerCredsHelper).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/ssh/channels", a.GetSSHChannels).Methods(http.MethodGet)
-	apiRouter.HandleFunc("/tools/uptime", a.GetUptime).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
 	a.logRoutes(router)
 	return router
 }

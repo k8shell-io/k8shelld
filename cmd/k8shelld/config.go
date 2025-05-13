@@ -14,6 +14,7 @@ import (
 	"github.com/invopop/jsonschema"
 	"github.com/xeipuuv/gojsonschema"
 
+	"github.com/k8shell-io/k8shelld/pkg/common"
 	"github.com/k8shell-io/k8shelld/pkg/server"
 )
 
@@ -80,7 +81,7 @@ func getOptions(version string, commit_id string) (*Options, error) {
 	// Default options
 	options := &Options{
 		ApiTCPPort:     2822,
-		UnixSocketPath: "/var/run/k8shelld.sock",
+		UnixSocketPath: common.DefaultRESTAPIUnixSocket,
 		ConfigPath:     "/etc/k8shell/config.yaml",
 		ServerKeyPath:  "/etc/k8shell/server.key",
 		ServerCertPath: "/etc/k8shell/server.crt",
