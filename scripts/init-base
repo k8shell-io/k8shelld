@@ -1,0 +1,17 @@
+#!/bin/sh
+# @author: bruckins, https://k8shell.io
+
+echo "Initializing k8shell base tools"
+
+SOURCE="/k8shell/dist"
+DEST="/usr/local/bin"
+
+[ ! -f "$SOURCE/k8shelld" ] && echo "k8shelld not found in $SOURCE" && exit 1
+[ ! -f "$SOURCE/kbox" ] && echo "kbox not found in $SOURCE" && exit 1
+
+echo "Copying k8shelld and kbox to $DEST"
+cp $SOURCE/k8shelld $DEST/k8shelld || exit 1
+cp $SOURCE/kbox $DEST/kbox || exit 1
+cp $SOURCE/sftp $DEST/sftp || exit 1
+
+echo "Initialization complete"
