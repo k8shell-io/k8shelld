@@ -97,7 +97,7 @@ func CreateUser(user User) error {
 	// Enable passwordless sudo for the main user
 	if user.Sudo {
 		if err := enablePasswordlessSudo(ctx, user.Username); err != nil {
-			return fmt.Errorf("error enabling passwordless sudo: %v", err)
+			logger.Error("Failed to enable passwordless sudo for user %s: %v", user.Username, err)
 		}
 	}
 
