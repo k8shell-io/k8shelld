@@ -20,7 +20,7 @@ image:
 	cp -r go.mod go.sum grpc pkg cmd sftp scripts docker/files && \
 	cd docker && docker build --build-arg VERSION=$$version \
 		--build-arg COMMIT_ID=$$(git rev-parse --short HEAD) -t $(REPO)/$$(cat ./BUILD) .
-	cd docker && docker push $(REPO)/$$(cat ./BUILD)
+	#cd docker && docker push $(REPO)/$$(cat ./BUILD)
 
 protoc:
 	echo "Generating Go code from proto file..."
