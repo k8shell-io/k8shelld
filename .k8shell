@@ -9,6 +9,11 @@ blueprint:
       cpu: 8
       memory: 8Gi
 
+  env:
+    set:
+      - name: TEST_ENV
+        value: test_value 
+
   dind:
     enabled: true
     docker_dns:
