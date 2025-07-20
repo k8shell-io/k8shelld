@@ -1,0 +1,28 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Go k8shelld",
+            "type": "go",
+            "request": "launch",
+            "program": "cmd/k8shelld",
+            "args": [
+                "--config",
+                "--test/config.yaml",
+                "config/config.yaml",
+                "--port",
+                "2830",
+                "--socket",
+                "/tmp/test.sock",
+                "--server-cert",
+                "test/server.crt",
+                "--server-key",
+                "test/server.key",
+                "--test"
+            ],
+        }
+    ]
+}
