@@ -27,8 +27,8 @@ protoc:
 	cd grpc && \
 	rm -fr generated-go && \
 	protoc --go_out=. --go-grpc_out=. --go_opt=Mk8shelld.proto=generated-go/k8shelldpb --go-grpc_opt=Mk8shelld.proto=generated-go/k8shelldpb   k8shelld.proto
-	cd grpc && python \
-		-m grpc_tools.protoc \
-		--python_out=../../k8shell-proxy/k8shell_proxy/grpc_generated \
-		--grpc_python_out=../../k8shell-proxy/k8shell_proxy/grpc_generated \
-		-I . k8shelld.proto
+# 	cd grpc && python \
+# 		-m grpc_tools.protoc \
+# 		--python_out=../../k8shell-proxy/k8shell_proxy/grpc_generated \
+# 		--grpc_python_out=../../k8shell-proxy/k8shell_proxy/grpc_generated \
+# 		-I . k8shelld.proto
