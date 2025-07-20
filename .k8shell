@@ -1,6 +1,6 @@
 blueprint:
-  name: identity
-  template: default
+  name: k8shelld
+  template: development
   image: ${WORKSPACE_REGISTRY}/workspaces/dev:0.8-1.6
   sudo: true
   network_policy: workspace
@@ -9,26 +9,10 @@ blueprint:
       cpu: 8
       memory: 8Gi
 
-  env:
-    set:
-      - name: TEST_ENV
-        value: test_value 
-
-  dind:
-    enabled: true
-    docker_dns:
-      enabled: true
-      resolver:
-        cluster_fqdn: true
-
   init_scripts:
     files:
-      - clone_repo@&: |
+      - init_repo@&: |
           #!/bin/sh
-          cd $HOME/workspace
-          git clone https://u:${GITHUB_TOKEN}@github.com/k8shell-io/k8shelld.git
-          git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
-
           go env -w GOPRIVATE=github.com/k8shell-io/*
           cd $HOME/workspace/k8shelld
           export GOPATH="$HOME/go"
