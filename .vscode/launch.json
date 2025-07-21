@@ -9,10 +9,10 @@
             "type": "go",
             "request": "launch",
             "program": "cmd/k8shelld",
+            "cwd": "${workspaceFolder}",
             "args": [
                 "--config",
-                "--test/config.yaml",
-                "config/config.yaml",
+                "test/config.yaml",
                 "--port",
                 "2830",
                 "--socket",
@@ -22,6 +22,18 @@
                 "--server-key",
                 "test/server.key",
                 "--test"
+            ],
+        },
+        {
+            "name": "Go kbox",
+            "type": "go",
+            "request": "launch",
+            "program": "cmd/kbox",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "--socket",
+                "/tmp/test.sock",
+                "logs"
             ],
         }
     ]

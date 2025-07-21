@@ -66,7 +66,7 @@ func NewRESTAPI(apiServerToken string, unixSocketPath string, user User, server 
 func (a *RESTApiService) initializeRouter() *mux.Router {
 	router := mux.NewRouter()
 
-	router.Use(a.loggingMiddleware)
+	//router.Use(a.loggingMiddleware)
 
 	// Add token middleware
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
@@ -77,6 +77,7 @@ func (a *RESTApiService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/docker/creds-helper", a.GetDockerCredsHelper).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/ssh/channels", a.GetSSHChannels).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/logs", a.GetLogs).Methods(http.MethodGet)
 	a.logRoutes(router)
 	return router
 }
@@ -283,6 +284,25 @@ func (a *RESTApiService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 	w.WriteHeader(http.StatusOK)
+}
+
+func (a *RESTApiService) GetLogs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// stream all logs as NDJSON (newline-delimited JSON)
+	logs := log.LogStore.GetLogs("")
+	for _, entry := range logs {
+		fmt.Fprintln(w, entry)
+		flusher.Flush()
+	}
 }
 
 func (a *RESTApiService) Handler(ctx context.Context) {

@@ -7,10 +7,10 @@ system:
 
 # workspace user
 mainUser:
-  username: vitvatom
-  fullname: Tomáš Vitvar
-  uid: 252553
-  gid: 252553
+  username: bruckins
+  fullname: Bruck Ins
+  uid: 166548839
+  gid: 166548839
   shell: /bin/bash
   sudo: True
 

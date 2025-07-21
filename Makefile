@@ -17,7 +17,7 @@ image:
 	@mkdir -p docker/files
 	version=$$(git describe --tags --match '*' | cut -d'-' -f1-2) && \
 	echo -n "k8shell-base/k8shelld:$$version" > docker/BUILD && \
-	cp -r go.mod go.sum grpc pkg cmd sftp scripts docker/files && \
+	cp -r go.mod go.sum grpc internal cmd sftp scripts docker/files && \
 	cd docker && docker build --build-arg VERSION=$$version \
 		--build-arg COMMIT_ID=$$(git rev-parse --short HEAD) -t $(REPO)/$$(cat ./BUILD) .
 	#cd docker && docker push $(REPO)/$$(cat ./BUILD)

@@ -27,7 +27,7 @@ type MemoryLogStore struct {
 	cap     int
 }
 
-var logStore = NewMemoryLogStore(1000)
+var LogStore = NewMemoryLogStore(1000)
 
 func NewMemoryLogStore(capacity int) *MemoryLogStore {
 	return &MemoryLogStore{
@@ -89,7 +89,7 @@ func NewLogger(component string) *zerolog.Logger {
 	if !JsonLogger {
 		output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
 	} else {
-		output = io.MultiWriter(os.Stdout, logStore)
+		output = io.MultiWriter(os.Stdout, LogStore)
 	}
 
 	logger := zerolog.New(output).
