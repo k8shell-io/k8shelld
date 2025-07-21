@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/k8shell-io/k8shelld/pkg/common"
+	"github.com/k8shell-io/k8shelld/internal/common"
+	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/rs/zerolog"
 )
 
 const APIServerBaseUrl = "http://api-internal/api/v1"
@@ -23,7 +25,7 @@ type RESTApiService struct {
 	apiServerToken string // Token for API server authentication
 	unixSocketPath string
 	user           User
-	logger         *Logger
+	logger         *zerolog.Logger
 	server         *Server
 }
 
@@ -49,7 +51,7 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 
 // NewRESTAPI creates a new REST API service
 func NewRESTAPI(apiServerToken string, unixSocketPath string, user User, server *Server) (*RESTApiService, error) {
-	logger := NewLogger("api")
+	logger := log.NewLogger("api")
 
 	return &RESTApiService{
 		apiServerToken: apiServerToken,
@@ -58,6 +60,47 @@ func NewRESTAPI(apiServerToken string, unixSocketPath string, user User, server 
 		logger:         logger,
 		server:         server,
 	}, nil
+}
+
+// Initialize the router
+func (a *RESTApiService) initializeRouter() *mux.Router {
+	router := mux.NewRouter()
+
+	router.Use(a.loggingMiddleware)
+
+	// Add token middleware
+	apiRouter := router.PathPrefix("/api/v1").Subrouter()
+
+	// Define API endpoints
+	apiRouter.HandleFunc("/docker/dns", a.UpdateDockerDNS).Methods(http.MethodPatch)
+	apiRouter.HandleFunc("/docker/dns", a.GetDockerDNS).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/docker/creds-helper", a.GetDockerCredsHelper).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/ssh/channels", a.GetSSHChannels).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
+	a.logRoutes(router)
+	return router
+}
+
+// logRoutes logs all registered routes in the router
+func (a *RESTApiService) logRoutes(router *mux.Router) {
+	err := router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+		path, err := route.GetPathTemplate()
+		if err != nil {
+			path = "<undefined>"
+		}
+
+		methods, err := route.GetMethods()
+		if err != nil {
+			methods = []string{"<any>"}
+		}
+
+		a.logger.Debug().Msgf("Route: %s Methods: %v", path, methods)
+		return nil
+	})
+
+	if err != nil {
+		a.logger.Info().Msgf("Error walking routes: %v", err)
+	}
 }
 
 // MakeApiServerRequest makes an HTTP request to the upstream API server
@@ -116,36 +159,11 @@ func (a *RESTApiService) MakeApiServerRequest(method string, url string, headers
 // Middleware to log requests and responses
 func (a *RESTApiService) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		a.logger.Debug("Request: method %s, path %s", r.Method, r.URL.Path)
+		a.logger.Debug().Msgf("Request: method %s, path %s", r.Method, r.URL.Path)
 		rec := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		a.logger.Debug("Response: status %d, body: %s", rec.statusCode, rec.body.String())
+		a.logger.Debug().Msgf("Response: status %d, body: %s", rec.statusCode, rec.body.String())
 	})
-}
-
-func (a *RESTApiService) LogMessage(w http.ResponseWriter, r *http.Request) {
-	var message LogMessageRequest
-
-	err := json.NewDecoder(r.Body).Decode(&message)
-	if err != nil {
-		a.logger.Error("Invalid request body: %v", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-	_log := NewLogger(message.Component)
-	if message.Level == "info" {
-		_log.Info("%s", message.Message)
-	} else if message.Level == "error" {
-		_log.Error("%s", message.Message)
-	} else if message.Level == "debug" {
-		_log.Debug("%s", message.Message)
-	} else if message.Level == "warn" {
-		_log.Warn("%s", message.Message)
-	} else {
-		http.Error(w, "Invalid log level", http.StatusBadRequest)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func (a *RESTApiService) UpdateDockerDNS(w http.ResponseWriter, r *http.Request) {
@@ -153,7 +171,7 @@ func (a *RESTApiService) UpdateDockerDNS(w http.ResponseWriter, r *http.Request)
 
 	err := json.NewDecoder(r.Body).Decode(&dnsRequest)
 	if err != nil {
-		a.logger.Error("Invalid request body: %v", err)
+		a.logger.Error().Msgf("Invalid request body: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -203,7 +221,7 @@ func (a *RESTApiService) GetDockerCredsHelper(w http.ResponseWriter, r *http.Req
 
 	creds, err := a.MakeApiServerRequest("GET", url, headers)
 	if err != nil {
-		a.logger.Warn("Cannot retrieve address for docker credential helper: %v", err)
+		a.logger.Warn().Msgf("Cannot retrieve address for docker credential helper: %v", err)
 		http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
 		return
 	}
@@ -216,7 +234,7 @@ func (a *RESTApiService) GetDockerCredsHelper(w http.ResponseWriter, r *http.Req
 func (a *RESTApiService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {
 	response, err := a.server.grpcApi.getAllChannelStoreData()
 	if err != nil {
-		a.logger.Error("Failed to get channels data: %v", err)
+		a.logger.Error().Msgf("Failed to get channels data: %v", err)
 		http.Error(w, "Failed to get channels data", http.StatusInternalServerError)
 		return
 	}
@@ -231,7 +249,7 @@ func (a *RESTApiService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 
 	uptime, err := GetStartTimeFromProcStat()
 	if err != nil {
-		a.logger.Error("Failed to get uptime: %v", err)
+		a.logger.Error().Msgf("Failed to get uptime: %v", err)
 		http.Error(w, "Failed to get uptime", http.StatusInternalServerError)
 		return
 	}
@@ -267,47 +285,6 @@ func (a *RESTApiService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// Initialize the router
-func (a *RESTApiService) initializeRouter() *mux.Router {
-	router := mux.NewRouter()
-
-	router.Use(a.loggingMiddleware)
-
-	// Add token middleware
-	apiRouter := router.PathPrefix("/api/v1").Subrouter()
-
-	// Define API endpoints
-	apiRouter.HandleFunc("/log", a.LogMessage).Methods(http.MethodPost)
-	apiRouter.HandleFunc("/docker/dns", a.UpdateDockerDNS).Methods(http.MethodPatch)
-	apiRouter.HandleFunc("/docker/dns", a.GetDockerDNS).Methods(http.MethodGet)
-	apiRouter.HandleFunc("/docker/creds-helper", a.GetDockerCredsHelper).Methods(http.MethodGet)
-	apiRouter.HandleFunc("/ssh/channels", a.GetSSHChannels).Methods(http.MethodGet)
-	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
-	a.logRoutes(router)
-	return router
-}
-
-func (a *RESTApiService) logRoutes(router *mux.Router) {
-	err := router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
-		path, err := route.GetPathTemplate()
-		if err != nil {
-			path = "<undefined>"
-		}
-
-		methods, err := route.GetMethods()
-		if err != nil {
-			methods = []string{"<any>"}
-		}
-
-		a.logger.Debug("Route: %s Methods: %v", path, methods)
-		return nil
-	})
-
-	if err != nil {
-		a.logger.Info("Error walking routes: %v", err)
-	}
-}
-
 func (a *RESTApiService) Handler(ctx context.Context) {
 	router := a.initializeRouter()
 	if a.unixSocketPath != "" {
@@ -319,30 +296,30 @@ func (a *RESTApiService) manageUnixSocket(ctx context.Context, router http.Handl
 	for {
 		select {
 		case <-ctx.Done():
-			a.logger.Info("Context cancelled, stopping Unix socket server loop.")
+			a.logger.Info().Msgf("Context cancelled, stopping Unix socket server loop.")
 			os.Remove(a.unixSocketPath)
 			return
 		default:
 		}
 
-		a.logger.Warn("Creating unix socket %s", a.unixSocketPath)
+		a.logger.Warn().Msgf("Creating unix socket %s", a.unixSocketPath)
 		unixListener, err := net.Listen("unix", a.unixSocketPath)
 		if err != nil {
-			a.logger.Error("Error creating Unix socket listener: %v", err)
+			a.logger.Error().Msgf("Error creating Unix socket listener: %v", err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
 
 		err = os.Chown(a.unixSocketPath, a.user.Uid, a.user.Gid)
 		if err != nil {
-			a.logger.Error("Error changing ownership of Unix socket: %v", err)
+			a.logger.Error().Msgf("Error changing ownership of Unix socket: %v", err)
 			unixListener.Close()
 			os.Remove(a.unixSocketPath)
 			time.Sleep(5 * time.Second)
 			continue
 		}
 
-		a.logger.Info("Unix socket server started at %s", a.unixSocketPath)
+		a.logger.Info().Msgf("Unix socket server started at %s", a.unixSocketPath)
 
 		server := &http.Server{
 			Handler: router,
@@ -356,15 +333,15 @@ func (a *RESTApiService) manageUnixSocket(ctx context.Context, router http.Handl
 
 		select {
 		case <-ctx.Done():
-			a.logger.Info("Shutting down Unix socket server...")
+			a.logger.Info().Msgf("Shutting down Unix socket server...")
 			server.Shutdown(context.Background())
 			unixListener.Close()
 			return
 		case err := <-errCh:
 			if err != nil && err != http.ErrServerClosed {
-				a.logger.Error("Socket server error: %v", err)
+				a.logger.Error().Msgf("Socket server error: %v", err)
 			}
-			a.logger.Warn("Unix socket server terminated. Restarting...")
+			a.logger.Warn().Msg("Unix socket server terminated. Restarting...")
 			unixListener.Close()
 			time.Sleep(5 * time.Second)
 			continue

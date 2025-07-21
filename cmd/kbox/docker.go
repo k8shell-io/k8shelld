@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/k8shell-io/k8shelld/pkg/client"
+	"github.com/k8shell-io/k8shelld/internal/client"
 
 	"github.com/spf13/cobra"
 )

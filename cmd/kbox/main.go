@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/k8shell-io/k8shelld/pkg/common"
+	"github.com/k8shell-io/k8shelld/internal/common"
 	"github.com/spf13/cobra"
 )
 

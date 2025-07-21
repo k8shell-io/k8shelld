@@ -7,7 +7,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/k8shell-io/k8shelld/pkg/common"
+	"github.com/k8shell-io/k8shelld/internal/common"
 )
 
 // Custom HTTP client that communicates over a Unix socket

@@ -11,6 +11,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/rs/zerolog"
 )
 
 // Map of signal names to their corresponding syscall.Signal values
@@ -49,7 +52,7 @@ func getSignalValue(name string) (syscall.Signal, error) {
 }
 
 type ProcessWatcher struct {
-	logger            *Logger
+	logger            *zerolog.Logger
 	zombies           bool
 	orphans           bool
 	checkInterval     int
@@ -74,7 +77,7 @@ func AddPIDIgnoreTerminate(pid int) {
 
 func NewProcessWatcher(terminateOrphans bool, reapZombies bool, checkInterval int, excludePatterns []string) *ProcessWatcher {
 	p := &ProcessWatcher{
-		logger:            NewLogger("process-watcher"),
+		logger:            log.NewLogger("process-watcher"),
 		ignoreSIGHUPTable: make(map[int]bool),
 		orphans:           terminateOrphans,
 		zombies:           reapZombies,
@@ -85,7 +88,7 @@ func NewProcessWatcher(terminateOrphans bool, reapZombies bool, checkInterval in
 	for _, exclude := range excludePatterns {
 		pattern, err := regexp.Compile(exclude)
 		if err != nil {
-			p.logger.Warn("Invalid exclude pattern '%s': %v", exclude, err)
+			p.logger.Warn().Msgf("Invalid exclude pattern '%s': %v", exclude, err)
 		}
 		p.excludePatterns = append(p.excludePatterns, pattern)
 	}
@@ -106,7 +109,7 @@ func (p *ProcessWatcher) Handler(ctx context.Context) {
 			for {
 				select {
 				case <-ctx.Done():
-					p.logger.Info("ProcessWatcher: Stopping orphan termination loop")
+					p.logger.Info().Msgf("ProcessWatcher: Stopping orphan termination loop")
 					return
 				case <-ticker.C:
 					p.terminateOrphans()
@@ -119,7 +122,7 @@ func (p *ProcessWatcher) Handler(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			p.logger.Info("ProcessWatcher: Context cancelled, stopping signal handler")
+			p.logger.Info().Msgf("ProcessWatcher: Context cancelled, stopping signal handler")
 			return
 		case sig := <-sigChan:
 			switch sig {
@@ -189,7 +192,7 @@ func (p *ProcessWatcher) reapZombies() {
 		if pid <= 0 || err != nil {
 			break
 		}
-		p.logger.Info("Reaped zombie process PID %d", pid)
+		p.logger.Info().Msgf("Reaped zombie process PID %d", pid)
 	}
 }
 
@@ -197,7 +200,7 @@ func (p *ProcessWatcher) terminateOrphans() {
 	validPIDs := make(map[int]bool)
 	files, err := os.ReadDir("/proc")
 	if err != nil {
-		p.logger.Error("Failed to read /proc: %v", err)
+		p.logger.Error().Msgf("Failed to read /proc: %v", err)
 		return
 	}
 
@@ -217,7 +220,7 @@ func (p *ProcessWatcher) terminateOrphans() {
 		found := false
 		for _, ignorePID := range IgnorePIDsTerminate {
 			if pid == ignorePID {
-				p.logger.Debug("Ignoring PID %d, in ignore list", pid)
+				p.logger.Debug().Msgf("Ignoring PID %d, in ignore list", pid)
 				p.ignoreSIGHUPTable[pid] = true
 				found = true
 				break
@@ -230,7 +233,7 @@ func (p *ProcessWatcher) terminateOrphans() {
 
 		info, err := p.getProcessInfo(pid)
 		if err != nil {
-			p.logger.Error("Failed to get process info for PID %d: %v", pid, err)
+			p.logger.Error().Msgf("Failed to get process info for PID %d: %v", pid, err)
 			continue
 		}
 
@@ -238,7 +241,7 @@ func (p *ProcessWatcher) terminateOrphans() {
 			// Check if the process group leader has the SIGHUP signal ignored
 			if info.ignoreSIGHUP {
 				p.ignoreSIGHUPTable[pid] = true
-				p.logger.Debug("Ignoring PID %d, SigIgn set", pid)
+				p.logger.Debug().Msgf("Ignoring PID %d, SigIgn set", pid)
 				continue
 			}
 
@@ -246,7 +249,7 @@ func (p *ProcessWatcher) terminateOrphans() {
 			found := false
 			for _, pattern := range p.excludePatterns {
 				if pattern.MatchString(info.cmdline) {
-					p.logger.Info("Excluding orphaned PID %d, cmdline: %s, pattern: %s", pid, info.cmdline, pattern.String())
+					p.logger.Info().Msgf("Excluding orphaned PID %d, cmdline: %s, pattern: %s", pid, info.cmdline, pattern.String())
 					p.ignoreSIGHUPTable[pid] = true
 					found = true
 					break
@@ -259,14 +262,14 @@ func (p *ProcessWatcher) terminateOrphans() {
 			// Terminate the process group
 			err = syscall.Kill(-pid, syscall.SIGHUP)
 			if err == nil {
-				p.logger.Info("Sent SIGHUP to orphaned process group PID %d", pid)
+				p.logger.Info().Msgf("Sent SIGHUP to orphaned process group PID %d", pid)
 			} else {
 				err = syscall.Kill(pid, syscall.SIGHUP)
 				if err != nil {
-					p.logger.Error("Failed to send SIGHUP to PID %d: %v, sending SIGKILL...", pid, err)
+					p.logger.Error().Msgf("Failed to send SIGHUP to PID %d: %v, sending SIGKILL...", pid, err)
 					err = syscall.Kill(pid, syscall.SIGKILL)
 					if err != nil {
-						p.logger.Error("Failed to send SIGKILL to PID %d: %v", pid, err)
+						p.logger.Error().Msgf("Failed to send SIGKILL to PID %d: %v", pid, err)
 					}
 				}
 			}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/grpc/generated-go/k8shelldpb"
+	"github.com/k8shell-io/k8shelld/internal/log"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -175,19 +176,19 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 		return fmt.Errorf("failed to get port-forward ID: %v", err)
 	}
 
-	logger := NewLogger("grpc-portforward")
+	logger := log.NewLogger("grpc-portforward")
 
 	// The first request is the command
 	req, err := stream.Recv()
 	if err != nil {
-		return logger.ErrorR("Failed to receive command: %v", err)
+		return status.Errorf(codes.InvalidArgument, "failed to receive command: %v", err)
 	}
 
-	logger.Info("Port-forward request: %v", req)
+	logger.Info().Msgf("Port-forward request: %v", req)
 
 	dstReq, ok := req.Request.(*k8shelldpb.PortForwardRequest_Destination)
 	if !ok {
-		return logger.ErrorR("Invalid command request: %v", req)
+		return status.Errorf(codes.InvalidArgument, "invalid port-forward request: %v", req)
 	}
 
 	pf := &PortForwardData{
@@ -202,11 +203,11 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 
 	tcpConn, err := s.createTCPConnection(pf.Destination, pf.Port)
 	if err != nil {
-		return logger.ErrorR("Failed to create TCP connection: %v", err)
+		return status.Errorf(codes.Unavailable, "failed to create TCP connection: %v", err)
 	}
 	s.grpcApi.portForwardStore.Store(pf.Id, pf)
 
-	logger.Info("Port-forward started, id=%s, %s:%d", pf.Id, pf.Destination, pf.Port)
+	logger.Info().Msgf("Port-forward started, id=%s, %s:%d", pf.Id, pf.Destination, pf.Port)
 
 	go func() {
 		buf := make([]byte, DEFAULT_MAX_PACKET_SIZE)
@@ -215,9 +216,9 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 			n, err := tcpConn.Read(buf)
 			if err != nil {
 				if err == io.EOF {
-					logger.Info("TCP connection closed")
+					logger.Info().Msg("TCP connection closed")
 				} else {
-					logger.Error("Error reading from TCP connection: %v", err)
+					logger.Error().Msgf("Error reading from TCP connection: %v", err)
 				}
 				stream.Send(&k8shelldpb.PortForwardResponse{
 					Response: &k8shelldpb.PortForwardResponse_Terminate{Terminate: true}})
@@ -228,7 +229,7 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 			err = stream.Send(&k8shelldpb.PortForwardResponse{
 				Response: &k8shelldpb.PortForwardResponse_Data{Data: buf[:n]}})
 			if err != nil {
-				logger.ErrorR("Failed to send data to gRPC client: %v", err)
+				logger.Error().Msgf("Failed to send data to gRPC client: %v", err)
 				return
 			}
 			pf.BytesOut += uint64(n)
@@ -239,11 +240,11 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 		// Receive data from gRPC client
 		req, err := stream.Recv()
 		if err == io.EOF {
-			logger.Info("Client closed the stream")
+			logger.Info().Msg("Client closed the stream")
 			break
 		}
 		if err != nil {
-			logger.ErrorR("failed to receive: %v", err)
+			logger.Error().Msgf("failed to receive: %v", err)
 			break
 		}
 
@@ -253,13 +254,13 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 		case *k8shelldpb.PortForwardRequest_Data:
 			data := req.GetData()
 			if _, err := tcpConn.Write(data); err != nil {
-				logger.Error("Failed to write data to TCP connection: %v", err)
+				logger.Error().Msgf("Failed to write data to TCP connection: %v", err)
 				isError = true
 				break
 			}
 			pf.BytesIn += uint64(len(data))
 		case *k8shelldpb.PortForwardRequest_Destination:
-			logger.Error("invalid request type, expected Data")
+			logger.Error().Msg("invalid request type, expected Data")
 			isError = true
 		}
 
@@ -273,7 +274,7 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 	tcpConn.Close()
 	pf.Deleted = time.Now()
 
-	logger.Info("Port-forward stream ended: id=%s, duration=%s, bytes_in=%d, bytes_out=%d",
+	logger.Info().Msgf("Port-forward stream ended: id=%s, duration=%s, bytes_in=%d, bytes_out=%d",
 		pf.Id, time.Since(pf.Created), pf.BytesIn, pf.BytesOut)
 
 	return nil

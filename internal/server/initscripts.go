@@ -9,6 +9,9 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/rs/zerolog"
 )
 
 const (
@@ -20,7 +23,7 @@ type InitScripts struct {
 	scriptsDir string
 	mu         sync.Mutex
 	pids       []int
-	logger     *Logger
+	logger     *zerolog.Logger
 }
 
 var ScriptsPIDs = []int{}
@@ -30,7 +33,7 @@ func NewInitScripts(user User, scriptsDir string) *InitScripts {
 	return &InitScripts{
 		user:       user,
 		scriptsDir: scriptsDir,
-		logger:     NewLogger("init-scripts"),
+		logger:     log.NewLogger("init-scripts"),
 		pids:       []int{},
 		mu:         sync.Mutex{},
 	}
@@ -62,15 +65,15 @@ func (is *InitScripts) checkScriptState(cmd *exec.Cmd, flagFile string, scriptNa
 	if status == 0 {
 		if flagFile != "" {
 			if err := os.WriteFile(flagFile, []byte{}, 0644); err == nil {
-				is.logger.Info("The script %s completed successfully. Flag file created at %s.", scriptName, flagFile)
+				is.logger.Info().Msgf("The script %s completed successfully. Flag file created at %s.", scriptName, flagFile)
 			} else {
-				is.logger.Error("Failed to create flag file for background script %s: %v", scriptName, err)
+				is.logger.Error().Msgf("Failed to create flag file for background script %s: %v", scriptName, err)
 			}
 		} else {
-			is.logger.Info("The script %s completed successfully.", scriptName)
+			is.logger.Info().Msgf("The script %s completed successfully.", scriptName)
 		}
 	} else {
-		is.logger.Error("The script %s failed with exit status %d.", scriptName, status)
+		is.logger.Error().Msgf("The script %s failed with exit status %d.", scriptName, status)
 	}
 }
 
@@ -81,7 +84,7 @@ func (is *InitScripts) runBackgroundScript(user User, scriptDir, scriptName, fla
 	AddPIDIgnoreTerminate(cmd.Process.Pid)
 
 	if err != nil {
-		is.logger.Error("Failed to start background script %s: %v", scriptName, err)
+		is.logger.Error().Msgf("Failed to start background script %s: %v", scriptName, err)
 		return
 	}
 	cmd.Wait()
@@ -99,12 +102,12 @@ func (is *InitScripts) runForegroundScript(user User, scriptDir, scriptName, fla
 
 	go func() {
 		for scannerOut.Scan() {
-			is.logger.Info("%s", scannerOut.Text())
+			is.logger.Info().Msgf("%s", scannerOut.Text())
 		}
 	}()
 	go func() {
 		for scannerErr.Scan() {
-			is.logger.Error("%s", scannerErr.Text())
+			is.logger.Error().Msgf("%s", scannerErr.Text())
 		}
 	}()
 
@@ -115,43 +118,43 @@ func (is *InitScripts) runForegroundScript(user User, scriptDir, scriptName, fla
 }
 
 func (is *InitScripts) Run() {
-	is.logger.Info("Running k8shell workspace init scripts in %s", is.scriptsDir)
+	is.logger.Info().Msgf("Running k8shell workspace init scripts in %s", is.scriptsDir)
 	if _, err := os.Stat(is.scriptsDir); os.IsNotExist(err) {
-		is.logger.Info("No init scripts found in %s directory", is.scriptsDir)
+		is.logger.Info().Msgf("No init scripts found in %s directory", is.scriptsDir)
 		return
 	}
 
 	flagDir := fmt.Sprintf(flagDirTemplate, is.user.HomeDir)
 	if err := os.MkdirAll(flagDir, 0755); err != nil {
-		is.logger.Fatal("Failed to create flag directory: %v", err)
+		is.logger.Fatal().Msgf("Failed to create flag directory: %v", err)
 	}
 
 	scripts, err := filepath.Glob(filepath.Join(is.scriptsDir, "__init_*"))
 	if err != nil {
-		is.logger.Error("Failed to list init scripts: %v", err)
+		is.logger.Error().Msgf("Failed to list init scripts: %v", err)
 		return
 	}
 
 	for _, scriptPath := range scripts {
 		scriptName := filepath.Base(scriptPath)
-		is.logger.Info("Processing %s", scriptName)
+		is.logger.Info().Msgf("Processing %s", scriptName)
 
 		flagFile := ""
 		if strings.Contains(scriptName, "__flag") {
 			flagFile = filepath.Join(flagDir, scriptName)
 			if _, err := os.Stat(flagFile); err == nil {
-				is.logger.Info("Flag file exists for %s. Skipping execution.", scriptName)
+				is.logger.Info().Msgf("Flag file exists for %s. Skipping execution.", scriptName)
 				continue
 			}
 		}
 
 		if strings.HasSuffix(scriptName, "__bg") {
-			is.logger.Info("Running %s in background.", scriptName)
+			is.logger.Info().Msgf("Running %s in background.", scriptName)
 			go is.runBackgroundScript(is.user, is.scriptsDir, scriptName, flagFile)
 		} else {
-			is.logger.Info("Running %s in foreground.", scriptName)
+			is.logger.Info().Msgf("Running %s in foreground.", scriptName)
 			is.runForegroundScript(is.user, is.scriptsDir, scriptName, flagFile)
 		}
 	}
-	is.logger.Info("All foreground init scripts completed. Background scripts may still be running.")
+	is.logger.Info().Msgf("All foreground init scripts completed. Background scripts may still be running.")
 }

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/grpc/generated-go/k8shelldpb"
+	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/rs/zerolog"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -57,20 +59,21 @@ func (s *RemoteOSServiceServer) GetUnixSocketData(ctx context.Context) (*Session
 }
 
 func (s *RemoteOSServiceServer) UnixSocket(stream k8shelldpb.RemoteOSService_UnixSocketServer) error {
-	logger := NewLogger("grpc-unixsocket")
+	logger := log.NewLogger("grpc-unixsocket")
 	uxid, err := s.GetUnixSocketID(stream.Context())
 	if err != nil {
-		return logger.ErrorR("Failed to get unix-socket: %v", err)
+		return status.Errorf(codes.InvalidArgument, "failed to get unixsocket-id: %v", err)
 	}
 
 	req, err := stream.Recv()
 	if err != nil {
-		return logger.ErrorR("Failed to receive unix socket request: %v", err)
+		return status.Errorf(codes.InvalidArgument, "failed to receive request: %v", err)
 	}
 
 	shellReq, ok := req.Request.(*k8shelldpb.UnixSocketRequest_StartRequest)
 	if !ok {
-		return logger.ErrorR("Invalid unix socket request, expected unix socket start request: %v", req)
+		return status.Errorf(codes.InvalidArgument,
+			"invalid unix socket request, expected unix socket start request: %v", req)
 	}
 
 	unixsocket := &unixSocketData{
@@ -84,30 +87,30 @@ func (s *RemoteOSServiceServer) UnixSocket(stream k8shelldpb.RemoteOSService_Uni
 
 	unixsocket.listener, err = net.ListenUnix("unix", &net.UnixAddr{Name: unixsocket.socketPath, Net: "unix"})
 	if err != nil {
-		return fmt.Errorf("failed to create Unix socket: %v", err)
+		return status.Errorf(codes.Internal, "failed to create Unix socket listener: %v", err)
 	}
 
 	// // Set the ownership of the Unix socket
 	if err := os.Chown(unixsocket.socketPath, s.grpcApi.user.Gid, s.grpcApi.user.Gid); err != nil {
-		return fmt.Errorf("failed to set ownership of Unix socket: %v", err)
+		return fmt.Errorf("failed to change ownership of Unix socket: %v", err)
 	}
 
 	// // Set the permissions of the Unix socket
 	if err := os.Chmod(unixsocket.socketPath, 0700); err != nil {
-		return fmt.Errorf("failed to set permissions of Unix socket: %v", err)
+		return fmt.Errorf("failed to change permissions of Unix socket: %v", err)
 	}
 
-	logger.Info("unix-socket listener started, id=%s, path=%s", unixsocket.Id, unixsocket.socketPath)
+	logger.Info().Msgf("unix-socket listener started, id=%s, path=%s", unixsocket.Id, unixsocket.socketPath)
 
 	s.grpcApi.unixSocketStore.Store(unixsocket.Id, unixsocket)
 	s.communicate(logger, unixsocket, stream)
 	unixsocket.Deleted = time.Now()
 
-	logger.Info("Unix socket stream ended, id=%s, path=%s", unixsocket.Id, unixsocket.socketPath)
+	logger.Info().Msgf("Unix socket stream ended, id=%s, path=%s", unixsocket.Id, unixsocket.socketPath)
 	return nil
 }
 
-func (s *RemoteOSServiceServer) communicate(logger *Logger, unixsocket *unixSocketData, stream k8shelldpb.RemoteOSService_UnixSocketServer) error {
+func (s *RemoteOSServiceServer) communicate(logger *zerolog.Logger, unixsocket *unixSocketData, stream k8shelldpb.RemoteOSService_UnixSocketServer) error {
 	buf := make([]byte, 1024)
 	stop := make(chan struct{})
 	defer close(stop)
@@ -120,19 +123,19 @@ func (s *RemoteOSServiceServer) communicate(logger *Logger, unixsocket *unixSock
 				return
 			default:
 				// Accept the connection from the client
-				logger.Info("Waiting for the client connection")
+				logger.Info().Msgf("Waiting for the client connection")
 				conn, err := unixsocket.listener.Accept()
 				if err != nil {
 					if err == io.EOF {
-						logger.Info("Unix listener closed")
+						logger.Info().Msg("Unix listener closed")
 					} else {
-						logger.Error("Failed to accept connection: %v", err)
+						logger.Error().Msgf("Failed to accept connection: %v", err)
 					}
 					s.sendUnixSocketTerminate(stream)
 					break
 				}
 
-				logger.Info("Client connected")
+				logger.Info().Msg("Client connected")
 
 				for {
 					unixsocket.mu.Lock()
@@ -146,9 +149,9 @@ func (s *RemoteOSServiceServer) communicate(logger *Logger, unixsocket *unixSock
 					n, err := conn.Read(buf)
 					if err != nil {
 						if err == io.EOF {
-							logger.Info("Client connection closed")
+							logger.Info().Msg("Client connection closed")
 						} else {
-							logger.Error("Error reading from unix socket: %v", err)
+							logger.Error().Msgf("Error reading from unix socket: %v", err)
 						}
 						break
 					} else {
@@ -156,7 +159,7 @@ func (s *RemoteOSServiceServer) communicate(logger *Logger, unixsocket *unixSock
 						if err := stream.Send(&k8shelldpb.UnixSocketResponse{
 							Response: &k8shelldpb.UnixSocketResponse_Data{Data: buf[:n]},
 						}); err != nil {
-							logger.Error("Failed to send data to the client: %v", err)
+							logger.Error().Msgf("Failed to send data to the client: %v", err)
 							break
 						}
 						unixsocket.BytesOut += uint64(n)
@@ -177,9 +180,9 @@ func (s *RemoteOSServiceServer) communicate(logger *Logger, unixsocket *unixSock
 		req, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				logger.Info("Client closed the stream")
+				logger.Info().Msg("Client closed the stream")
 			} else {
-				logger.Error("Failed to receive: %v", err)
+				logger.Error().Msgf("Failed to receive: %v", err)
 			}
 			break
 		}
@@ -191,14 +194,14 @@ func (s *RemoteOSServiceServer) communicate(logger *Logger, unixsocket *unixSock
 		if conn != nil {
 			data := req.GetData()
 			if _, err := conn.Write(data); err != nil {
-				logger.Error("Failed to write data to the unix socket: %v", err)
+				logger.Error().Msgf("Failed to write data to the unix socket: %v", err)
 				break
 			}
 			unixsocket.BytesIn += uint64(len(data))
 		}
 	}
 
-	logger.Info("Communication ended")
+	logger.Info().Msg("Communication ended")
 	unixsocket.listener.Close()
 	return nil
 }

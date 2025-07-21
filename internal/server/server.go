@@ -10,10 +10,13 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/rs/zerolog"
 )
 
 type Server struct {
-	logger    *Logger
+	logger    *zerolog.Logger
 	restApi   *RESTApiService
 	grpcApi   *GRPCApiService
 	dns       *DockerDNS
@@ -25,7 +28,7 @@ type Server struct {
 
 func NewServer(config *Config, keys *Keys, grpcApiListenPort int, serverKeyPath string, serverCertPath string,
 	keyLogFilePath string, restpApiUnixSocket string, defaultDNS string) (*Server, error) {
-	server := &Server{logger: NewLogger("k8shelld"), pprof: config.System.PProf, sysInfo: nil}
+	server := &Server{logger: log.NewLogger("k8shelld"), pprof: config.System.PProf, sysInfo: nil}
 	var err error
 
 	// Create GRPC API service
@@ -106,14 +109,14 @@ func (s *Server) Serve() {
 				s.sysInfoMu.Lock()
 				newInfo, err := UpdateSystemInfo(s.sysInfo)
 				if err != nil {
-					s.logger.Warn("Failed to update system info: %v", err)
+					s.logger.Warn().Msgf("Failed to update system info: %v", err)
 					s.sysInfoMu.Unlock()
 					continue
 				}
 				s.sysInfo = newInfo
 				s.sysInfoMu.Unlock()
 			case <-ctx.Done():
-				s.logger.Info("System info updater stopped.")
+				s.logger.Info().Msg("System info updater stopped.")
 				return
 			}
 		}
@@ -124,11 +127,11 @@ func (s *Server) Serve() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.logger.Info("Starting pprof on :6060")
+			s.logger.Info().Msg("Starting pprof on :6060")
 			if err := http.ListenAndServe("localhost:6060", nil); err != nil && err != http.ErrServerClosed {
-				s.logger.Error("pprof error: %v", err)
+				s.logger.Error().Msgf("pprof error: %v", err)
 			}
-			s.logger.Info("pprof stopped")
+			s.logger.Info().Msg("pprof stopped")
 		}()
 	}
 
@@ -136,9 +139,9 @@ func (s *Server) Serve() {
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 
 	sig := <-sigChan
-	s.logger.Info("Received signal: %s. Initiating shutdown...", sig)
+	s.logger.Info().Msgf("Received signal: %s. Initiating shutdown...", sig)
 	cancel()
 	wg.Wait()
 
-	s.logger.Info("Shutdown complete.")
+	s.logger.Info().Msgf("Shutdown complete.")
 }

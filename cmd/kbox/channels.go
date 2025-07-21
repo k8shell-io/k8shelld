@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/pkg/client"
-	"github.com/k8shell-io/k8shelld/pkg/table"
+	"github.com/k8shell-io/k8shelld/internal/client"
+	"github.com/k8shell-io/k8shelld/internal/table"
 	"github.com/spf13/cobra"
 )
 

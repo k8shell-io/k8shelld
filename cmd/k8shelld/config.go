@@ -14,8 +14,9 @@ import (
 	"github.com/invopop/jsonschema"
 	"github.com/xeipuuv/gojsonschema"
 
-	"github.com/k8shell-io/k8shelld/pkg/common"
-	"github.com/k8shell-io/k8shelld/pkg/server"
+	"github.com/k8shell-io/k8shelld/internal/common"
+	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/server"
 )
 
 // Options represents the command line options
@@ -205,7 +206,7 @@ func ValidateAndLoadConfig(configPath string, accessKey string) (*server.Config,
 	}
 
 	// Set the log level
-	err = server.SetLogLevel(config.System.LogLevel)
+	err = log.InitLogLevel(config.System.LogLevel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set log level: %v", err)
 	}

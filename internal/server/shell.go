@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/grpc/generated-go/k8shelldpb"
+	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/rs/zerolog"
 
 	"github.com/creack/pty"
 	"google.golang.org/grpc/codes"
@@ -93,7 +95,7 @@ func (s *RemoteOSServiceServer) GetSessionData(ctx context.Context) (*SessionDat
 // Shell is a gRPC method that starts a shell session. It is a bidirectional streaming RPC
 // that sends the shell output to the client and receives the client input to send to the shell.
 func (s *RemoteOSServiceServer) Shell(stream k8shelldpb.RemoteOSService_ShellServer) error {
-	logger := NewLogger("grpc-shell")
+	logger := log.NewLogger("grpc-shell")
 	sessionId, err := s.GetSessionID(stream.Context())
 	if err != nil {
 		return fmt.Errorf("failed to get session ID: %v", err)
@@ -106,7 +108,7 @@ func (s *RemoteOSServiceServer) Shell(stream k8shelldpb.RemoteOSService_ShellSer
 
 	shellReq, ok := req.Request.(*k8shelldpb.ShellRequest_StartRequest)
 	if !ok {
-		return logger.ErrorR("Invalid shell request, expected shell start request: %v", req)
+		return status.Errorf(codes.InvalidArgument, "invalid shell request: %v", req)
 	}
 
 	// Get the login shell for the user
@@ -142,7 +144,7 @@ func (s *RemoteOSServiceServer) Shell(stream k8shelldpb.RemoteOSService_ShellSer
 	session.Cmd.Env = append(newEnv, shellReq.StartRequest.SetEnvVars...)
 	session.Cmd.Dir = session.user.HomeDir
 
-	logger.Debug("env: %v", session.Cmd.Env)
+	logger.Debug().Msgf("env: %v", session.Cmd.Env)
 
 	// Set process attributes for the shell
 	session.Cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -159,10 +161,10 @@ func (s *RemoteOSServiceServer) Shell(stream k8shelldpb.RemoteOSService_ShellSer
 	defer func() {
 		s.cleanUpSession(session)
 		session.Deleted = time.Now()
-		logger.Info("Shell session %s ended", sessionId)
+		logger.Info().Msgf("Shell session %s ended", sessionId)
 	}()
 
-	logger.Info("Starting shell session %s, pty=%v", sessionId, shellReq.StartRequest.UsePty)
+	logger.Info().Msgf("Starting shell session %s, pty=%v", sessionId, shellReq.StartRequest.UsePty)
 
 	// Start the shell
 	if shellReq.StartRequest.UsePty {
@@ -197,7 +199,7 @@ func (s *RemoteOSServiceServer) cleanUpSession(session *SessionData) {
 
 // handlePtySession handles a shell session with PTY. It creates the PTY session, sets the width and height of the terminal,
 // reads data from the PTY and sends the data back to the client and vice versa.
-func (s *RemoteOSServiceServer) handlePtySession(logger *Logger, session *SessionData,
+func (s *RemoteOSServiceServer) handlePtySession(logger *zerolog.Logger, session *SessionData,
 	stream k8shelldpb.RemoteOSService_ShellServer, width uint32, height uint32) error {
 
 	var err error
@@ -222,16 +224,16 @@ func (s *RemoteOSServiceServer) handlePtySession(logger *Logger, session *Sessio
 			n, err := session.Ptmx.Read(buf)
 			if err != nil {
 				if err == io.EOF {
-					logger.Info("Terminal closed")
+					logger.Info().Msgf("Terminal closed")
 				} else {
-					logger.Error("Error reading from terminal: %v", err)
+					logger.Error().Msgf("Error reading from terminal: %v", err)
 				}
 				s.sendShellTerminate(stream)
 				return
 			}
 			err = stream.Send(&k8shelldpb.ShellResponse{Response: &k8shelldpb.ShellResponse_Data{Data: buf[:n]}})
 			if err != nil {
-				logger.Error("Failed to send data to client: %v", err)
+				logger.Error().Msgf("Failed to send data to client: %v", err)
 				return
 			}
 			session.BytesOut += uint64(n)
@@ -241,7 +243,7 @@ func (s *RemoteOSServiceServer) handlePtySession(logger *Logger, session *Sessio
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
-			logger.Info("Client closed the stream")
+			logger.Info().Msgf("Client closed the stream")
 			break
 		}
 		if err != nil {
@@ -261,7 +263,7 @@ func (s *RemoteOSServiceServer) handlePtySession(logger *Logger, session *Sessio
 
 // handleNonPtySession handles a shell session without PTY. It creates pipes for the stdin, stdout and stderr of the
 // shell process, reads data from the pipes and sends the data back to the client and vice versa.
-func (s *RemoteOSServiceServer) handleNonPtySession(logger *Logger, session *SessionData,
+func (s *RemoteOSServiceServer) handleNonPtySession(logger *zerolog.Logger, session *SessionData,
 	stream k8shelldpb.RemoteOSService_ShellServer) error {
 
 	var stdoutPipe io.ReadCloser
@@ -279,7 +281,7 @@ func (s *RemoteOSServiceServer) handleNonPtySession(logger *Logger, session *Ses
 		if stdinPipe != nil {
 			stdinPipe.Close()
 		}
-		logger.Debug("Pipes closed in session %s", session.Id)
+		logger.Debug().Msgf("Pipes closed in session %s", session.Id)
 	}()
 
 	stdoutPipe, err = session.Cmd.StdoutPipe()
@@ -308,18 +310,18 @@ func (s *RemoteOSServiceServer) handleNonPtySession(logger *Logger, session *Ses
 	go func() {
 		_, err = io.Copy(&streamWriter{stream: stream}, stdoutPipe)
 		if err != nil {
-			logger.Error("Error writing to stdout: %v", err)
+			logger.Error().Msgf("Error writing to stdout: %v", err)
 		}
-		logger.Debug("Closing stdout pipe, session %s", session.Id)
+		logger.Debug().Msgf("Closing stdout pipe, session %s", session.Id)
 		s.sendShellTerminate(stream)
 	}()
 
 	go func() {
 		_, err = io.Copy(&streamWriter{stream: stream}, stderrPipe)
 		if err != nil {
-			logger.Error("Error writing to stderr: %v", err)
+			logger.Error().Msgf("Error writing to stderr: %v", err)
 		}
-		logger.Debug("Closing stderr pipe, session %s", session.Id)
+		logger.Debug().Msgf("Closing stderr pipe, session %s", session.Id)
 		s.sendShellTerminate(stream)
 	}()
 
@@ -327,7 +329,7 @@ func (s *RemoteOSServiceServer) handleNonPtySession(logger *Logger, session *Ses
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
-			logger.Info("Client closed the stream")
+			logger.Info().Msgf("Client closed the stream")
 			break
 		}
 		if err != nil {
@@ -338,11 +340,12 @@ func (s *RemoteOSServiceServer) handleNonPtySession(logger *Logger, session *Ses
 		if data != nil {
 			_, writeErr := stdinPipe.Write(data)
 			if writeErr != nil {
-				logger.Error("Error writing to stdin: %v", writeErr)
+				logger.Error().Msgf("Error writing to stdin: %v", writeErr)
 				break
 			}
 		} else {
-			return logger.ErrorR("received empty data")
+			logger.Error().Msg("received empty data")
+			return fmt.Errorf("received empty data")
 		}
 	}
 
@@ -357,8 +360,8 @@ func (s *RemoteOSServiceServer) ResizeTerminal(ctx context.Context,
 		return nil, err
 	}
 
-	logger := NewLogger("grpc-shell")
-	logger.Debug("Resizing shell session %s, cols: %d, rows: %d", session.Id, req.Width, req.Height)
+	logger := log.NewLogger("grpc-shell")
+	logger.Debug().Msgf("Resizing shell session %s, cols: %d, rows: %d", session.Id, req.Width, req.Height)
 
 	pty.Setsize(session.Ptmx, &pty.Winsize{
 		Rows: uint16(req.Height),

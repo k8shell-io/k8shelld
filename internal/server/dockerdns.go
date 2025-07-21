@@ -10,7 +10,9 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
+	"github.com/k8shell-io/k8shelld/internal/log"
 	"github.com/miekg/dns"
+	"github.com/rs/zerolog"
 )
 
 const (
@@ -37,7 +39,7 @@ type DockerDNSCache struct {
 }
 
 type DockerDNS struct {
-	logger            *Logger
+	logger            *zerolog.Logger
 	server            *dns.Server
 	upstreamDNS       string
 	baseDomain        string
@@ -63,7 +65,7 @@ type DockerDNSResponse struct {
 func NewDockerDNS(fqdn, containerName, containerId, dnsNames bool, upstreamDNS string, searches []string,
 	defaultDNS string) (*DockerDNS, error) {
 	var d *DockerDNS = &DockerDNS{
-		logger:            NewLogger("docker-dns"),
+		logger:            log.NewLogger("docker-dns"),
 		server:            nil,
 		upstreamDNS:       upstreamDNS,
 		searches:          searches,
@@ -79,14 +81,14 @@ func NewDockerDNS(fqdn, containerName, containerId, dnsNames bool, upstreamDNS s
 
 	if d.upstreamDNS == "" || d.upstreamDNS == DNSListenIP {
 		d.upstreamDNS = defaultDNS
-		d.logger.Warn("Not a valid nameserver specified, using default DNS server %s", defaultDNS)
+		d.logger.Warn().Msgf("Not a valid nameserver specified, using default DNS server %s", defaultDNS)
 	}
 
 	if len(d.searches) > 0 {
 		d.baseDomain = d.searches[0]
 	}
 
-	d.logger.Info("Creating Docker DNS server, upstream DNS: %s, base domain: %s, searches: %v",
+	d.logger.Info().Msgf("Creating Docker DNS server, upstream DNS: %s, base domain: %s, searches: %v",
 		d.upstreamDNS, d.baseDomain, d.searches)
 
 	return d, nil
@@ -99,14 +101,14 @@ func (d *DockerDNS) Run() {
 		Net:  "udp",
 	}
 
-	d.logger.Info("Starting DNS server on %s", DNSListenIP+":"+DNSListenPort)
+	d.logger.Info().Msgf("Starting DNS server on %s", DNSListenIP+":"+DNSListenPort)
 	d.enabled = true
 
 	// Use a goroutine to listen for shutdown signals
 	go func() {
 		dns.HandleFunc(".", d.handleDNSRequest)
 		if err := d.server.ListenAndServe(); err != nil {
-			d.logger.Error("Failed to start DNS server: %v", err)
+			d.logger.Error().Msgf("Failed to start DNS server: %v", err)
 		}
 	}()
 }
@@ -114,7 +116,7 @@ func (d *DockerDNS) Run() {
 // Stop the DNS server
 func (d *DockerDNS) Stop() {
 	if d.server != nil {
-		d.logger.Info("Stopping DNS server")
+		d.logger.Info().Msg("Stopping DNS server")
 		d.server.Shutdown()
 	}
 }
@@ -122,7 +124,7 @@ func (d *DockerDNS) Stop() {
 // Disable the DNS server
 func (d *DockerDNS) Disable() {
 	if d.enabled {
-		d.logger.Info("Disabling container names resolution")
+		d.logger.Info().Msg("Disabling container names resolution")
 		d.enabled = false
 	}
 }
@@ -130,7 +132,7 @@ func (d *DockerDNS) Disable() {
 // Disable the DNS server
 func (d *DockerDNS) Enable() {
 	if !d.enabled {
-		d.logger.Info("Enabling container names resolution")
+		d.logger.Info().Msg("Enabling container names resolution")
 		d.enabled = true
 	}
 }
@@ -145,7 +147,7 @@ func (d *DockerDNS) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		// Check container mappings first
 		mappings, err := d.GetContainerMappings(DNSCacheMaxAge)
 		if err != nil {
-			d.logger.Error("Failed to get container mappings: %v", err)
+			d.logger.Error().Msgf("Failed to get container mappings: %v", err)
 		} else {
 			for ip, names := range mappings {
 				for _, n := range names {
@@ -168,11 +170,11 @@ func (d *DockerDNS) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	// Forward request to upstream DNS server
-	d.logger.Debug("Forwarding DNS request for %s to upstream DNS %s", r.Question[0].Name, d.upstreamDNS)
+	d.logger.Debug().Msgf("Forwarding DNS request for %s to upstream DNS %s", r.Question[0].Name, d.upstreamDNS)
 
 	resp, _, err := d.upstreamDNSClient.Exchange(r, d.upstreamDNS+":53")
 	if err != nil {
-		d.logger.Error("Upstream DNS lookup failed for %s: %v", r.Question[0].Name, err)
+		d.logger.Error().Msgf("Upstream DNS lookup failed for %s: %v", r.Question[0].Name, err)
 		m.SetRcode(r, dns.RcodeServerFailure)
 		w.WriteMsg(m)
 		return
@@ -209,7 +211,7 @@ func (d *DockerDNS) GetContainerMappings(maxage int) (map[string][]string, error
 	for _, container := range containers {
 		inspect, err := cli.ContainerInspect(ctx, container.ID)
 		if err != nil {
-			d.logger.Error("Failed to inspect container %s: %v", container.ID, err)
+			d.logger.Error().Msgf("Failed to inspect container %s: %v", container.ID, err)
 			continue
 		}
 

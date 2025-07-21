@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/k8shell-io/k8shelld/internal/log"
 )
 
 type Group struct {
@@ -44,8 +46,8 @@ func CreateUser(user User) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	logger := NewLogger("user-management")
-	logger.Info("Main user: username=%s, uid=%d, gid=%d, home=%s, shell=%s, sudo=%t, groups=%v",
+	logger := log.NewLogger("user-management")
+	logger.Info().Msgf("Main user: username=%s, uid=%d, gid=%d, home=%s, shell=%s, sudo=%t, groups=%v",
 		user.Username, user.Uid, user.Gid, user.HomeDir, user.Shell, user.Sudo, user.Groups)
 
 	// Check if the main group exists, and create it if it doesn't
@@ -55,7 +57,7 @@ func CreateUser(user User) error {
 		if err := addGroup(ctx, user.Username, user.Gid); err != nil {
 			return fmt.Errorf("failed to add the user main group: %v", err)
 		}
-		logger.Info("Main group created: %s (%d)", user.Username, user.Gid)
+		logger.Info().Msgf("Main group created: %s (%d)", user.Username, user.Gid)
 	}
 
 	// Check if the user exists, and create it if it doesn't
@@ -66,7 +68,7 @@ func CreateUser(user User) error {
 			fmt.Sprintf("/home/%s", user.Username), user.Shell); err != nil {
 			return fmt.Errorf("failed to add user: %v", err)
 		}
-		logger.Info("Main user created: %s (%d)", user.Username, user.Uid)
+		logger.Info().Msgf("Main user created: %s (%d)", user.Username, user.Uid)
 	}
 
 	// Add the user to the specified groups
@@ -78,14 +80,14 @@ func CreateUser(user User) error {
 				if err := addGroup(ctx, group.Name, group.Gid); err != nil {
 					return fmt.Errorf("failed to create group %v: %v", group, err)
 				}
-				logger.Debug("Group created: %v", group)
+				logger.Debug().Msgf("Group created: %v", group)
 			}
 			cmd := exec.CommandContext(ctx, "usermod", "-aG", strconv.Itoa(group.Gid), user.Username)
 			output, err := runCommand(ctx, cmd)
 			if err != nil {
 				return fmt.Errorf("failed to add user %s to group %v: %v, output: %s", user.Username, group, err, string(output))
 			}
-			logger.Debug("User %s added to group %v", user.Username, group)
+			logger.Debug().Msgf("User %s added to group %v", user.Username, group)
 		}
 	}
 
@@ -97,7 +99,7 @@ func CreateUser(user User) error {
 	// Enable passwordless sudo for the main user
 	if user.Sudo {
 		if err := enablePasswordlessSudo(ctx, user.Username); err != nil {
-			logger.Error("Failed to enable passwordless sudo for user %s: %v", user.Username, err)
+			logger.Error().Msgf("Failed to enable passwordless sudo for user %s: %v", user.Username, err)
 		}
 	}
 

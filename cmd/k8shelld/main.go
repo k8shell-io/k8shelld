@@ -5,7 +5,8 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/k8shell-io/k8shelld/pkg/server"
+	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/server"
 )
 
 func main() {
@@ -16,61 +17,61 @@ func main() {
 	}
 
 	if opts.test {
-		server.UseJSONFormatter = false
+		log.JsonLogger = false
 	}
-	logger := server.NewLogger("k8shelld")
-	logger.Debug("Options: %+v", opts)
+	logger := log.NewLogger("k8shelld")
+	logger.Debug().Msgf("Options: %+v", opts)
 
 	if !opts.test {
 		if os.Geteuid() != 0 {
-			logger.Fatal("You must be root to run k8shelld.")
+			logger.Fatal().Msg("You must be root to run k8shelld.")
 		}
 		if os.Getpid() != 1 {
-			logger.Fatal("k8shelld must run as PID 1.")
+			logger.Fatal().Msg("k8shelld must run as PID 1.")
 		}
 	}
 
-	logger.Info("Starting k8shelld, version: %s", server.K8SHELLD_VERSION)
+	logger.Info().Msgf("Starting k8shelld, version: %s", server.K8SHELLD_VERSION)
 
 	var keys = &server.Keys{A1Key: "", A2Key: ""}
 	if !opts.test {
 		keys, err = loadKeys()
 		if err != nil {
-			logger.Fatal("error loading keys: %v", err)
+			logger.Fatal().Msgf("error loading keys: %v", err)
 		}
 	} else {
-		logger.Info("Test mode, not loading keys")
+		logger.Info().Msg("Test mode, not loading keys")
 	}
 
 	config, err := ValidateAndLoadConfig(opts.ConfigPath, keys.A1Key)
 	if err != nil {
-		logger.Fatal("Error loading configuration: %v", err)
+		logger.Fatal().Msgf("Error loading configuration: %v", err)
 	}
-	logger.Info("Configuration loaded, file=%s", opts.ConfigPath)
-	logger.Debug("Configuration: %+v", config)
+	logger.Info().Msgf("Configuration loaded, file=%s", opts.ConfigPath)
+	logger.Debug().Msgf("Configuration: %+v", config)
 
 	if !opts.test {
 		err = exec.Command("kbox", "tools-init").Run()
 		if err != nil {
-			logger.Error("Error running kbox tools-init: %v", err)
+			logger.Error().Msgf("Error running kbox tools-init: %v", err)
 		}
 
 		if err := server.CreateUser(config.MainUser); err != nil {
-			logger.Fatal("Error creating main user: %v", err)
+			logger.Fatal().Msgf("Error creating main user: %v", err)
 		}
 
 		scripts := server.NewInitScripts(config.MainUser, opts.InitScriptsDir)
 		scripts.Run()
 	} else {
-		logger.Info("Test mode, not initializing kbox tools and not running init scripts")
+		logger.Info().Msg("Test mode, not initializing kbox tools and not running init scripts")
 	}
 
 	server, err := server.NewServer(config, keys, opts.ApiTCPPort, opts.ServerKeyPath,
 		opts.ServerCertPath, opts.KeyLogFilePath, opts.UnixSocketPath, opts.DefaultDNS)
 	if err != nil {
-		logger.Fatal("Error creating server: %v", err)
+		logger.Fatal().Msgf("Error creating server: %v", err)
 	}
 
 	server.Serve()
-	logger.Info("Exiting k8shelld")
+	logger.Info().Msg("Exiting k8shelld")
 }
