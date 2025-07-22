@@ -6,3 +6,4 @@ bin/kbox
 docker/BUILD
 docker/files
 __debug*
+kbox
