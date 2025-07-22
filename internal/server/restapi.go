@@ -331,26 +331,31 @@ func (a *RESTApiService) GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for {
-		entries, newOffset := log.LogStore.GetLogsSince(offset, component, level)
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+			entries, newOffset := log.LogStore.GetLogsSince(offset, component, level)
 
-		for _, entry := range entries {
-			b, err := json.Marshal(entry)
-			if err != nil {
-				a.logger.Error().Err(err).Msg("failed to encode log entry")
-				continue
+			for _, entry := range entries {
+				b, err := json.Marshal(entry)
+				if err != nil {
+					a.logger.Error().Err(err).Msg("failed to encode log entry")
+					continue
+				}
+				_, _ = fmt.Fprintln(w, string(b))
 			}
-			_, _ = fmt.Fprintln(w, string(b))
+
+			flusher.Flush()
+			offset = newOffset
+			n = 0
+
+			if !follow {
+				return
+			}
+
+			time.Sleep(100 * time.Millisecond)
 		}
-
-		flusher.Flush()
-		offset = newOffset
-		n = 0
-
-		if !follow {
-			break
-		}
-
-		time.Sleep(100 * time.Millisecond)
 	}
 }
 
