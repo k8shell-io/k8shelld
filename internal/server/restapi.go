@@ -66,7 +66,7 @@ func NewRESTAPI(apiServerToken string, unixSocketPath string, user User, server 
 func (a *RESTApiService) initializeRouter() *mux.Router {
 	router := mux.NewRouter()
 
-	//router.Use(a.loggingMiddleware)
+	router.Use(a.loggingMiddleware)
 
 	// Add token middleware
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
@@ -159,7 +159,17 @@ func (a *RESTApiService) MakeApiServerRequest(method string, url string, headers
 
 // Middleware to log requests and responses
 func (a *RESTApiService) loggingMiddleware(next http.Handler) http.Handler {
+	skipPaths := map[string]bool{
+		// we need to skip logs as otherwise http.Flusher will not work
+		"/api/v1/logs": true,
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if skipPaths[r.URL.Path] {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		a.logger.Debug().Msgf("Request: method %s, path %s", r.Method, r.URL.Path)
 		rec := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(rec, r)
@@ -291,17 +301,37 @@ func (a *RESTApiService) GetLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
+	component := r.URL.Query().Get("component")
+	level := r.URL.Query().Get("level")
+	follow := r.URL.Query().Get("follow") == "true"
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 		return
 	}
 
-	// stream all logs as NDJSON (newline-delimited JSON)
-	logs := log.LogStore.GetLogs("")
-	for _, entry := range logs {
-		fmt.Fprintln(w, entry)
+	offset := 0
+	for {
+		entries, newOffset := log.LogStore.GetLogsSince(offset, component, level)
+
+		for _, entry := range entries {
+			b, err := json.Marshal(entry)
+			if err != nil {
+				a.logger.Error().Err(err).Msg("failed to encode log entry")
+				continue
+			}
+			_, _ = fmt.Fprintln(w, string(b))
+		}
+
 		flusher.Flush()
+		offset = newOffset
+
+		if !follow {
+			break
+		}
+
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 

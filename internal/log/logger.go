@@ -18,7 +18,8 @@ var JsonLogger = true
 type logEntry struct {
 	Timestamp string `json:"time"`      // from zerolog
 	Component string `json:"component"` // extracted from JSON
-	Raw       string // full original log line
+	Level     string `json:"level"`     // log level, if available
+	Message   string `json:"message"`   // log message
 }
 
 type MemoryLogStore struct {
@@ -37,18 +38,10 @@ func NewMemoryLogStore(capacity int) *MemoryLogStore {
 }
 
 func (s *MemoryLogStore) Write(p []byte) (int, error) {
-	raw := string(p)
 	var entry logEntry
 
 	if err := json.Unmarshal(p, &entry); err != nil {
-		// fallback
-		entry = logEntry{
-			Timestamp: time.Now().Format(time.RFC3339),
-			Component: "unknown",
-			Raw:       raw,
-		}
-	} else {
-		entry.Raw = raw
+		return 0, fmt.Errorf("failed to unmarshal log entry: %w", err)
 	}
 
 	s.mu.Lock()
@@ -100,15 +93,21 @@ func NewLogger(component string) *zerolog.Logger {
 	return &logger
 }
 
-func (s *MemoryLogStore) GetLogs(component string) []string {
+// GetLogsSince returns new log entries from the given offset.
+func (s *MemoryLogStore) GetLogsSince(offset int, component, level string) ([]logEntry, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var logs []string
-	for _, entry := range s.entries {
-		if component == "" || entry.Component == component {
-			logs = append(logs, entry.Raw)
+	if offset < 0 || offset > len(s.entries) {
+		offset = len(s.entries) // start from current end if invalid
+	}
+
+	var logs []logEntry
+	for i := offset; i < len(s.entries); i++ {
+		entry := s.entries[i]
+		if (component == "" || entry.Component == component) && (level == "" || entry.Level == level) {
+			logs = append(logs, entry)
 		}
 	}
-	return logs
+	return logs, len(s.entries)
 }

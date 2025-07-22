@@ -23,11 +23,19 @@ type LogEntry struct {
 }
 
 var (
+	component  string
+	level      string
+	jsonFormat bool
 	wrapLines  bool
 	followLogs bool
+	noAnsi     bool
 )
 
 func init() {
+	LogsCmd.Flags().StringVarP(&component, "component", "c", "", "Filter logs by component")
+	LogsCmd.Flags().StringVarP(&level, "level", "l", "", "Filter logs by level (debug, info, warn, error, fatal)")
+	LogsCmd.Flags().BoolVarP(&jsonFormat, "json", "j", false, "Output logs in JSON format")
+	LogsCmd.Flags().BoolVar(&noAnsi, "no-ansi", false, "Disable ansi colors in output")
 	LogsCmd.Flags().BoolVarP(&wrapLines, "wrap", "w", false, "Wrap long lines instead of truncating")
 	LogsCmd.Flags().BoolVarP(&followLogs, "follow", "f", false, "Follow log output in real time")
 }
@@ -35,10 +43,36 @@ func init() {
 var LogsCmd = &cobra.Command{
 	Use:   "logs",
 	Short: "Display workspace logs",
-	Long:  "Display workspace logs. By default, returns buffered logs. Use -f to follow in real time.",
+	Long:  "Display workspace logs. Use -f to follow in real time.",
 
 	Run: func(cmd *cobra.Command, args []string) {
-		resp, err := client.MakeRequest("GET", "/logs", nil, nil)
+		// validation
+		if level != "" {
+			level = strings.ToLower(level)
+			if level != "debug" && level != "info" && level != "warn" &&
+				level != "error" && level != "fatal" {
+				fmt.Printf("Invalid log level: %s. Valid levels are: debug, info, warn, error, fatal\n", level)
+				return
+			}
+		}
+
+		// query string
+		queryString := ""
+		if component != "" {
+			queryString += fmt.Sprintf("component=%s&", component)
+		}
+		if level != "" {
+			queryString += fmt.Sprintf("level=%s&", level)
+		}
+		if followLogs {
+			queryString += "follow=true&"
+		}
+		if queryString != "" {
+			queryString = "?" + strings.TrimSuffix(queryString, "&")
+		}
+
+		// request logs
+		resp, err := client.MakeRequest("GET", "/logs"+queryString, nil, nil)
 		if err != nil {
 			fmt.Println("Error fetching logs:", err)
 			return
@@ -50,13 +84,21 @@ var LogsCmd = &cobra.Command{
 			return
 		}
 
-		scanner := bufio.NewScanner(resp.Body)
+		// display logs
+		if noAnsi {
+			color.NoColor = true
+		}
 
+		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
 			line := scanner.Text()
+			if jsonFormat {
+				fmt.Println(line)
+				continue
+			}
+
 			var entry LogEntry
 			if err := json.Unmarshal([]byte(line), &entry); err != nil {
-				fmt.Println(line) // fallback
 				continue
 			}
 			printColoredLog(entry)
@@ -64,30 +106,6 @@ var LogsCmd = &cobra.Command{
 
 		if err := scanner.Err(); err != nil {
 			fmt.Printf("Error reading logs: %v\n", err)
-		}
-
-		// If not following, return after initial stream ends
-		if !followLogs {
-			return
-		}
-
-		// follow: keep reading even after disconnection
-		resp, err = client.MakeRequest("GET", "/logs", nil, nil)
-		if err != nil {
-			fmt.Println("Error fetching logs for follow:", err)
-			return
-		}
-		defer resp.Body.Close()
-
-		scanner = bufio.NewScanner(resp.Body)
-		for scanner.Scan() {
-			line := scanner.Text()
-			var entry LogEntry
-			if err := json.Unmarshal([]byte(line), &entry); err != nil {
-				fmt.Println(line)
-				continue
-			}
-			printColoredLog(entry)
 		}
 	},
 }
@@ -123,7 +141,7 @@ func printColoredLog(entry LogEntry) {
 	}
 
 	coloredLevel := levelColor.Sprintf("%-3s", levelShort)
-	line := fmt.Sprintf("%s %s %s component=%s", timestamp, coloredLevel, entry.Message, entry.Component)
+	line := fmt.Sprintf("%s %s %s component=%s\n", timestamp, coloredLevel, entry.Message, entry.Component)
 
 	if wrapLines {
 		fmt.Print(line)

@@ -17,7 +17,7 @@ func main() {
 	}
 
 	if opts.test {
-		log.JsonLogger = false
+		//log.JsonLogger = false
 	}
 	logger := log.NewLogger("k8shelld")
 	logger.Debug().Msgf("Options: %+v", opts)
