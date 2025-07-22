@@ -98,8 +98,15 @@ func (s *MemoryLogStore) GetLogsSince(offset int, component, level string) ([]lo
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if offset < 0 || offset > len(s.entries) {
-		offset = len(s.entries) // start from current end if invalid
+	if offset >= len(s.entries) {
+		return nil, len(s.entries)
+	}
+
+	if offset < 0 {
+		offset = len(s.entries) + offset
+		if offset < 0 {
+			offset = 0
+		}
 	}
 
 	var logs []logEntry

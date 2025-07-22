@@ -29,6 +29,7 @@ var (
 	wrapLines  bool
 	followLogs bool
 	noAnsi     bool
+	lastN      int
 )
 
 func init() {
@@ -38,6 +39,7 @@ func init() {
 	LogsCmd.Flags().BoolVar(&noAnsi, "no-ansi", false, "Disable ansi colors in output")
 	LogsCmd.Flags().BoolVarP(&wrapLines, "wrap", "w", false, "Wrap long lines instead of truncating")
 	LogsCmd.Flags().BoolVarP(&followLogs, "follow", "f", false, "Follow log output in real time")
+	LogsCmd.Flags().IntVarP(&lastN, "last-n", "n", 0, "Display the last N log entries")
 }
 
 var LogsCmd = &cobra.Command{
@@ -66,6 +68,9 @@ var LogsCmd = &cobra.Command{
 		}
 		if followLogs {
 			queryString += "follow=true&"
+		}
+		if lastN > 0 {
+			queryString += fmt.Sprintf("lastN=%d&", lastN)
 		}
 		if queryString != "" {
 			queryString = "?" + strings.TrimSuffix(queryString, "&")

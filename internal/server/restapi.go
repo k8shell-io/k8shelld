@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -304,6 +305,19 @@ func (a *RESTApiService) GetLogs(w http.ResponseWriter, r *http.Request) {
 	component := r.URL.Query().Get("component")
 	level := r.URL.Query().Get("level")
 	follow := r.URL.Query().Get("follow") == "true"
+	lastN := r.URL.Query().Get("lastN")
+
+	var err error
+	var n int
+	if lastN != "" {
+		n, err = strconv.Atoi(lastN)
+		if err != nil || n < 0 {
+			http.Error(w, "Invalid 'lastN' parameter", http.StatusBadRequest)
+			return
+		}
+	} else {
+		n = 0
+	}
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -312,6 +326,10 @@ func (a *RESTApiService) GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	offset := 0
+	if n > 0 {
+		offset = -n
+	}
+
 	for {
 		entries, newOffset := log.LogStore.GetLogsSince(offset, component, level)
 
@@ -326,6 +344,7 @@ func (a *RESTApiService) GetLogs(w http.ResponseWriter, r *http.Request) {
 
 		flusher.Flush()
 		offset = newOffset
+		n = 0
 
 		if !follow {
 			break
