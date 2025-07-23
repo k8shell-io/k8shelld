@@ -115,7 +115,6 @@ func (is *InitScripts) Run() {
 // runScriptHelper executes a script with flag handling
 func (is *InitScripts) runScriptHelper(scriptPath string, flagDir string, foreground bool) {
 	scriptName := filepath.Base(scriptPath)
-	is.logger.Info().Msgf("Running script: %s", scriptName)
 
 	flagFile := ""
 	if strings.Contains(scriptName, "__flag") {
