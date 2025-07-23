@@ -77,94 +77,6 @@ func (is *InitScripts) checkScriptState(cmd *exec.Cmd, flagFile string, scriptNa
 	}
 }
 
-// runBackgroundScript executes a script in the background
-func (is *InitScripts) runBackgroundScript(user User, scriptDir, scriptName, flagFile string) {
-	cmd := NewCommand(fmt.Sprintf("%s/%s", scriptDir, scriptName), user)
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		is.logger.Error().Err(err).Msgf("Failed to get stdout pipe for script %s", scriptName)
-		return
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		is.logger.Error().Err(err).Msgf("Failed to get stderr pipe for script %s", scriptName)
-		return
-	}
-
-	if err := cmd.Start(); err != nil {
-		is.logger.Error().Err(err).Msgf("Failed to start background script %s", scriptName)
-		return
-	}
-
-	AddPIDIgnoreTerminate(cmd.Process.Pid)
-
-	scannerOut := bufio.NewScanner(stdout)
-	scannerErr := bufio.NewScanner(stderr)
-
-	go func() {
-		for scannerOut.Scan() {
-			is.logger.Debug().Msgf("out: script=%s, msg=%s", scriptName, scannerOut.Text())
-		}
-	}()
-	go func() {
-		for scannerErr.Scan() {
-			is.logger.Debug().Msgf("err: script=%s, msg=%s", scriptName, scannerErr.Text())
-		}
-	}()
-
-	if err != nil {
-		is.logger.Error().Msgf("Failed to start background script %s: %v", scriptName, err)
-		return
-	}
-	cmd.Wait()
-	is.checkScriptState(cmd, flagFile, scriptName)
-}
-
-// runForegroundScript executes a script in the foreground
-func (is *InitScripts) runForegroundScript(user User, scriptDir, scriptName, flagFile string) {
-	cmd := NewCommand(fmt.Sprintf("%s/%s", scriptDir, scriptName), user)
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		is.logger.Error().Err(err).Msgf("Failed to get stdout pipe for script %s", scriptName)
-		return
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		is.logger.Error().Err(err).Msgf("Failed to get stderr pipe for script %s", scriptName)
-		return
-	}
-
-	if err := cmd.Start(); err != nil {
-		is.logger.Error().Err(err).Msgf("Failed to start foreground script %s", scriptName)
-		return
-	}
-
-	AddPIDIgnoreTerminate(cmd.Process.Pid)
-
-	scannerOut := bufio.NewScanner(stdout)
-	scannerErr := bufio.NewScanner(stderr)
-
-	go func() {
-		for scannerOut.Scan() {
-			is.logger.Debug().Msgf("out: script=%s, msg=%s", scriptName, scannerOut.Text())
-		}
-	}()
-	go func() {
-		for scannerErr.Scan() {
-			is.logger.Debug().Msgf("err: script=%s, msg=%s", scriptName, scannerErr.Text())
-		}
-	}()
-
-	cmd.Start()
-	AddPIDIgnoreTerminate(cmd.Process.Pid)
-	cmd.Wait()
-	is.checkScriptState(cmd, flagFile, scriptName)
-}
-
 func (is *InitScripts) Run() {
 	is.logger.Info().Msgf("Running k8shell workspace init scripts in %s", is.scriptsDir)
 	if _, err := os.Stat(is.scriptsDir); os.IsNotExist(err) {
@@ -184,25 +96,82 @@ func (is *InitScripts) Run() {
 	}
 
 	for _, scriptPath := range scripts {
-		scriptName := filepath.Base(scriptPath)
-		is.logger.Info().Msgf("Processing %s", scriptName)
-
-		flagFile := ""
-		if strings.Contains(scriptName, "__flag") {
-			flagFile = filepath.Join(flagDir, scriptName)
-			if _, err := os.Stat(flagFile); err == nil {
-				is.logger.Info().Msgf("Flag file exists for %s. Skipping execution.", scriptName)
-				continue
-			}
-		}
-
-		if strings.HasSuffix(scriptName, "__bg") {
-			is.logger.Info().Msgf("Running %s in background.", scriptName)
-			go is.runBackgroundScript(is.user, is.scriptsDir, scriptName, flagFile)
-		} else {
-			is.logger.Info().Msgf("Running %s in foreground.", scriptName)
-			is.runForegroundScript(is.user, is.scriptsDir, scriptName, flagFile)
+		foreground := !strings.HasSuffix(scriptPath, "__bg")
+		if foreground {
+			is.runScriptHelper(scriptPath, flagDir, true)
 		}
 	}
+
+	for _, scriptPath := range scripts {
+		background := strings.HasSuffix(scriptPath, "__bg")
+		if background {
+			is.runScriptHelper(scriptPath, flagDir, false)
+		}
+	}
+
 	is.logger.Info().Msgf("All foreground init scripts completed. Background scripts may still be running.")
+}
+
+// runScriptHelper executes a script with flag handling
+func (is *InitScripts) runScriptHelper(scriptPath string, flagDir string, foreground bool) {
+	scriptName := filepath.Base(scriptPath)
+	is.logger.Info().Msgf("Running script: %s", scriptName)
+
+	flagFile := ""
+	if strings.Contains(scriptName, "__flag") {
+		flagFile = filepath.Join(flagDir, scriptName)
+		if _, err := os.Stat(flagFile); err == nil {
+			is.logger.Info().Msgf("Flag file exists for %s. Skipping execution.", scriptName)
+			return
+		}
+	}
+
+	if foreground {
+		is.logger.Info().Msgf("Running %s in foreground.", scriptName)
+		is.runScript(is.user, is.scriptsDir, scriptName, flagFile)
+	} else {
+		is.logger.Info().Msgf("Running %s in background.", scriptName)
+		go is.runScript(is.user, is.scriptsDir, scriptName, flagFile)
+	}
+}
+
+// runScript executes a script
+func (is *InitScripts) runScript(user User, scriptDir, scriptName, flagFile string) {
+	cmd := NewCommand(fmt.Sprintf("%s/%s", scriptDir, scriptName), user)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		is.logger.Error().Err(err).Msgf("Failed to get stdout pipe for script %s", scriptName)
+		return
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		is.logger.Error().Err(err).Msgf("Failed to get stderr pipe for script %s", scriptName)
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		is.logger.Error().Err(err).Msgf("Failed to start script %s", scriptName)
+		return
+	}
+
+	AddPIDIgnoreTerminate(cmd.Process.Pid)
+
+	scannerOut := bufio.NewScanner(stdout)
+	scannerErr := bufio.NewScanner(stderr)
+
+	go func() {
+		for scannerOut.Scan() {
+			is.logger.Debug().Msgf("out: script=%s, msg=%s", scriptName, scannerOut.Text())
+		}
+	}()
+	go func() {
+		for scannerErr.Scan() {
+			is.logger.Debug().Msgf("err: script=%s, msg=%s", scriptName, scannerErr.Text())
+		}
+	}()
+
+	cmd.Wait()
+	is.checkScriptState(cmd, flagFile, scriptName)
 }
