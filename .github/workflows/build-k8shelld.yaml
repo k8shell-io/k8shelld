@@ -9,7 +9,7 @@ on:
       - "v*"
 
 jobs:
-  build-identity:
+  build-k8shelld:
     runs-on: k8shell-runner
 
     env:
@@ -37,7 +37,7 @@ jobs:
         run: |
           mkdir -p docker/k8shelld/files
           cp -r go.mod go.sum grpc internal cmd sftp scripts -t docker/k8shelld/files/
-          echo -n "k8shell-base/k8shelld:$VERSION" > docker/identity/BUILD
+          echo -n "k8shell-base/k8shelld:$VERSION" > docker/k8shelld/BUILD
 
       - name: Load REPO_NAME from docker/k8shelld/BUILD
         run: echo "REPO_NAME=$(cat docker/k8shelld/BUILD)" >> $GITHUB_ENV
@@ -52,7 +52,7 @@ jobs:
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
-          context: docker/identity
+          context: docker/k8shelld
           tags: ${{ secrets.REGISTRY }}/${{ env.REPO_NAME }}
           push: true
           build-args: |
