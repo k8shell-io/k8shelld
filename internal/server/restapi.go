@@ -233,7 +233,7 @@ func (a *RESTApiService) GetDockerCredsHelper(w http.ResponseWriter, r *http.Req
 
 	creds, err := a.MakeApiServerRequest("GET", url, headers)
 	if err != nil {
-		a.logger.Warn().Msgf("Cannot retrieve address for docker credential helper: %v", err)
+		a.logger.Warn().Msgf("Cannot retrieve address for docker credential helper when calling upstream API %s: %v", url, err)
 		http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
 		return
 	}
