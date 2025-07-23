@@ -40,7 +40,7 @@ func NewInitScripts(user User, scriptsDir string) *InitScripts {
 }
 
 func NewCommand(cmdstr string, user User) *exec.Cmd {
-	cmd := exec.Command("/bin/sh", "-c", cmdstr)
+	cmd := exec.Command("/bin/bash", "-l", "-c", cmdstr)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
 			Uid: uint32(user.Uid),
