@@ -33,10 +33,22 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "COMMIT_ID=$COMMIT_ID" >> $GITHUB_ENV
 
-      - name: Build GRPC protos
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=31.1
+          PROTOC=protoc-$PROTOC_VERSION-linux-aarch_64.zip
+          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v31.1/$PROTOC
+          unzip -o $PROTOC -d /usr/local bin/protoc
+          unzip -o $PROTOC -d /usr/local 'include/*'
+          rm -f $PROTOC
+
+      - name: Install protoc Go plugins
         run: |
           go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
           go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+      - name: Build GRPC protos
+        run: |
           mkdir -p grpc
           cd grpc && \
           rm -fr generated-go && \
