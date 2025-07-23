@@ -1,0 +1,61 @@
+name: Build k8shelld image
+
+on:
+  push:
+    branches:
+      - "v0.10"
+      - "main"
+    tags:
+      - "v*"
+
+jobs:
+  build-identity:
+    runs-on: k8shell-runner
+
+    env:
+      GO111MODULE: on
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Get version and commit ID
+        run: |
+          VERSION=$(git describe --tags --match '*' | sed 's/-g.*//')
+          COMMIT_ID=$(git rev-parse --short HEAD)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "COMMIT_ID=$COMMIT_ID" >> $GITHUB_ENV
+
+      - name: Copy sources to docker context
+        run: |
+          mkdir -p docker/k8shelld/files
+          cp -r go.mod go.sum grpc internal cmd sftp scripts -t docker/k8shelld/files/
+          echo -n "k8shell-base/k8shelld:$VERSION" > docker/identity/BUILD
+
+      - name: Load REPO_NAME from docker/k8shelld/BUILD
+        run: echo "REPO_NAME=$(cat docker/k8shelld/BUILD)" >> $GITHUB_ENV
+
+      - name: Login to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.REGISTRY }}
+          username: ${{ secrets.HARBOR_USER }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/identity
+          tags: ${{ secrets.REGISTRY }}/${{ env.REPO_NAME }}
+          push: true
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            COMMIT_ID=${{ env.COMMIT_ID }}
+
