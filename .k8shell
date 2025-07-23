@@ -2,6 +2,7 @@ blueprint:
   name: k8shelld
   template: development
   image: ${WORKSPACE_REGISTRY}/workspaces/dev:0.8-1.6
+  shell: /bin/zsh
   sudo: true
   network_policy: workspace
   resources:
