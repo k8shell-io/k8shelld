@@ -38,8 +38,7 @@ jobs:
           PROTOC_VERSION=31.1
           PROTOC=protoc-$PROTOC_VERSION-linux-aarch_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v31.1/$PROTOC
-          unzip -o $PROTOC -d /usr/local bin/protoc
-          unzip -o $PROTOC -d /usr/local 'include/*'
+          unzip -o $PROTOC -d /tmp
           rm -f $PROTOC
 
       - name: Install protoc Go plugins
@@ -52,7 +51,7 @@ jobs:
           mkdir -p grpc
           cd grpc && \
           rm -fr generated-go && \
-          protoc \
+          /tmp/bin/protoc \
             --go_out=. \
             --go-grpc_out=. \
             --go_opt=Mk8shelld.proto=generated-go/k8shelldpb \
