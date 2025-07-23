@@ -41,12 +41,6 @@ func NewInitScripts(user User, scriptsDir string) *InitScripts {
 
 func NewCommand(cmdstr string, user User) *exec.Cmd {
 	cmd := exec.Command("/bin/bash", "-l", "-c", cmdstr)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Uid: uint32(user.Uid),
-			Gid: uint32(user.Gid),
-		},
-	}
 
 	newEnv := []string{}
 	for _, e := range os.Environ() {
@@ -56,7 +50,18 @@ func NewCommand(cmdstr string, user User) *exec.Cmd {
 		}
 		newEnv = append(newEnv, e)
 	}
-	cmd.Env = append(cmd.Env, newEnv...)
+	cmd.Env = append(cmd.Env, newEnv...) //, shellReq.StartRequest.SetEnvVars...)
+	cmd.Dir = user.HomeDir
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true, // create a new process group
+		Credential: &syscall.Credential{
+			Uid:    uint32(user.Uid),
+			Gid:    uint32(user.Gid),
+			Groups: getSupplementalGroups(user.Username),
+		},
+	}
+
 	return cmd
 }
 
