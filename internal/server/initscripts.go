@@ -80,11 +80,26 @@ func (is *InitScripts) checkScriptState(cmd *exec.Cmd, flagFile string, scriptNa
 // runBackgroundScript executes a script in the background
 func (is *InitScripts) runBackgroundScript(user User, scriptDir, scriptName, flagFile string) {
 	cmd := NewCommand(fmt.Sprintf("%s/%s", scriptDir, scriptName), user)
-	err := cmd.Start()
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		is.logger.Error().Err(err).Msgf("Failed to get stdout pipe for script %s", scriptName)
+		return
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		is.logger.Error().Err(err).Msgf("Failed to get stderr pipe for script %s", scriptName)
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		is.logger.Error().Err(err).Msgf("Failed to start background script %s", scriptName)
+		return
+	}
+
 	AddPIDIgnoreTerminate(cmd.Process.Pid)
 
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
 	scannerOut := bufio.NewScanner(stdout)
 	scannerErr := bufio.NewScanner(stderr)
 
@@ -111,8 +126,25 @@ func (is *InitScripts) runBackgroundScript(user User, scriptDir, scriptName, fla
 func (is *InitScripts) runForegroundScript(user User, scriptDir, scriptName, flagFile string) {
 	cmd := NewCommand(fmt.Sprintf("%s/%s", scriptDir, scriptName), user)
 
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		is.logger.Error().Err(err).Msgf("Failed to get stdout pipe for script %s", scriptName)
+		return
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		is.logger.Error().Err(err).Msgf("Failed to get stderr pipe for script %s", scriptName)
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		is.logger.Error().Err(err).Msgf("Failed to start foreground script %s", scriptName)
+		return
+	}
+
+	AddPIDIgnoreTerminate(cmd.Process.Pid)
+
 	scannerOut := bufio.NewScanner(stdout)
 	scannerErr := bufio.NewScanner(stderr)
 
