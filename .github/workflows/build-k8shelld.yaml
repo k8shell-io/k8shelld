@@ -33,6 +33,21 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "COMMIT_ID=$COMMIT_ID" >> $GITHUB_ENV
 
+      - name: Build GRPC protos
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          go mod tidy
+          mkdir -p grpc
+          cd grpc && \
+          rm -fr generated-go && \
+          protoc \
+            --go_out=. \
+            --go-grpc_out=. \
+            --go_opt=Mk8shelld.proto=generated-go/k8shelldpb \
+            --go-grpc_opt=Mk8shelld.proto=generated-go/k8shelldpb \
+            k8shelld.proto
+
       - name: Copy sources to docker context
         run: |
           mkdir -p docker/k8shelld/files
