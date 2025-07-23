@@ -163,12 +163,12 @@ func (is *InitScripts) runScript(user User, scriptDir, scriptName, flagFile stri
 
 	go func() {
 		for scannerOut.Scan() {
-			is.logger.Debug().Msgf("out: script=%s, msg=%s", scriptName, scannerOut.Text())
+			is.logger.Debug().Msgf("script=%s, msg=%s", scriptName, scannerOut.Text())
 		}
 	}()
 	go func() {
 		for scannerErr.Scan() {
-			is.logger.Debug().Msgf("err: script=%s, msg=%s", scriptName, scannerErr.Text())
+			is.logger.Debug().Msgf("script=%s, msg=%s", scriptName, scannerErr.Text())
 		}
 	}()
 
