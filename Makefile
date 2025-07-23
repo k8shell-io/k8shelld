@@ -13,14 +13,13 @@ init:
 
 image:
 	@echo "Building k8shelld docker image..."
-	@rm -fr docker/files
-	@mkdir -p docker/files
+	@rm -fr docker/k8shelld/files
+	@mkdir -p docker/k8shelld/files
 	version=$$(git describe --tags --match '*' | cut -d'-' -f1-2) && \
-	echo -n "k8shell-base/k8shelld:$$version" > docker/BUILD && \
-	cp -r go.mod go.sum grpc internal cmd sftp scripts docker/files && \
-	cd docker && docker build --build-arg VERSION=$$version \
+	echo -n "k8shell-base/k8shelld:$$version" > docker/k8shelld/BUILD && \
+	cp -r go.mod go.sum grpc internal cmd sftp scripts docker/k8shelld/files && \
+	cd docker/k8shelld && docker build --build-arg VERSION=$$version \
 		--build-arg COMMIT_ID=$$(git rev-parse --short HEAD) -t $(REPO)/$$(cat ./BUILD) .
-	#cd docker && docker push $(REPO)/$$(cat ./BUILD)
 
 protoc:
 	echo "Generating Go code from proto file..."
