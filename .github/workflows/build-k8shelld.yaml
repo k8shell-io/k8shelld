@@ -36,8 +36,8 @@ jobs:
       - name: Install protoc
         run: |
           PROTOC_VERSION=31.1
-          PROTOC=protoc-$PROTOC_VERSION-linux-aarch_64.zip
-          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v31.1/$PROTOC
+          PROTOC=protoc-$PROTOC_VERSION-linux-x86_64.zip
+          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v$PROTOC_VERSION/$PROTOC
           unzip -o $PROTOC -d /tmp
           rm -f $PROTOC
 
