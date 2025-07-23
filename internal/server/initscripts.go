@@ -79,9 +79,25 @@ func (is *InitScripts) checkScriptState(cmd *exec.Cmd, flagFile string, scriptNa
 
 // runBackgroundScript executes a script in the background
 func (is *InitScripts) runBackgroundScript(user User, scriptDir, scriptName, flagFile string) {
-	cmd := NewCommand(fmt.Sprintf("%s/%s &>/tmp/%s.out", scriptDir, scriptName, scriptName), user)
+	cmd := NewCommand(fmt.Sprintf("%s/%s", scriptDir, scriptName), user)
 	err := cmd.Start()
 	AddPIDIgnoreTerminate(cmd.Process.Pid)
+
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	scannerOut := bufio.NewScanner(stdout)
+	scannerErr := bufio.NewScanner(stderr)
+
+	go func() {
+		for scannerOut.Scan() {
+			is.logger.Debug().Msgf("out: script=%s, msg=%s", scriptName, scannerOut.Text())
+		}
+	}()
+	go func() {
+		for scannerErr.Scan() {
+			is.logger.Debug().Msgf("err: script=%s, msg=%s", scriptName, scannerErr.Text())
+		}
+	}()
 
 	if err != nil {
 		is.logger.Error().Msgf("Failed to start background script %s: %v", scriptName, err)
@@ -102,12 +118,12 @@ func (is *InitScripts) runForegroundScript(user User, scriptDir, scriptName, fla
 
 	go func() {
 		for scannerOut.Scan() {
-			is.logger.Info().Msgf("%s", scannerOut.Text())
+			is.logger.Debug().Msgf("out: script=%s, msg=%s", scriptName, scannerOut.Text())
 		}
 	}()
 	go func() {
 		for scannerErr.Scan() {
-			is.logger.Error().Msgf("%s", scannerErr.Text())
+			is.logger.Debug().Msgf("err: script=%s, msg=%s", scriptName, scannerErr.Text())
 		}
 	}()
 
