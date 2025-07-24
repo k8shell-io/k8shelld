@@ -144,6 +144,8 @@ func (s *RemoteOSServiceServer) Shell(stream k8shelldpb.RemoteOSService_ShellSer
 		return env
 	}
 
+	logger.Debug().Msgf("provided env: %v", shellReq.StartRequest.SetEnvVars)
+
 	// Add custom env vars first
 	for _, e := range shellReq.StartRequest.SetEnvVars {
 		key := extractKey(e)
