@@ -134,14 +134,42 @@ func (s *RemoteOSServiceServer) Shell(stream k8shelldpb.RemoteOSService_ShellSer
 
 	// Create a new environment for the shell process
 	newEnv := []string{}
-	for _, e := range os.Environ() {
-		if strings.HasPrefix(e, "HOME=") {
-			newEnv = append(newEnv, fmt.Sprintf("HOME=%s", session.user.HomeDir))
-			continue
+	addedKeys := make(map[string]struct{})
+
+	// Helper to extract the key from "KEY=value"
+	extractKey := func(env string) string {
+		if i := strings.Index(env, "="); i >= 0 {
+			return env[:i]
 		}
-		newEnv = append(newEnv, e)
+		return env
 	}
-	session.Cmd.Env = append(newEnv, shellReq.StartRequest.SetEnvVars...)
+
+	// Add custom env vars first
+	for _, e := range shellReq.StartRequest.SetEnvVars {
+		key := extractKey(e)
+		if _, exists := addedKeys[key]; !exists {
+			newEnv = append(newEnv, e)
+			addedKeys[key] = struct{}{}
+		}
+	}
+
+	// Add HOME override explicitly
+	newEnv = append(newEnv, fmt.Sprintf("HOME=%s", session.user.HomeDir))
+	addedKeys["HOME"] = struct{}{}
+
+	// Add the rest from the current environment
+	for _, e := range os.Environ() {
+		key := extractKey(e)
+		if key == "HOME" {
+			continue // already added custom HOME
+		}
+		if _, exists := addedKeys[key]; !exists {
+			newEnv = append(newEnv, e)
+			addedKeys[key] = struct{}{}
+		}
+	}
+
+	session.Cmd.Env = newEnv
 	session.Cmd.Dir = session.user.HomeDir
 
 	logger.Debug().Msgf("env: %v", session.Cmd.Env)
