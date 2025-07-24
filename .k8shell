@@ -13,7 +13,7 @@ blueprint:
     files:
       - init_repo@&: |
           go env -w GOPRIVATE=github.com/k8shell-io/*
-          cd $HOME/workspace/k8shelld
-          gGOPATH="$HOME/go" go mod tidy
+          cd $HOME/k8shelld
+          GOPATH="$HOME/go" go mod tidy
 
 
