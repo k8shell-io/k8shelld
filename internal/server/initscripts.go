@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/k8shell-io/k8shelld/grpc/generated-go/k8shelldpb"
 	"github.com/k8shell-io/k8shelld/internal/log"
@@ -162,14 +163,14 @@ func (s *InitServiceServer) runScript(scriptName, flagFile string) error {
 	cmd.Env = CreateEnvVars(s.envVars, s.grpcApi.user.HomeDir)
 	cmd.Dir = s.grpcApi.user.HomeDir
 
-	// cmd.SysProcAttr = &syscall.SysProcAttr{
-	// 	Setsid: true, // create a new process group
-	// 	Credential: &syscall.Credential{
-	// 		Uid:    uint32(s.grpcApi.user.Uid),
-	// 		Gid:    uint32(s.grpcApi.user.Gid),
-	// 		Groups: getSupplementalGroups(s.grpcApi.user.Username),
-	// 	},
-	// }
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true, // create a new process group
+		Credential: &syscall.Credential{
+			Uid:    uint32(s.grpcApi.user.Uid),
+			Gid:    uint32(s.grpcApi.user.Gid),
+			Groups: getSupplementalGroups(s.grpcApi.user.Username),
+		},
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
