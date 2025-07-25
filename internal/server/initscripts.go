@@ -45,81 +45,41 @@ func NewInitServiceServer(grpcapi *GRPCApiService) *InitServiceServer {
 	}
 }
 
-func (s *InitServiceServer) sendMessage(resp grpc.ServerStreamingServer[k8shelldpb.InitResponse],
-	level zerolog.Level, message string, args ...interface{}) {
-	s.logger.WithLevel(level).Msgf(message, args...)
-	resp.Send(&k8shelldpb.InitResponse{
-		Response: &k8shelldpb.InitResponse_Message{
-			Message: fmt.Sprintf(message, args...),
-		},
-	})
-}
-
 // RunInitScripts is a gRPC method that runs init scripts.
 func (s *InitServiceServer) RunInitScripts(req *k8shelldpb.InitRequest,
 	resp grpc.ServerStreamingServer[k8shelldpb.InitResponse]) error {
 
 	s.envVars = req.SetEnvVars
 
-	s.sendMessage(resp, zerolog.InfoLevel, "Running init scripts...")
+	s.logger.Info().Msg("Running init scripts...")
 	if _, err := os.Stat(s.scriptsDir); os.IsNotExist(err) {
-		s.sendMessage(resp, zerolog.ErrorLevel, "No init scripts found in %s directory", s.scriptsDir)
+		s.logger.Error().Msgf("No init scripts found in %s directory", s.scriptsDir)
 		return status.Error(codes.Internal, "init scripts failed")
 	}
 
 	flagDir := fmt.Sprintf(flagDirTemplate, s.user.HomeDir)
 	if err := os.MkdirAll(flagDir, 0755); err != nil {
-		s.sendMessage(resp, zerolog.ErrorLevel, "Failed to create flag directory: %v", err)
+		s.logger.Error().Msgf("Failed to create flag directory: %v", err)
 		return status.Error(codes.Internal, "init scripts failed")
 	}
 
 	scripts, err := filepath.Glob(filepath.Join(s.scriptsDir, "__init_*"))
 	if err != nil {
-		s.sendMessage(resp, zerolog.ErrorLevel, "Failed to list init scripts: %v", err)
+		s.logger.Error().Msgf("Failed to list init scripts: %v", err)
 		return status.Error(codes.Internal, "init scripts failed")
 	}
 
-	numFgScripts := 0
-	numBgScripts := 0
-	for _, scriptPath := range scripts {
-		if strings.HasSuffix(scriptPath, "__bg") {
-			numBgScripts++
-		} else {
-			numFgScripts++
-		}
-	}
-
-	if numFgScripts > 0 {
-		s.sendMessage(resp, zerolog.InfoLevel, "Running %d init scripts in foreground.", numFgScripts)
+	s.logger.Info().Msgf("Running %d init scripts in background.", len(scripts))
+	go func() {
 		for _, scriptPath := range scripts {
-			foreground := !strings.HasSuffix(scriptPath, "__bg")
-			if foreground {
-				s.sendMessage(resp, zerolog.InfoLevel, "Running %s.", scriptPath)
-				err := s.runScriptHelper(scriptPath, flagDir)
-				if err != nil {
-					s.sendMessage(resp, zerolog.ErrorLevel, "Failed to run init script %s: %v", scriptPath, err)
-				}
+			s.logger.Info().Msgf("Running %s.", scriptPath)
+			err := s.runScriptHelper(scriptPath, flagDir)
+			if err != nil {
+				s.logger.Error().Msgf("Failed to run init script %s: %v", scriptPath, err)
 			}
 		}
-		s.sendMessage(resp, zerolog.InfoLevel, "All foreground init scripts completed.")
-	}
-
-	if numBgScripts > 0 {
-		s.sendMessage(resp, zerolog.InfoLevel, "Running %d init scripts in background.", numBgScripts)
-		// Run background scripts in a separate goroutine
-		go func() {
-			for _, scriptPath := range scripts {
-				if strings.HasSuffix(scriptPath, "__bg") {
-					s.logger.Info().Msgf("Running %s in background.", scriptPath)
-					err := s.runScriptHelper(scriptPath, flagDir)
-					if err != nil {
-						s.logger.Error().Msgf("Failed to run background init script %s: %v", scriptPath, err)
-					}
-				}
-			}
-			s.logger.Info().Msg("All background init scripts completed.")
-		}()
-	}
+		s.logger.Info().Msg("All init scripts completed.")
+	}()
 
 	return nil
 }
