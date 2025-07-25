@@ -8,156 +8,181 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 
+	"github.com/k8shell-io/k8shelld/grpc/generated-go/k8shelldpb"
 	"github.com/k8shell-io/k8shelld/internal/log"
 	"github.com/rs/zerolog"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
 	flagDirTemplate = "%s/.k8shell/flags"
 )
 
-type InitScripts struct {
-	user       User
-	scriptsDir string
-	mu         sync.Mutex
-	pids       []int
-	logger     *zerolog.Logger
-}
-
 var ScriptsPIDs = []int{}
 var ScriptsPIDsMutex sync.Mutex
 
-func NewInitScripts(user User, scriptsDir string) *InitScripts {
-	return &InitScripts{
-		user:       user,
-		scriptsDir: scriptsDir,
+// InitServiceServer is the service that handles the init GRPC service server
+type InitServiceServer struct {
+	grpcApi    *GRPCApiService
+	user       User
+	envVars    []string
+	scriptsDir string
+	logger     *zerolog.Logger
+	k8shelldpb.UnimplementedInitServiceServer
+}
+
+// NewInitServiceServer creates a new InitServiceServer
+func NewInitServiceServer(grpcapi *GRPCApiService) *InitServiceServer {
+	return &InitServiceServer{
+		grpcApi:    grpcapi,
+		user:       grpcapi.user,
+		scriptsDir: grpcapi.initScriptsDir,
 		logger:     log.NewLogger("init-scripts"),
-		pids:       []int{},
-		mu:         sync.Mutex{},
 	}
 }
 
-func NewCommand(cmdstr string, user User) *exec.Cmd {
-	cmd := exec.Command("/bin/bash", "-l", "-c", cmdstr)
-
-	newEnv := []string{}
-	for _, e := range os.Environ() {
-		if strings.HasPrefix(e, "HOME=") {
-			newEnv = append(newEnv, fmt.Sprintf("HOME=%s", user.HomeDir))
-			continue
-		}
-		newEnv = append(newEnv, e)
-	}
-	cmd.Env = append(cmd.Env, newEnv...) //, shellReq.StartRequest.SetEnvVars...)
-	cmd.Dir = user.HomeDir
-
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true, // create a new process group
-		Credential: &syscall.Credential{
-			Uid:    uint32(user.Uid),
-			Gid:    uint32(user.Gid),
-			Groups: getSupplementalGroups(user.Username),
+func (s *InitServiceServer) sendMessage(resp grpc.ServerStreamingServer[k8shelldpb.InitResponse],
+	message string, args ...interface{}) {
+	s.logger.Info().Msgf(message, args...)
+	resp.Send(&k8shelldpb.InitResponse{
+		Response: &k8shelldpb.InitResponse_Message{
+			Message: fmt.Sprintf(message, args...),
 		},
-	}
-
-	return cmd
+	})
 }
 
-func (is *InitScripts) checkScriptState(cmd *exec.Cmd, flagFile string, scriptName string) {
+// RunInitScripts is a gRPC method that runs init scripts.
+func (s *InitServiceServer) RunInitScripts(req *k8shelldpb.InitRequest,
+	resp grpc.ServerStreamingServer[k8shelldpb.InitResponse]) error {
+
+	s.envVars = req.SetEnvVars
+
+	s.sendMessage(resp, "Running init scripts...")
+	if _, err := os.Stat(s.scriptsDir); os.IsNotExist(err) {
+		s.sendMessage(resp, "No init scripts found in %s directory", s.scriptsDir)
+		return status.Error(codes.Internal, "init scripts failed")
+	}
+
+	flagDir := fmt.Sprintf(flagDirTemplate, s.user.HomeDir)
+	if err := os.MkdirAll(flagDir, 0755); err != nil {
+		s.sendMessage(resp, "Failed to create flag directory: %v", err)
+		return status.Error(codes.Internal, "init scripts failed")
+	}
+
+	scripts, err := filepath.Glob(filepath.Join(s.scriptsDir, "__init_*"))
+	if err != nil {
+		s.sendMessage(resp, "Failed to list init scripts: %v", err)
+		return status.Error(codes.Internal, "init scripts failed")
+	}
+
+	numFgScripts := 0
+	numBgScripts := 0
+	for _, scriptPath := range scripts {
+		if strings.HasSuffix(scriptPath, "__bg") {
+			numBgScripts++
+		} else {
+			numFgScripts++
+		}
+	}
+
+	if numFgScripts > 0 {
+		s.sendMessage(resp, "Running %d init scripts in foreground.", numFgScripts)
+		for _, scriptPath := range scripts {
+			foreground := !strings.HasSuffix(scriptPath, "__bg")
+			if foreground {
+				s.sendMessage(resp, "Running %s.", scriptPath)
+				err := s.runScriptHelper(scriptPath, flagDir)
+				if err != nil {
+					s.sendMessage(resp, "Failed to run init script %s: %v", scriptPath, err)
+				}
+			}
+		}
+		s.sendMessage(resp, "All foreground init scripts completed.")
+	}
+
+	if numBgScripts > 0 {
+		s.sendMessage(resp, "Running %d init scripts in background.", numBgScripts)
+		// Run background scripts in a separate goroutine
+		go func() {
+			for _, scriptPath := range scripts {
+				if strings.HasSuffix(scriptPath, "__bg") {
+					s.logger.Info().Msgf("Running %s in background.", scriptPath)
+					err := s.runScriptHelper(scriptPath, flagDir)
+					if err != nil {
+						s.logger.Error().Msgf("Failed to run background init script %s: %v", scriptPath, err)
+					}
+				}
+			}
+			s.logger.Info().Msg("All background init scripts completed.")
+		}()
+	}
+
+	return nil
+}
+
+func (s *InitServiceServer) checkScriptState(cmd *exec.Cmd, flagFile string, scriptName string) {
 	status := cmd.ProcessState.ExitCode()
 	if status == 0 {
 		if flagFile != "" {
 			if err := os.WriteFile(flagFile, []byte{}, 0644); err == nil {
-				is.logger.Info().Msgf("The script %s completed successfully. Flag file created at %s.", scriptName, flagFile)
+				s.logger.Info().Msgf("The script %s completed successfully. Flag file created at %s.", scriptName, flagFile)
 			} else {
-				is.logger.Error().Msgf("Failed to create flag file for background script %s: %v", scriptName, err)
+				s.logger.Error().Msgf("Failed to create flag file for background script %s: %v", scriptName, err)
 			}
 		} else {
-			is.logger.Info().Msgf("The script %s completed successfully.", scriptName)
+			s.logger.Info().Msgf("The script %s completed successfully.", scriptName)
 		}
 	} else {
-		is.logger.Error().Msgf("The script %s failed with exit status %d.", scriptName, status)
+		s.logger.Error().Msgf("The script %s failed with exit status %d.", scriptName, status)
 	}
-}
-
-func (is *InitScripts) Run() {
-	is.logger.Info().Msgf("Running k8shell workspace init scripts in %s", is.scriptsDir)
-	if _, err := os.Stat(is.scriptsDir); os.IsNotExist(err) {
-		is.logger.Info().Msgf("No init scripts found in %s directory", is.scriptsDir)
-		return
-	}
-
-	flagDir := fmt.Sprintf(flagDirTemplate, is.user.HomeDir)
-	if err := os.MkdirAll(flagDir, 0755); err != nil {
-		is.logger.Fatal().Msgf("Failed to create flag directory: %v", err)
-	}
-
-	scripts, err := filepath.Glob(filepath.Join(is.scriptsDir, "__init_*"))
-	if err != nil {
-		is.logger.Error().Msgf("Failed to list init scripts: %v", err)
-		return
-	}
-
-	for _, scriptPath := range scripts {
-		foreground := !strings.HasSuffix(scriptPath, "__bg")
-		if foreground {
-			is.runScriptHelper(scriptPath, flagDir, true)
-		}
-	}
-
-	for _, scriptPath := range scripts {
-		background := strings.HasSuffix(scriptPath, "__bg")
-		if background {
-			is.runScriptHelper(scriptPath, flagDir, false)
-		}
-	}
-
-	is.logger.Info().Msgf("All foreground init scripts completed. Background scripts may still be running.")
 }
 
 // runScriptHelper executes a script with flag handling
-func (is *InitScripts) runScriptHelper(scriptPath string, flagDir string, foreground bool) {
+func (s *InitServiceServer) runScriptHelper(scriptPath string, flagDir string) error {
 	scriptName := filepath.Base(scriptPath)
 
 	flagFile := ""
 	if strings.Contains(scriptName, "__flag") {
 		flagFile = filepath.Join(flagDir, scriptName)
 		if _, err := os.Stat(flagFile); err == nil {
-			is.logger.Info().Msgf("Flag file exists for %s. Skipping execution.", scriptName)
-			return
+			s.logger.Info().Msgf("Flag file exists for %s. Skipping execution.", scriptName)
+			return nil
 		}
 	}
 
-	if foreground {
-		is.logger.Info().Msgf("Running %s in foreground.", scriptName)
-		is.runScript(is.user, is.scriptsDir, scriptName, flagFile)
-	} else {
-		is.logger.Info().Msgf("Running %s in background.", scriptName)
-		go is.runScript(is.user, is.scriptsDir, scriptName, flagFile)
-	}
+	return s.runScript(scriptName, flagFile)
 }
 
 // runScript executes a script
-func (is *InitScripts) runScript(user User, scriptDir, scriptName, flagFile string) {
-	cmd := NewCommand(fmt.Sprintf("%s/%s", scriptDir, scriptName), user)
+func (s *InitServiceServer) runScript(scriptName, flagFile string) error {
+	cmd := exec.Command("/bin/bash", "-l", "-c", fmt.Sprintf("%s/%s", s.scriptsDir, scriptName))
+	cmd.Env = CreateEnvVars(s.envVars, s.grpcApi.user.HomeDir)
+	cmd.Dir = s.grpcApi.user.HomeDir
+
+	// cmd.SysProcAttr = &syscall.SysProcAttr{
+	// 	Setsid: true, // create a new process group
+	// 	Credential: &syscall.Credential{
+	// 		Uid:    uint32(s.grpcApi.user.Uid),
+	// 		Gid:    uint32(s.grpcApi.user.Gid),
+	// 		Groups: getSupplementalGroups(s.grpcApi.user.Username),
+	// 	},
+	// }
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		is.logger.Error().Err(err).Msgf("Failed to get stdout pipe for script %s", scriptName)
-		return
+		return fmt.Errorf("failed to get stdout pipe for script %s: %w", scriptName, err)
 	}
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		is.logger.Error().Err(err).Msgf("Failed to get stderr pipe for script %s", scriptName)
-		return
+		return fmt.Errorf("failed to get stderr pipe for script %s: %w", scriptName, err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		is.logger.Error().Err(err).Msgf("Failed to start script %s", scriptName)
-		return
+		return fmt.Errorf("failed to start script %s: %w", scriptName, err)
 	}
 
 	AddPIDIgnoreTerminate(cmd.Process.Pid)
@@ -167,15 +192,16 @@ func (is *InitScripts) runScript(user User, scriptDir, scriptName, flagFile stri
 
 	go func() {
 		for scannerOut.Scan() {
-			is.logger.Debug().Msgf("script=%s, msg=%s", scriptName, scannerOut.Text())
+			s.logger.Debug().Msgf("script=%s, msg=%s", scriptName, scannerOut.Text())
 		}
 	}()
 	go func() {
 		for scannerErr.Scan() {
-			is.logger.Debug().Msgf("script=%s, msg=%s", scriptName, scannerErr.Text())
+			s.logger.Debug().Msgf("script=%s, msg=%s", scriptName, scannerErr.Text())
 		}
 	}()
 
 	cmd.Wait()
-	is.checkScriptState(cmd, flagFile, scriptName)
+	s.checkScriptState(cmd, flagFile, scriptName)
+	return nil
 }

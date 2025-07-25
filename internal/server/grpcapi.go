@@ -49,6 +49,7 @@ type StoreRecord struct {
 // GRPCApiService is the main service that handles the gRPC API
 type GRPCApiService struct {
 	logger             *zerolog.Logger      // The logger
+	initScriptsDir     string               // The directory where the init scripts are located
 	accessToken        string               // The access token that a client needs to auhtenticate with
 	tcpPort            int                  // The TCP port that the gRPC server listens on
 	cert               tls.Certificate      // The TLS certificate and key pair
@@ -67,7 +68,7 @@ type RemoteOSServiceServer struct {
 	k8shelldpb.UnimplementedRemoteOSServiceServer
 }
 
-// RemoteOSServiceServer is the service that handles the remote OS GRPC service server
+// InfoServiceServer is the service that handles the info GRPC service server
 type InfoServiceServer struct {
 	grpcApi *GRPCApiService
 	k8shelldpb.UnimplementedInfoServiceServer
@@ -168,7 +169,7 @@ func LoadDecryptedKeyPair(serverCertPath, encryptedKeyPath, accessKey string) (t
 // NewGRPCAPI creates a new GRPCApiService
 func NewGRPCAPI(tcpPort int, accessKey string, user User,
 	serverKeyPath string, serverCertPath string, keyLogFilePath string,
-	portForwardingRules []PortForwardingRule) (*GRPCApiService, error) {
+	portForwardingRules []PortForwardingRule, initScriptsDir string) (*GRPCApiService, error) {
 
 	logger := log.NewLogger("grpc")
 
@@ -179,6 +180,7 @@ func NewGRPCAPI(tcpPort int, accessKey string, user User,
 
 	return &GRPCApiService{
 		logger:             logger,
+		initScriptsDir:     initScriptsDir,
 		accessToken:        accessKey,
 		KeyLogFilePath:     keyLogFilePath,
 		tcpPort:            tcpPort,
@@ -274,10 +276,11 @@ func (a *GRPCApiService) Handler(ctx context.Context) error {
 		),
 	)
 
-	k8shelldpb.RegisterRemoteOSServiceServer(server, NewRemoteOSServiceServer(a))
 	k8shelldpb.RegisterInfoServiceServer(server, NewInfoServiceServer(a))
+	k8shelldpb.RegisterInitServiceServer(server, NewInitServiceServer(a))
+	k8shelldpb.RegisterRemoteOSServiceServer(server, NewRemoteOSServiceServer(a))
 
-	a.logger.Info().Msgf("GRPC service server registered")
+	a.logger.Info().Msgf("GRPC services server registered")
 
 	listener, err := net.Listen("tcp4", fmt.Sprintf(":%d", a.tcpPort))
 	if err != nil {

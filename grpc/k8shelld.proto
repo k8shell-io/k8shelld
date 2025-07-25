@@ -21,7 +21,7 @@ message VersionResponse {
 // *** InitService definition
 service InitService {
   // Workspace initialization
-  rpc Init (stream InitRequest) returns (stream InitResponse);
+  rpc RunInitScripts (InitRequest) returns (stream InitResponse);
 }
 
 // ShellRequest message
@@ -32,7 +32,7 @@ message InitRequest {
 // ShellRequest message
 message InitResponse {
   oneof response {
-    bytes data = 1; // Init response data
+    string message = 1; // Init response message
     bool terminate = 2; // Terminate the init process
   }
 }

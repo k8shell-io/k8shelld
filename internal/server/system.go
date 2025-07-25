@@ -273,3 +273,41 @@ func UpdateSystemInfo(systemInfo *SystemInfo) (*SystemInfo, error) {
 
 	return systemInfo, nil
 }
+
+// CreateEnvVars creates new environment variables with the provided environment variables and a home directory.
+// It includes all existing environment variables and ensures that duplicate keys are not added and that
+// the HOME variable is set correctly.
+func CreateEnvVars(envVars []string, homeDir string) []string {
+	newEnv := []string{}
+	addedKeys := make(map[string]struct{})
+
+	extractKey := func(env string) string {
+		if i := strings.Index(env, "="); i >= 0 {
+			return env[:i]
+		}
+		return env
+	}
+
+	for _, e := range envVars {
+		key := extractKey(e)
+		if _, exists := addedKeys[key]; !exists {
+			newEnv = append(newEnv, e)
+			addedKeys[key] = struct{}{}
+		}
+	}
+
+	newEnv = append(newEnv, fmt.Sprintf("HOME=%s", homeDir))
+	addedKeys["HOME"] = struct{}{}
+
+	for _, e := range os.Environ() {
+		key := extractKey(e)
+		if key == "HOME" {
+			continue
+		}
+		if _, exists := addedKeys[key]; !exists {
+			newEnv = append(newEnv, e)
+			addedKeys[key] = struct{}{}
+		}
+	}
+	return newEnv
+}

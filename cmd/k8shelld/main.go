@@ -59,15 +59,12 @@ func main() {
 		if err := server.CreateUser(config.MainUser); err != nil {
 			logger.Fatal().Msgf("Error creating main user: %v", err)
 		}
-
-		scripts := server.NewInitScripts(config.MainUser, opts.InitScriptsDir)
-		scripts.Run()
 	} else {
 		logger.Info().Msg("Test mode, not initializing kbox tools and not running init scripts")
 	}
 
 	server, err := server.NewServer(config, keys, opts.ApiTCPPort, opts.ServerKeyPath,
-		opts.ServerCertPath, opts.KeyLogFilePath, opts.UnixSocketPath, opts.DefaultDNS)
+		opts.ServerCertPath, opts.KeyLogFilePath, opts.UnixSocketPath, opts.DefaultDNS, opts.InitScriptsDir)
 	if err != nil {
 		logger.Fatal().Msgf("Error creating server: %v", err)
 	}

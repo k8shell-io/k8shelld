@@ -27,13 +27,13 @@ type Server struct {
 }
 
 func NewServer(config *Config, keys *Keys, grpcApiListenPort int, serverKeyPath string, serverCertPath string,
-	keyLogFilePath string, restpApiUnixSocket string, defaultDNS string) (*Server, error) {
+	keyLogFilePath string, restpApiUnixSocket string, defaultDNS string, initScriptsDir string) (*Server, error) {
 	server := &Server{logger: log.NewLogger("k8shelld"), pprof: config.System.PProf, sysInfo: nil}
 	var err error
 
 	// Create GRPC API service
 	server.grpcApi, err = NewGRPCAPI(grpcApiListenPort, keys.A1Key, config.MainUser, serverKeyPath,
-		serverCertPath, keyLogFilePath, config.PortForwardingRules)
+		serverCertPath, keyLogFilePath, config.PortForwardingRules, initScriptsDir)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
