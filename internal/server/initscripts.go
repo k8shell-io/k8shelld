@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,7 +14,6 @@ import (
 	"github.com/k8shell-io/k8shelld/grpc/generated-go/k8shelldpb"
 	"github.com/k8shell-io/k8shelld/internal/log"
 	"github.com/rs/zerolog"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -45,28 +45,30 @@ func NewInitServiceServer(grpcapi *GRPCApiService) *InitServiceServer {
 	}
 }
 
-// RunInitScripts is a gRPC method that runs init scripts.
-func (s *InitServiceServer) RunInitScripts(req *k8shelldpb.InitRequest,
-	resp grpc.ServerStreamingServer[k8shelldpb.InitResponse]) error {
+func (s *InitServiceServer) RunInitScripts(ctx context.Context,
+	req *k8shelldpb.InitRequest) (*k8shelldpb.InitResponse, error) {
 
 	s.envVars = req.SetEnvVars
 
 	s.logger.Info().Msg("Running init scripts...")
 	if _, err := os.Stat(s.scriptsDir); os.IsNotExist(err) {
 		s.logger.Error().Msgf("No init scripts found in %s directory", s.scriptsDir)
-		return status.Error(codes.Internal, "init scripts failed")
+		return &k8shelldpb.InitResponse{Message: "No init scripts found."},
+			status.Error(codes.Internal, "No init scripts found")
 	}
 
 	flagDir := fmt.Sprintf(flagDirTemplate, s.user.HomeDir)
 	if err := os.MkdirAll(flagDir, 0755); err != nil {
 		s.logger.Error().Msgf("Failed to create flag directory: %v", err)
-		return status.Error(codes.Internal, "init scripts failed")
+		return &k8shelldpb.InitResponse{Message: "Failed to create init scripts flag directory."},
+			status.Error(codes.Internal, "Failed to create init scripts flag directory")
 	}
 
 	scripts, err := filepath.Glob(filepath.Join(s.scriptsDir, "__init_*"))
 	if err != nil {
 		s.logger.Error().Msgf("Failed to list init scripts: %v", err)
-		return status.Error(codes.Internal, "init scripts failed")
+		return &k8shelldpb.InitResponse{Message: "Failed to list init scripts."},
+			status.Error(codes.Internal, "Failed to list init scripts")
 	}
 
 	s.logger.Info().Msgf("Running %d init scripts in background.", len(scripts))
@@ -81,7 +83,7 @@ func (s *InitServiceServer) RunInitScripts(req *k8shelldpb.InitRequest,
 		s.logger.Info().Msg("All init scripts completed.")
 	}()
 
-	return nil
+	return &k8shelldpb.InitResponse{Message: "Init scripts started."}, nil
 }
 
 func (s *InitServiceServer) checkScriptState(cmd *exec.Cmd, flagFile string, scriptName string) {
