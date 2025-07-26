@@ -30,7 +30,7 @@ func init() {
 		Hidden: true,
 	})
 
-	kboxCmd.AddCommand(DockerCmd)
+	kboxCmd.AddCommand(CredsCmd)
 	kboxCmd.AddCommand(ToolsInitCmd)
 	kboxCmd.AddCommand(UptimeCmd)
 	kboxCmd.AddCommand(ChannelsCmd)
