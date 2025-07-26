@@ -9,35 +9,7 @@ import (
 
 	"github.com/k8shell-io/k8shelld/grpc/generated-go/k8shelldpb"
 	"github.com/k8shell-io/k8shelld/internal/log"
-	"google.golang.org/grpc/metadata"
 )
-
-// mockStreamServer implements grpc.ServerStreamingServer[k8shelldpb.InitResponse] for testing
-type mockStreamServer struct {
-	messages []string
-	ctx      context.Context
-}
-
-func newMockStreamServer() *mockStreamServer {
-	return &mockStreamServer{
-		messages: make([]string, 0),
-		ctx:      context.Background(),
-	}
-}
-
-func (m *mockStreamServer) Send(resp *k8shelldpb.InitResponse) error {
-	if msg := resp.GetMessage(); msg != "" {
-		m.messages = append(m.messages, msg)
-	}
-	return nil
-}
-
-func (m *mockStreamServer) SetHeader(md metadata.MD) error  { return nil }
-func (m *mockStreamServer) SendHeader(md metadata.MD) error { return nil }
-func (m *mockStreamServer) SetTrailer(md metadata.MD)       {}
-func (m *mockStreamServer) Context() context.Context        { return m.ctx }
-func (m *mockStreamServer) SendMsg(msg interface{}) error   { return nil }
-func (m *mockStreamServer) RecvMsg(msg interface{}) error   { return nil }
 
 // setupTestEnvironment creates a temporary directory with test scripts
 func setupTestEnvironment(t *testing.T) (string, func()) {
@@ -131,18 +103,17 @@ func TestRunInitScripts(t *testing.T) {
 	createTestScript(t, tmpDir, "__init_bg_script4__bg", "#!/bin/bash\necho 'BG Script 4 executed'\nexit 0")
 
 	service := createTestInitService(t, tmpDir)
-	mockStream := newMockStreamServer()
 
 	req := &k8shelldpb.InitRequest{
 		SetEnvVars: []string{"TEST_VAR=test_value"},
 	}
 
 	t.Logf("Running RunInitScripts with scriptsDir: %s", service.scriptsDir)
-	err := service.RunInitScripts(req, mockStream)
+	resp, err := service.RunInitScripts(context.Background(), req)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	t.Logf("Received %d messages: %v", len(mockStream.messages), mockStream.messages)
+	t.Logf("Received message: %s", resp.Message)
 }

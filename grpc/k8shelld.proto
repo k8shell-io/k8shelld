@@ -21,20 +21,17 @@ message VersionResponse {
 // *** InitService definition
 service InitService {
   // Workspace initialization
-  rpc RunInitScripts (InitRequest) returns (stream InitResponse);
+  rpc RunInitScripts (InitRequest) returns (InitResponse);
 }
 
 // ShellRequest message
 message InitRequest {
-  repeated string setEnvVars = 2;   // Environment variables to be set for the init process
+  repeated string setEnvVars = 1;   
 }
 
 // ShellRequest message
 message InitResponse {
-  oneof response {
-    string message = 1; // Init response message
-    bool terminate = 2; // Terminate the init process
-  }
+  string message = 1; 
 }
 
 // *** RemoteOSService definition
