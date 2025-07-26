@@ -63,8 +63,13 @@ These scripts wrap the corresponding sub-commands in the kbox CLI.`,
 				Template:    wrapperScriptGeneralTemplateHelp,
 			},
 			{
-				CommandName: "docker creds",
+				CommandName: "creds docker",
 				ScriptName:  "docker-credential-k8shell",
+				Template:    wrapperScriptGeneralTemplateNoHelp,
+			},
+			{
+				CommandName: "creds git",
+				ScriptName:  "git-credential-k8shell",
 				Template:    wrapperScriptGeneralTemplateNoHelp,
 			},
 		}

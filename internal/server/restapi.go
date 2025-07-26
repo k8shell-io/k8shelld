@@ -75,7 +75,7 @@ func (a *RESTApiService) initializeRouter() *mux.Router {
 	// Define API endpoints
 	apiRouter.HandleFunc("/docker/dns", a.UpdateDockerDNS).Methods(http.MethodPatch)
 	apiRouter.HandleFunc("/docker/dns", a.GetDockerDNS).Methods(http.MethodGet)
-	apiRouter.HandleFunc("/docker/creds-helper", a.GetDockerCredsHelper).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/creds", a.GetCredsHelper).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/ssh/channels", a.GetSSHChannels).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/logs", a.GetLogs).Methods(http.MethodGet)
@@ -221,19 +221,29 @@ func (a *RESTApiService) GetDockerDNS(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (a *RESTApiService) GetDockerCredsHelper(w http.ResponseWriter, r *http.Request) {
+func (a *RESTApiService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 	address := r.URL.Query().Get("address")
 	if address == "" {
 		http.Error(w, "Missing 'address' query parameter", http.StatusBadRequest)
 		return
 	}
+	credsType := r.URL.Query().Get("type")
+	if credsType == "" {
+		http.Error(w, "Missing 'type' query parameter", http.StatusBadRequest)
+		return
+	}
+	if credsType != "docker" && credsType != "git" {
+		http.Error(w, "Invalid 'type' query parameter, must be 'docker' or 'git'", http.StatusBadRequest)
+		return
+	}
 
-	url := fmt.Sprintf("registry/creds?address=%s", address)
+	url := fmt.Sprintf("%s/creds?address=%s", credsType, address)
 	headers := map[string]string{"Accept": "application/json"}
 
 	creds, err := a.MakeApiServerRequest("GET", url, headers)
 	if err != nil {
-		a.logger.Warn().Msgf("Cannot retrieve address for docker credential helper when calling upstream API %s: %v", url, err)
+		a.logger.Warn().Msgf("Cannot retrieve address for %s credential helper when calling upstream API %s: %v",
+			credsType, url, err)
 		http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
 		return
 	}

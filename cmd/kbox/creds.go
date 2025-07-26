@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/k8shell-io/k8shelld/internal/client"
 	"github.com/spf13/cobra"
 )
+
+var operation string
 
 var CredsCmd = &cobra.Command{
 	Use:   "creds",
@@ -61,7 +62,7 @@ func dockerCredsHelper(operation string) {
 
 		address := strings.TrimSpace(scanner.Text())
 
-		url := fmt.Sprintf("/docker/creds-helper?address=%s", address)
+		url := fmt.Sprintf("/docker/creds?type=docker&address=%s", address)
 		headers := map[string]string{"Accept": "application/json"}
 
 		resp, err := client.MakeRequest("GET", url, headers, nil)
@@ -107,32 +108,23 @@ func gitCredsHelper(operation string) {
 		}
 	}
 
-	// File path: /tmp/git-creds.txt
-	filePath := filepath.Join("/tmp", "git-creds.txt")
-
-	fileContent := fmt.Sprintf("protocol=%s\nhost=%s\npath=%s\n", creds["protocol"], creds["host"], creds["path"])
-	os.WriteFile(filePath, []byte(fileContent), 0600)
-
 	switch operation {
 	case "get":
-		// url := fmt.Sprintf("/git/creds-helper?host=%s", creds["host"])
-		// resp, err := client.MakeRequest("GET", url, map[string]string{"Accept": "application/json"}, nil)
-		// if err != nil {
-		// 	fmt.Fprint(os.Stdout, "\n")
-		// 	return
-		// }
-		// defer resp.Body.Close()
-		// body, err := io.ReadAll(resp.Body)
-		// if err != nil {
-		// 	fmt.Fprint(os.Stdout, "\n")
-		// 	return
-		// }
-		// username, password := extractCredsFromJSON(body)
-		// fmt.Fprintf(os.Stdout, "username=%s\n", username)
-		// fmt.Fprintf(os.Stdout, "password=%s\n\n", password)
-
-		fmt.Fprintf(os.Stdout, "username=%s\n", "tv")
-		fmt.Fprintf(os.Stdout, "password=%s\n\n", "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")
+		url := fmt.Sprintf("/creds?type=git&address=%s", creds["host"])
+		resp, err := client.MakeRequest("GET", url, map[string]string{"Accept": "application/json"}, nil)
+		if err != nil {
+			fmt.Fprint(os.Stdout, "\n")
+			return
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			fmt.Fprint(os.Stdout, "\n")
+			return
+		}
+		username, password := extractCredsFromJSON(body)
+		fmt.Fprintf(os.Stdout, "username=%s\n", username)
+		fmt.Fprintf(os.Stdout, "password=%s\n\n", password)
 
 	case "store":
 		fmt.Println("Storing credentials is not supported.")
