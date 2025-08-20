@@ -188,10 +188,11 @@ func (s *RemoteOSServiceServer) Exec(stream k8shelldpb.RemoteOSService_ExecServe
 		for {
 			req, err := stream.Recv()
 			if err != nil {
-				if err != io.EOF {
-					logger.Debug().Msgf("Error receiving stream: %v, PID=%d", err, processPID)
+				if err == io.EOF {
+					logger.Debug().Msgf("Client closed send (EOF), PID=%d", processPID)
+				} else {
+					logger.Debug().Msgf("Recv error: %v, PID=%d", err, processPID)
 				}
-				cmd.Process.Signal(syscall.SIGTERM)
 				terminateOnce.Do(func() { close(terminate) })
 				return
 			}
