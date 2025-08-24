@@ -1,4 +1,4 @@
-FROM golang:1.24.3 AS build
+FROM golang:1.24.5 AS build
 
 ARG VERSION
 ARG COMMIT_ID
