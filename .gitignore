@@ -1,6 +1,5 @@
 etc/uptime/uptime
 etc/uptime/usage
-grpc/generated-go
 bin/k8shelld
 bin/kbox
 docker/k8shelld/BUILD

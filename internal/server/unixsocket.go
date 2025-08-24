@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/grpc/generated-go/k8shelldpb"
 	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
 	"google.golang.org/grpc/codes"

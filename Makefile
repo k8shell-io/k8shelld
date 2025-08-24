@@ -22,10 +22,13 @@ image:
 		--build-arg COMMIT_ID=$$(git rev-parse --short HEAD) -t $(REPO)/$$(cat ./BUILD) .
 
 protoc:
-	echo "Generating Go code from proto file..."
-	cd grpc && \
-	rm -fr generated-go && \
-	protoc --go_out=. --go-grpc_out=. --go_opt=Mk8shelld.proto=generated-go/k8shelldpb --go-grpc_opt=Mk8shelld.proto=generated-go/k8shelldpb   k8shelld.proto
+	@echo "Generating Go code from proto file..."
+	rm -rf pkg/api/k8shelldpb
+	protoc \
+		--go_out=module=github.com/k8shell-io/k8shelld:. \
+		--go-grpc_out=module=github.com/k8shell-io/k8shelld:. \
+		pkg/api/k8shelld.proto
+
 # 	cd grpc && python \
 # 		-m grpc_tools.protoc \
 # 		--python_out=../../k8shell-proxy/k8shell_proxy/grpc_generated \

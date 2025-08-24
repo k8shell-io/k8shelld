@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package k8shelld;
 
+option go_package = "github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb;k8shelldpb";
+
 // *** InfoService definition
 service InfoService {
   // Version gets the version of the service
