@@ -245,6 +245,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 					recvErrCh <- sendErr
 					return
 				}
+				session.BytesOut += uint64(n)
 			}
 		}
 	}()
@@ -288,6 +289,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 				if _, werr := session.Ptmx.Write(data); werr != nil {
 					return fmt.Errorf("pty write: %w", werr)
 				}
+				session.BytesIn += uint64(len(data))
 			}
 		}
 	}
@@ -445,9 +447,4 @@ func (s *ShellServiceServer) ResizeTerminal(ctx context.Context,
 		Cols: uint16(req.Width),
 	})
 	return &k8shelldpb.ResizeTerminalResponse{}, nil
-}
-
-// sendShellTerminate sends a terminate message to the client to close the shell session
-func (s *ShellServiceServer) sendShellTerminate(stream k8shelldpb.ShellService_ShellServer) error {
-	return stream.Send(&k8shelldpb.ShellResponse{Response: &k8shelldpb.ShellResponse_Terminate{Terminate: true}})
 }
