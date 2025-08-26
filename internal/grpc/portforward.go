@@ -185,25 +185,26 @@ func (s *PortForwardServiceServer) createTCPConnection(destination string, port 
 	return tcpConn, nil
 }
 
-// Run the port-forwarding service. It reads data from the TCP connection and sends it to the gRPC client. It also
-// reads data from the gRPC client and sends it to the TCP connection.
-func (s *PortForwardServiceServer) PortForward(stream k8shelldpb.PortForwardService_PortForwardServer) error {
-	pfID, err := s.GetPortForwardID(stream.Context())
+// PortForward sets up a TCP <-> gRPC bidi bridge.
+// First request must be Destination. Then we stream bytes both ways until
+// client closes, TCP closes, context cancels, or an error occurs.
+func (s *PortForwardServiceServer) PortForward(
+	stream k8shelldpb.PortForwardService_PortForwardServer,
+) error {
+	ctx := stream.Context()
+
+	pfID, err := s.GetPortForwardID(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get port-forward ID: %v", err)
+		return fmt.Errorf("get port-forward id: %w", err)
 	}
 
-	// The first request is the command
-	req, err := stream.Recv()
+	first, err := stream.Recv()
 	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "failed to receive command: %v", err)
+		return status.Errorf(codes.InvalidArgument, "receive destination: %v", err)
 	}
-
-	s.logger.Info().Msgf("Port-forward request: %v", req)
-
-	dstReq, ok := req.Request.(*k8shelldpb.PortForwardRequest_Destination)
-	if !ok {
-		return status.Errorf(codes.InvalidArgument, "invalid port-forward request: %v", req)
+	dstReq, ok := first.Request.(*k8shelldpb.PortForwardRequest_Destination)
+	if !ok || dstReq.Destination == nil {
+		return status.Errorf(codes.InvalidArgument, "invalid first request (need Destination)")
 	}
 
 	pf := &PortForwardData{
@@ -211,86 +212,97 @@ func (s *PortForwardServiceServer) PortForward(stream k8shelldpb.PortForwardServ
 		Destination: dstReq.Destination.Ip,
 		Port:        uint16(dstReq.Destination.Port),
 		Created:     time.Now(),
-		Deleted:     time.Time{},
-		BytesIn:     0,
-		BytesOut:    0,
 	}
-
 	tcpConn, err := s.createTCPConnection(pf.Destination, pf.Port)
 	if err != nil {
-		return status.Errorf(codes.Unavailable, "failed to create TCP connection: %v", err)
+		return status.Errorf(codes.Unavailable, "dial %s:%d: %v", pf.Destination, pf.Port, err)
 	}
+	defer func() {
+		_ = tcpConn.Close()
+		pf.Deleted = time.Now()
+		s.logger.Info().Msgf("Port-forward ended: id=%s, dur=%s, in=%d, out=%d",
+			pf.Id, time.Since(pf.Created), pf.BytesIn, pf.BytesOut)
+	}()
+
 	s.grpcApi.PortForwardStore.Store(pf.Id, pf)
+	s.logger.Info().Msgf("Port-forward started: id=%s -> %s:%d", pf.Id, pf.Destination, pf.Port)
 
-	s.logger.Info().Msgf("Port-forward started, id=%s, %s:%d", pf.Id, pf.Destination, pf.Port)
+	// Coordination channels
+	recvErrCh := make(chan error, 2) // client recv/send/tcp write errors
+	tcpErrCh := make(chan error, 1)  // tcp read/send errors
 
+	// TCP -> gRPC (server sends to client)
 	go func() {
 		buf := make([]byte, config.DEFAULT_MAX_PACKET_SIZE)
-
 		for {
-			n, err := tcpConn.Read(buf)
-			if err != nil {
-				if err == io.EOF {
-					s.logger.Info().Msg("TCP connection closed")
+			n, rerr := tcpConn.Read(buf)
+			if rerr != nil {
+				if rerr != io.EOF {
+					s.logger.Error().Msgf("tcp read: %v", rerr)
 				} else {
-					s.logger.Error().Msgf("Error reading from TCP connection: %v", err)
+					s.logger.Debug().Msg("tcp read: EOF")
 				}
-				// stream.Send(&k8shelldpb.PortForwardResponse{
-				// 	Response: &k8shelldpb.PortForwardResponse_Terminate{Terminate: true}})
+				tcpErrCh <- rerr
 				return
 			}
+			if n == 0 {
+				continue
+			}
 
-			// Send received data to the gRPC client
-			err = stream.Send(&k8shelldpb.PortForwardResponse{
-				Response: &k8shelldpb.PortForwardResponse_Data{Data: buf[:n]}})
-			if err != nil {
-				s.logger.Error().Msgf("Failed to send data to gRPC client: %v", err)
+			if serr := stream.Send(&k8shelldpb.PortForwardResponse{
+				Response: &k8shelldpb.PortForwardResponse_Data{Data: append([]byte(nil), buf[:n]...)},
+			}); serr != nil {
+				recvErrCh <- fmt.Errorf("grpc send: %w", serr)
 				return
 			}
 			pf.BytesOut += uint64(n)
 		}
 	}()
 
-	for {
-		// Receive data from gRPC client
-		req, err := stream.Recv()
-		if err == io.EOF {
-			s.logger.Info().Msg("Client closed the stream")
-			break
-		}
-		if err != nil {
-			s.logger.Error().Msgf("failed to receive: %v", err)
-			break
-		}
-
-		isError := false
-
-		switch req.Request.(type) {
-		case *k8shelldpb.PortForwardRequest_Data:
-			data := req.GetData()
-			if _, err := tcpConn.Write(data); err != nil {
-				s.logger.Error().Msgf("Failed to write data to TCP connection: %v", err)
-				isError = true
-				break
+	// gRPC -> TCP (client sends to server)
+	go func() {
+		for {
+			req, rerr := stream.Recv()
+			if rerr != nil {
+				recvErrCh <- rerr
+				return
 			}
-			pf.BytesIn += uint64(len(data))
-		case *k8shelldpb.PortForwardRequest_Destination:
-			s.logger.Error().Msg("invalid request type, expected Data")
-			isError = true
+			switch r := req.Request.(type) {
+			case *k8shelldpb.PortForwardRequest_Data:
+				if len(r.Data) == 0 {
+					continue
+				}
+				if _, werr := tcpConn.Write(r.Data); werr != nil {
+					recvErrCh <- fmt.Errorf("tcp write: %w", werr)
+					return
+				}
+				pf.BytesIn += uint64(len(r.Data))
+			default:
+				recvErrCh <- status.Errorf(codes.InvalidArgument, "unexpected request type (want Data)")
+				return
+			}
 		}
+	}()
 
-		// Terminate the port-forwarding if there is an error
-		if isError {
-			break
+	// Main coordination
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+
+		case err := <-tcpErrCh:
+			if err != nil && err != io.EOF {
+				s.logger.Debug().Msgf("ending due to tcp error: %v", err)
+			}
+			return nil
+
+		case err := <-recvErrCh:
+			if err == io.EOF {
+				s.logger.Info().Msg("client closed send; finishing")
+				return nil
+			}
+			s.logger.Error().Msgf("stream error: %v", err)
+			return nil
 		}
-
 	}
-
-	tcpConn.Close()
-	pf.Deleted = time.Now()
-
-	s.logger.Info().Msgf("Port-forward stream ended: id=%s, duration=%s, bytes_in=%d, bytes_out=%d",
-		pf.Id, time.Since(pf.Created), pf.BytesIn, pf.BytesOut)
-
-	return nil
 }
