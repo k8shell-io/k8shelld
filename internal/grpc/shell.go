@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 
@@ -241,7 +242,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 				if sendErr := stream.Send(&k8shelldpb.ShellResponse{
 					Response: &k8shelldpb.ShellResponse_Data{Data: append([]byte(nil), buf[:n]...)},
 				}); sendErr != nil {
-					recvErrCh <- sendErr // surface error; main will return
+					recvErrCh <- sendErr
 					return
 				}
 			}
@@ -250,11 +251,11 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 
 	// client -> PTY
 	go func() {
-		defer close(reqCh) // signal consumer to stop when Recv ends
+		defer close(reqCh)
 		for {
 			req, err := stream.Recv()
 			if err != nil {
-				recvErrCh <- err // io.EOF or canceled or real error
+				recvErrCh <- err
 				return
 			}
 			reqCh <- req
@@ -264,24 +265,23 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 	for {
 		select {
 		case <-ctx.Done():
-			// client canceled; returning will close server->client side
+			s.logger.Debug().Msg("context done, closing shell session")
 			return nil
 
 		case <-ptyDone:
-			// PTY ended; finish RPC so client Recv() sees EOF
+			s.logger.Debug().Msg("PTY closed, closing shell session")
 			return nil
 
 		case err := <-recvErrCh:
 			if err == io.EOF {
-				logger.Info().Msg("client closed stream")
+				logger.Debug().Msg("client closed stream")
 				return nil
 			}
-			// propagate other errors (or log and return nil if you prefer)
 			return fmt.Errorf("stream error: %w", err)
 
 		case req, ok := <-reqCh:
 			if !ok {
-				// Recv goroutine ended; nothing more to read from client
+				s.logger.Debug().Msg("Recv goroutine ended; nothing more to read from client")
 				return nil
 			}
 			if data := req.GetData(); data != nil {
@@ -295,93 +295,139 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 
 // handleNonPtySession handles a shell session without PTY. It creates pipes for the stdin, stdout and stderr of the
 // shell process, reads data from the pipes and sends the data back to the client and vice versa.
-func (s *ShellServiceServer) handleNonPtySession(logger *zerolog.Logger, session *SessionData,
-	stream k8shelldpb.ShellService_ShellServer) error {
+func (s *ShellServiceServer) handleNonPtySession(
+	logger *zerolog.Logger,
+	session *SessionData,
+	stream k8shelldpb.ShellService_ShellServer,
+) error {
+	var (
+		stdout io.ReadCloser
+		stderr io.ReadCloser
+		stdin  io.WriteCloser
+		err    error
+	)
 
-	var stdoutPipe io.ReadCloser
-	var stderrPipe io.ReadCloser
-	var stdinPipe io.WriteCloser
-	var err error
-
-	defer func() {
-		if stdoutPipe != nil {
-			stdoutPipe.Close()
-		}
-		if stderrPipe != nil {
-			stderrPipe.Close()
-		}
-		if stdinPipe != nil {
-			stdinPipe.Close()
-		}
-		logger.Debug().Msgf("Pipes closed in session %s", session.Id)
-	}()
-
-	stdoutPipe, err = session.Cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("failed to set up stdout pipe: %v", err)
+	if stdout, err = session.Cmd.StdoutPipe(); err != nil {
+		return fmt.Errorf("stdout pipe: %w", err)
 	}
-	stderrPipe, err = session.Cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to set up stderr pipe: %v", err)
+	if stderr, err = session.Cmd.StderrPipe(); err != nil {
+		return fmt.Errorf("stderr pipe: %w", err)
 	}
-	stdinPipe, err = session.Cmd.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("failed to set up stdin pipe: %v", err)
+	if stdin, err = session.Cmd.StdinPipe(); err != nil {
+		return fmt.Errorf("stdin pipe: %w", err)
 	}
 
 	if err := session.Cmd.Start(); err != nil {
-		return fmt.Errorf("error starting shell session %s (no-pty): %v", session.Id, err)
+		return fmt.Errorf("start non-pty session %s: %w", session.Id, err)
 	}
-
 	s.grpcApi.procWatcher.AddPIDIgnoreTerminate(session.Cmd.Process.Pid)
 	session.Pid = session.Cmd.Process.Pid
 
-	// goroutine to read from stdout and stderr pipes and send the data to the client
-	// When the pipes are closed, it sends a terminate message to the client
-	// which will close the client stream
-	go func() {
-		_, err = io.Copy(&streamWriter{stream: stream}, stdoutPipe)
-		if err != nil {
-			logger.Error().Msgf("Error writing to stdout: %v", err)
+	defer func() {
+		if stdout != nil {
+			_ = stdout.Close()
 		}
-		logger.Debug().Msgf("Closing stdout pipe, session %s", session.Id)
-		//s.sendShellTerminate(stream)
+		if stderr != nil {
+			_ = stderr.Close()
+		}
+		if stdin != nil {
+			_ = stdin.Close()
+		}
+		logger.Debug().Msgf("pipes closed in session %s", session.Id)
+	}()
+
+	ctx := stream.Context()
+
+	// Channels to coordinate
+	reqCh := make(chan *k8shelldpb.ShellRequest, 8)
+	recvErrCh := make(chan error, 1)
+	clientClosed := make(chan struct{}, 1)
+	outDone := make(chan struct{})
+
+	// Server -> Client: stream stdout/stderr
+	outWg := &sync.WaitGroup{}
+	outWg.Add(2)
+
+	go func() {
+		defer outWg.Done()
+		if _, cErr := io.Copy(&streamWriter{stream: stream}, stdout); cErr != nil {
+			logger.Error().Msgf("stdout copy error (session %s): %v", session.Id, cErr)
+			recvErrCh <- cErr
+			return
+		}
+		logger.Debug().Msgf("stdout closed (session %s)", session.Id)
 	}()
 
 	go func() {
-		_, err = io.Copy(&streamWriter{stream: stream}, stderrPipe)
-		if err != nil {
-			logger.Error().Msgf("Error writing to stderr: %v", err)
+		defer outWg.Done()
+		if _, cErr := io.Copy(&streamWriter{stream: stream}, stderr); cErr != nil {
+			logger.Error().Msgf("stderr copy error (session %s): %v", session.Id, cErr)
+			recvErrCh <- cErr
+			return
 		}
-		logger.Debug().Msgf("Closing stderr pipe, session %s", session.Id)
-		//s.sendShellTerminate(stream)
+		logger.Debug().Msgf("stderr closed (session %s)", session.Id)
 	}()
 
-	// Read from the client stream and write to the stdin pipe
-	for {
-		req, err := stream.Recv()
-		if err == io.EOF {
-			logger.Info().Msgf("Client closed the stream")
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("failed to receive: %v", err)
-		}
+	// Notifier for when both outputs are done
+	go func() {
+		outWg.Wait()
+		close(outDone)
+	}()
 
-		data := req.GetData()
-		if data != nil {
-			_, writeErr := stdinPipe.Write(data)
-			if writeErr != nil {
-				logger.Error().Msgf("Error writing to stdin: %v", writeErr)
-				break
+	// Client -> Server: recv and write to stdin
+	go func() {
+		defer close(reqCh)
+		for {
+			req, rErr := stream.Recv()
+			if rErr != nil {
+				if rErr == io.EOF {
+					logger.Debug().Msgf("client closed send; closing stdin (session %s)", session.Id)
+					_ = stdin.Close()
+					clientClosed <- struct{}{}
+					return
+				}
+				recvErrCh <- fmt.Errorf("recv: %w", rErr)
+				return
 			}
-		} else {
-			logger.Error().Msg("received empty data")
-			return fmt.Errorf("received empty data")
+			reqCh <- req
+		}
+	}()
+
+	// coordination loop
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Debug().Msg("context done; ending non-pty session")
+			return nil
+
+		case <-outDone:
+			// Both stdout and stderr drained; process should be done (or will be).
+			return nil
+
+		case <-clientClosed:
+			// Client half-closed; keep running until outputs are drained (outDone).
+			continue
+
+		case err := <-recvErrCh:
+			// Any fatal error (send/recv/copy) ends the session.
+			return err
+
+		case req, ok := <-reqCh:
+			if !ok {
+				// recv goroutine ended without error (EOF path already handled)
+				// wait for outDone to finish draining outputs.
+				continue
+			}
+			if data := req.GetData(); data != nil {
+				if _, wErr := stdin.Write(data); wErr != nil {
+					return fmt.Errorf("stdin write: %w", wErr)
+				}
+				session.BytesIn += uint64(len(data))
+			} else {
+				return fmt.Errorf("received empty data")
+			}
 		}
 	}
-
-	return nil
 }
 
 // ResizeTerminal is a gRPC method that resizes the terminal of a shell session.
