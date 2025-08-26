@@ -48,6 +48,9 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 	s.handshakeMu.Lock()
 	defer s.handshakeMu.Unlock()
 
+	s.logger.Info().Msgf("Received handshake from user: %s, uid: %d, gid: %d",
+		req.User.Username, req.User.Uid, req.User.Gid)
+
 	if s.grpcApi.user.Username != req.User.Username {
 		return nil, status.Error(codes.PermissionDenied, "user name mismatch")
 	}
@@ -66,6 +69,8 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 		s.RunInitScripts(ctx, s.grpcApi.initScriptsDir, s.grpcApi.user, req.EnvVars)
 		s.initScriptsRun = true
 	}
+
+	s.logger.Info().Msg("Handshake successful")
 
 	return &k8shelldpb.HandshakeResponse{
 		Accepted:      true,

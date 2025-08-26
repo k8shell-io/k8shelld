@@ -90,6 +90,8 @@ func NewLogger(component string) *zerolog.Logger {
 		}
 	}
 
+	zerolog.TimeFieldFormat = TimeFormat
+
 	writer := io.MultiWriter(logWriter, logStoreWriter)
 	logger := zerolog.New(writer).
 		With().
