@@ -6,13 +6,15 @@ import (
 	"io"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/rs/zerolog"
 )
 
 // JsonLogger controls whether the logger outputs in JSON format or console format.
 var JsonLogger = false
+
+// Time format with milliseconds
+const TimeFormat = "2006-01-02T15:04:05.000"
 
 type logEntry struct {
 	Timestamp string `json:"time"`      // from zerolog
@@ -47,7 +49,7 @@ func (s *MemoryLogStore) Write(p []byte) (int, error) {
 	defer s.mu.Unlock()
 
 	if len(s.entries) >= s.cap {
-		s.entries = s.entries[1:]
+		s.entries = s.entries[len(s.entries)-s.cap:]
 	}
 	s.entries = append(s.entries, entry)
 
@@ -76,15 +78,20 @@ func InitLogLevel(level string) error {
 
 // NewLogger creates a logger writing to stdout and the shared memory log store.
 func NewLogger(component string) *zerolog.Logger {
-	var output io.Writer
+	logStoreWriter := LogStore
 
-	if !JsonLogger {
-		output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+	var logWriter io.Writer
+	if JsonLogger {
+		logWriter = os.Stdout
 	} else {
-		output = io.MultiWriter(os.Stdout, LogStore)
+		logWriter = zerolog.ConsoleWriter{
+			Out:        os.Stdout,
+			TimeFormat: TimeFormat,
+		}
 	}
 
-	logger := zerolog.New(output).
+	writer := io.MultiWriter(logWriter, logStoreWriter)
+	logger := zerolog.New(writer).
 		With().
 		Timestamp().
 		Str("component", component).
