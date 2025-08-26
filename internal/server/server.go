@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,92 +10,78 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/k8shell-io/k8shelld/internal/config"
+	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/rs/zerolog"
 )
 
 type Server struct {
-	logger    *zerolog.Logger
-	restApi   *RESTApiService
-	grpcApi   *GRPCApiService
-	dns       *DockerDNS
-	proc      *ProcessWatcher
-	pprof     bool
-	sysInfo   *SystemInfo
-	sysInfoMu sync.Mutex
+	logger      *zerolog.Logger
+	restService *RESTService
+	grpcService *grpc.GRPCService
+	procWatcher *system.ProcessWatcher
+	pprof       bool
+	sysInfo     *system.SystemInfo
+	sysInfoMu   sync.Mutex
 }
 
-func NewServer(config *Config, keys *Keys, grpcApiListenPort int, serverKeyPath string, serverCertPath string,
-	keyLogFilePath string, restpApiUnixSocket string, defaultDNS string, initScriptsDir string) (*Server, error) {
-	server := &Server{logger: log.NewLogger("k8shelld"), pprof: config.System.PProf, sysInfo: nil}
-	var err error
+func NewServer(cfg *config.Config, keys *config.Keys, grpcApiListenPort int, serverKeyPath string, serverCertPath string,
+	keyLogFilePath string, restApiUnixSocketPath string, initScriptsDir string) (*Server, error) {
 
-	// Create GRPC API service
-	server.grpcApi, err = NewGRPCAPI(grpcApiListenPort, keys.A1Key, config.MainUser, serverKeyPath,
-		serverCertPath, keyLogFilePath, config.PortForwardingRules, initScriptsDir)
+	s := &Server{
+		logger:  log.NewLogger("k8shelld"),
+		pprof:   cfg.System.PProf,
+		sysInfo: nil,
+	}
+
+	var err error
+	s.procWatcher = system.NewProcessWatcher(cfg.TerminateOrphans.Enabled, cfg.ReapZombies.Enabled,
+		cfg.TerminateOrphans.CheckInterval, cfg.TerminateOrphans.Exclude)
+
+	s.grpcService, err = grpc.NewGRPCService(grpcApiListenPort, keys.A1Key, cfg.User, serverKeyPath,
+		serverCertPath, keyLogFilePath, cfg.PortForwardingRules, initScriptsDir, s.procWatcher)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
 
-	// Create Docker DNS
-	if config.DockerDNS.Enabled {
-		server.dns, err = NewDockerDNS(config.DockerDNS.Fqdn, config.DockerDNS.ContainerName,
-			config.DockerDNS.ContainerId, config.DockerDNS.DNSNames, config.DockerDNS.UpstreamDNS,
-			config.DockerDNS.Searches, defaultDNS)
-		if err != nil {
-			return nil, fmt.Errorf("error creating Docker DNS instance: %v", err)
-		} else {
-			// Start Docker DNS
-			server.dns.Run()
-			defer server.dns.Stop()
-		}
-	}
-
-	// Create API service
-	server.restApi, err = NewRESTAPI(keys.A2Key, restpApiUnixSocket, config.MainUser, server)
-	errors.Is(err, context.Canceled)
+	s.restService, err = NewRESTService(restApiUnixSocketPath, cfg.User, s)
 	if err != nil {
 		return nil, fmt.Errorf("error creating REST API: %v", err)
 	}
 
-	// Create process watcher
-	server.proc = NewProcessWatcher(config.TerminateOrphans.Enabled, config.ReapZombies.Enabled,
-		config.TerminateOrphans.CheckInterval, config.TerminateOrphans.Exclude)
-
-	// Unset environment variables
-	UnsetEnvVars(config.Env)
-
-	return server, nil
+	config.UnsetEnvVars(cfg.Env)
+	return s, nil
 }
 
 func (s *Server) Serve() {
-	// Context will be canceled on SIGTERM or SIGINT
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var wg sync.WaitGroup
 
-	// Start gRPC handler
+	// gRPC handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.grpcApi.Handler(ctx)
+		s.grpcService.Serve(ctx)
 	}()
 
-	// Start REST handler
+	// REST handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.restApi.Handler(ctx)
+		s.restService.Serve(ctx)
 	}()
 
-	// Start process handler
+	// process watcher handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.proc.Handler(ctx)
+		s.procWatcher.Run(ctx)
 	}()
 
-	// Start system info handler
+	// system info handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -107,7 +92,7 @@ func (s *Server) Serve() {
 			select {
 			case <-ticker.C:
 				s.sysInfoMu.Lock()
-				newInfo, err := UpdateSystemInfo(s.sysInfo)
+				newInfo, err := system.UpdateSystemInfo(s.sysInfo)
 				if err != nil {
 					s.logger.Warn().Msgf("Failed to update system info: %v", err)
 					s.sysInfoMu.Unlock()
@@ -122,7 +107,7 @@ func (s *Server) Serve() {
 		}
 	}()
 
-	// Start pprof if enabled
+	// pprof if enabled
 	if s.pprof {
 		wg.Add(1)
 		go func() {

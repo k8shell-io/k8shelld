@@ -5,7 +5,7 @@
 // the destination only if the destination IP is in the allowed subnets. The allowed subnets are defined in the
 // port-forwarding rules.
 
-package server
+package grpc
 
 import (
 	"context"
@@ -14,13 +14,22 @@ import (
 	"net"
 	"time"
 
+	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/log"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
+	"github.com/rs/zerolog"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+// PortForwardServiceServer is the service that handles the port-forwarding GRPC service server
+type PortForwardServiceServer struct {
+	grpcApi *GRPCService
+	logger  *zerolog.Logger
+	k8shelldpb.UnimplementedPortForwardServiceServer
+}
 
 // Port-forward data structure
 type PortForwardData struct {
@@ -31,6 +40,14 @@ type PortForwardData struct {
 	Deleted     time.Time
 	BytesIn     uint64
 	BytesOut    uint64
+}
+
+// NewPortForwardServiceServer creates a new PortForwardServiceServer
+func NewPortForwardServiceServer(grpcapi *GRPCService) *PortForwardServiceServer {
+	return &PortForwardServiceServer{
+		grpcApi: grpcapi,
+		logger:  log.NewLogger("grpc-portforward"),
+	}
 }
 
 // getLocalSubnets returns all local network subnets in the workspace
@@ -80,7 +97,7 @@ func resolveHostnameToIP(host string) (net.IP, error) {
 }
 
 // Get the port-forward ID from the gRPC metadata "portforward-id"
-func (s *RemoteOSServiceServer) GetPortForwardID(ctx context.Context) (string, error) {
+func (s *PortForwardServiceServer) GetPortForwardID(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Errorf(codes.InvalidArgument, "missing metadata")
@@ -95,19 +112,19 @@ func (s *RemoteOSServiceServer) GetPortForwardID(ctx context.Context) (string, e
 }
 
 // Get the port-forward data from the store. It uses the port-forward ID retrieved from the metadata
-func (s *RemoteOSServiceServer) GetPortForwardData(ctx context.Context) (*PortForwardData, error) {
+func (s *PortForwardServiceServer) GetPortForwardData(ctx context.Context) (*PortForwardData, error) {
 	pfID, err := s.GetPortForwardID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	value, ok := s.grpcApi.portForwardStore.Load(pfID)
+	value, ok := s.grpcApi.PortForwardStore.Load(pfID)
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "port-forward id %s not found", pfID)
 	}
 	return value.(*PortForwardData), nil
 }
 
-func (s *RemoteOSServiceServer) createTCPConnection(destination string, port uint16) (net.Conn, error) {
+func (s *PortForwardServiceServer) createTCPConnection(destination string, port uint16) (net.Conn, error) {
 	// Resolve the destination hostname to IP
 	destinationIP, err := resolveHostnameToIP(destination)
 	if err != nil {
@@ -120,9 +137,9 @@ func (s *RemoteOSServiceServer) createTCPConnection(destination string, port uin
 	// Check if the destination IP is in the allowed subnets
 	// Collect all local subnets if the rule is "localnetworks:0"
 	localSubnets := []*net.IPNet{}
-	allowRules := make([]PortForwardingRule, len(s.grpcApi.portForwadingRules))
-	copy(allowRules, s.grpcApi.portForwadingRules)
-	for _, rule := range s.grpcApi.portForwadingRules {
+	allowRules := make([]config.PortForwardingRule, len(s.grpcApi.portForwardingRules))
+	copy(allowRules, s.grpcApi.portForwardingRules)
+	for _, rule := range s.grpcApi.portForwardingRules {
 		if rule.Subnet == nil {
 			if len(localSubnets) == 0 {
 				localSubnets, err = getLocalSubnets()
@@ -134,7 +151,7 @@ func (s *RemoteOSServiceServer) createTCPConnection(destination string, port uin
 				}
 			}
 			for _, subnet := range localSubnets {
-				allowRules = append(allowRules, PortForwardingRule{Subnet: subnet, Port: rule.Port})
+				allowRules = append(allowRules, config.PortForwardingRule{Subnet: subnet, Port: rule.Port})
 			}
 		}
 	}
@@ -170,13 +187,11 @@ func (s *RemoteOSServiceServer) createTCPConnection(destination string, port uin
 
 // Run the port-forwarding service. It reads data from the TCP connection and sends it to the gRPC client. It also
 // reads data from the gRPC client and sends it to the TCP connection.
-func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_PortForwardServer) error {
+func (s *PortForwardServiceServer) PortForward(stream k8shelldpb.PortForwardService_PortForwardServer) error {
 	pfID, err := s.GetPortForwardID(stream.Context())
 	if err != nil {
 		return fmt.Errorf("failed to get port-forward ID: %v", err)
 	}
-
-	logger := log.NewLogger("grpc-portforward")
 
 	// The first request is the command
 	req, err := stream.Recv()
@@ -184,7 +199,7 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 		return status.Errorf(codes.InvalidArgument, "failed to receive command: %v", err)
 	}
 
-	logger.Info().Msgf("Port-forward request: %v", req)
+	s.logger.Info().Msgf("Port-forward request: %v", req)
 
 	dstReq, ok := req.Request.(*k8shelldpb.PortForwardRequest_Destination)
 	if !ok {
@@ -205,20 +220,20 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 	if err != nil {
 		return status.Errorf(codes.Unavailable, "failed to create TCP connection: %v", err)
 	}
-	s.grpcApi.portForwardStore.Store(pf.Id, pf)
+	s.grpcApi.PortForwardStore.Store(pf.Id, pf)
 
-	logger.Info().Msgf("Port-forward started, id=%s, %s:%d", pf.Id, pf.Destination, pf.Port)
+	s.logger.Info().Msgf("Port-forward started, id=%s, %s:%d", pf.Id, pf.Destination, pf.Port)
 
 	go func() {
-		buf := make([]byte, DEFAULT_MAX_PACKET_SIZE)
+		buf := make([]byte, config.DEFAULT_MAX_PACKET_SIZE)
 
 		for {
 			n, err := tcpConn.Read(buf)
 			if err != nil {
 				if err == io.EOF {
-					logger.Info().Msg("TCP connection closed")
+					s.logger.Info().Msg("TCP connection closed")
 				} else {
-					logger.Error().Msgf("Error reading from TCP connection: %v", err)
+					s.logger.Error().Msgf("Error reading from TCP connection: %v", err)
 				}
 				stream.Send(&k8shelldpb.PortForwardResponse{
 					Response: &k8shelldpb.PortForwardResponse_Terminate{Terminate: true}})
@@ -229,7 +244,7 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 			err = stream.Send(&k8shelldpb.PortForwardResponse{
 				Response: &k8shelldpb.PortForwardResponse_Data{Data: buf[:n]}})
 			if err != nil {
-				logger.Error().Msgf("Failed to send data to gRPC client: %v", err)
+				s.logger.Error().Msgf("Failed to send data to gRPC client: %v", err)
 				return
 			}
 			pf.BytesOut += uint64(n)
@@ -240,11 +255,11 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 		// Receive data from gRPC client
 		req, err := stream.Recv()
 		if err == io.EOF {
-			logger.Info().Msg("Client closed the stream")
+			s.logger.Info().Msg("Client closed the stream")
 			break
 		}
 		if err != nil {
-			logger.Error().Msgf("failed to receive: %v", err)
+			s.logger.Error().Msgf("failed to receive: %v", err)
 			break
 		}
 
@@ -254,13 +269,13 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 		case *k8shelldpb.PortForwardRequest_Data:
 			data := req.GetData()
 			if _, err := tcpConn.Write(data); err != nil {
-				logger.Error().Msgf("Failed to write data to TCP connection: %v", err)
+				s.logger.Error().Msgf("Failed to write data to TCP connection: %v", err)
 				isError = true
 				break
 			}
 			pf.BytesIn += uint64(len(data))
 		case *k8shelldpb.PortForwardRequest_Destination:
-			logger.Error().Msg("invalid request type, expected Data")
+			s.logger.Error().Msg("invalid request type, expected Data")
 			isError = true
 		}
 
@@ -274,7 +289,7 @@ func (s *RemoteOSServiceServer) PortForward(stream k8shelldpb.RemoteOSService_Po
 	tcpConn.Close()
 	pf.Deleted = time.Now()
 
-	logger.Info().Msgf("Port-forward stream ended: id=%s, duration=%s, bytes_in=%d, bytes_out=%d",
+	s.logger.Info().Msgf("Port-forward stream ended: id=%s, duration=%s, bytes_in=%d, bytes_out=%d",
 		pf.Id, time.Since(pf.Created), pf.BytesIn, pf.BytesOut)
 
 	return nil

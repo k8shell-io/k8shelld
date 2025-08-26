@@ -4,7 +4,7 @@
 // and the interceptor. It uses the tokenAuthInterceptor to authenticate the client using the token
 // in the metadata.
 
-package server
+package grpc
 
 import (
 	"context"
@@ -20,7 +20,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 
 	"github.com/rs/zerolog"
@@ -47,31 +49,20 @@ type StoreRecord struct {
 }
 
 // GRPCApiService is the main service that handles the gRPC API
-type GRPCApiService struct {
-	logger             *zerolog.Logger      // The logger
-	initScriptsDir     string               // The directory where the init scripts are located
-	accessToken        string               // The access token that a client needs to auhtenticate with
-	tcpPort            int                  // The TCP port that the gRPC server listens on
-	cert               tls.Certificate      // The TLS certificate and key pair
-	KeyLogFilePath     string               // The path to the key log file for debugging
-	user               User                 // The main workspace user
-	portForwadingRules []PortForwardingRule // The port forwarding rules that are allowed
-	execStore          *sync.Map            // The store for the exec data
-	portForwardStore   *sync.Map            // The store for the port forwarding data
-	sessionStore       *sync.Map            // The store for the session data
-	unixSocketStore    *sync.Map            // The store for the unix socket data
-}
-
-// RemoteOSServiceServer is the service that handles the remote OS GRPC service server
-type RemoteOSServiceServer struct {
-	grpcApi *GRPCApiService
-	k8shelldpb.UnimplementedRemoteOSServiceServer
-}
-
-// InfoServiceServer is the service that handles the info GRPC service server
-type InfoServiceServer struct {
-	grpcApi *GRPCApiService
-	k8shelldpb.UnimplementedInfoServiceServer
+type GRPCService struct {
+	logger              *zerolog.Logger             // The logger
+	initScriptsDir      string                      // The directory where the init scripts are located
+	accessToken         string                      // The access token that a client needs to auhtenticate with
+	tcpPort             int                         // The TCP port that the gRPC server listens on
+	cert                tls.Certificate             // The TLS certificate and key pair
+	KeyLogFilePath      string                      // The path to the key log file for debugging
+	user                system.User                 // The workspace owner
+	procWatcher         *system.ProcessWatcher      // The process watcher
+	portForwardingRules []config.PortForwardingRule // The port forwarding rules that are allowed
+	ExecStore           *sync.Map                   // The store for the exec data
+	PortForwardStore    *sync.Map                   // The store for the port forwarding data
+	SessionStore        *sync.Map                   // The store for the session data
+	UnixSocketStore     *sync.Map                   // The store for the unix socket data
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -167,9 +158,10 @@ func LoadDecryptedKeyPair(serverCertPath, encryptedKeyPath, accessKey string) (t
 }
 
 // NewGRPCAPI creates a new GRPCApiService
-func NewGRPCAPI(tcpPort int, accessKey string, user User,
+func NewGRPCService(tcpPort int, accessKey string, user system.User,
 	serverKeyPath string, serverCertPath string, keyLogFilePath string,
-	portForwardingRules []PortForwardingRule, initScriptsDir string) (*GRPCApiService, error) {
+	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
+	procWatcher *system.ProcessWatcher) (*GRPCService, error) {
 
 	logger := log.NewLogger("grpc")
 
@@ -178,25 +170,26 @@ func NewGRPCAPI(tcpPort int, accessKey string, user User,
 		logger.Fatal().Msgf("Failed to load certificate and key: %v", err)
 	}
 
-	return &GRPCApiService{
-		logger:             logger,
-		initScriptsDir:     initScriptsDir,
-		accessToken:        accessKey,
-		KeyLogFilePath:     keyLogFilePath,
-		tcpPort:            tcpPort,
-		cert:               cert,
-		user:               user,
-		portForwadingRules: portForwardingRules,
-		execStore:          &sync.Map{},
-		portForwardStore:   &sync.Map{},
-		sessionStore:       &sync.Map{},
-		unixSocketStore:    &sync.Map{},
+	return &GRPCService{
+		logger:              logger,
+		initScriptsDir:      initScriptsDir,
+		accessToken:         accessKey,
+		KeyLogFilePath:      keyLogFilePath,
+		tcpPort:             tcpPort,
+		cert:                cert,
+		user:                user,
+		portForwardingRules: portForwardingRules,
+		procWatcher:         procWatcher,
+		ExecStore:           &sync.Map{},
+		PortForwardStore:    &sync.Map{},
+		SessionStore:        &sync.Map{},
+		UnixSocketStore:     &sync.Map{},
 	}, nil
 }
 
 // tokenAuthInterceptor is a gRPC interceptor that checks the token in the metadata.
 // It is used to authenticate the client.
-func (a *GRPCApiService) tokenAuthInterceptor(ctx context.Context) (context.Context, error) {
+func (a *GRPCService) tokenAuthInterceptor(ctx context.Context) (context.Context, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "missing metadata")
@@ -216,7 +209,7 @@ func (a *GRPCApiService) tokenAuthInterceptor(ctx context.Context) (context.Cont
 }
 
 // unaryAuthInterceptor returns a gRPC interceptor that performs token-based authentication.
-func (a *GRPCApiService) unaryAuthInterceptor() grpc.UnaryServerInterceptor {
+func (a *GRPCService) unaryAuthInterceptor() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req interface{},
@@ -232,7 +225,7 @@ func (a *GRPCApiService) unaryAuthInterceptor() grpc.UnaryServerInterceptor {
 }
 
 // UnaryErrorLoggingInterceptor logs all gRPC errors returned by handlers.
-func (a *GRPCApiService) unaryErrorLoggingInterceptor() grpc.UnaryServerInterceptor {
+func (a *GRPCService) unaryErrorLoggingInterceptor() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req any,
@@ -252,9 +245,9 @@ func (a *GRPCApiService) unaryErrorLoggingInterceptor() grpc.UnaryServerIntercep
 	}
 }
 
-// Handle starts the gRPC server and registers the services.
+// Serve starts the gRPC server and registers the services.
 // It also sets up the TLS configuration and the interceptor.
-func (a *GRPCApiService) Handler(ctx context.Context) error {
+func (a *GRPCService) Serve(ctx context.Context) error {
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{a.cert},
 	}
@@ -276,9 +269,11 @@ func (a *GRPCApiService) Handler(ctx context.Context) error {
 		),
 	)
 
-	k8shelldpb.RegisterInfoServiceServer(server, NewInfoServiceServer(a))
-	k8shelldpb.RegisterInitServiceServer(server, NewInitServiceServer(a))
-	k8shelldpb.RegisterRemoteOSServiceServer(server, NewRemoteOSServiceServer(a))
+	k8shelldpb.RegisterSystemServiceServer(server, NewSystemServiceServer(a))
+	k8shelldpb.RegisterShellServiceServer(server, NewShellServiceServer(a))
+	k8shelldpb.RegisterExecServiceServer(server, NewExecServiceServer(a))
+	k8shelldpb.RegisterPortForwardServiceServer(server, NewPortForwardServiceServer(a))
+	k8shelldpb.RegisterUnixSocketServiceServer(server, NewUnixSocketServiceServer(a))
 
 	a.logger.Info().Msgf("GRPC services server registered")
 
@@ -287,7 +282,7 @@ func (a *GRPCApiService) Handler(ctx context.Context) error {
 		return fmt.Errorf("failed to listen: %v", err)
 	}
 
-	// Start periodic cleanup goroutine
+	// cleanup goroutine
 	go func() {
 		ticker := time.NewTicker(cleanupInterval)
 		defer ticker.Stop()
@@ -322,45 +317,24 @@ func (a *GRPCApiService) Handler(ctx context.Context) error {
 	}
 }
 
-// NewRemoteOSServiceServer creates a new RemoteOSServiceServer
-func NewRemoteOSServiceServer(grpcapi *GRPCApiService) *RemoteOSServiceServer {
-	return &RemoteOSServiceServer{
-		grpcApi: grpcapi,
-	}
-}
-
-// NewRemoteOSServiceServer creates a new RemoteOSServiceServer
-func NewInfoServiceServer(grpcapi *GRPCApiService) *InfoServiceServer {
-	return &InfoServiceServer{
-		grpcApi: grpcapi,
-	}
-}
-
-func (s *InfoServiceServer) Version(ctx context.Context, req *k8shelldpb.VersionRequest) (*k8shelldpb.VersionResponse, error) {
-	return &k8shelldpb.VersionResponse{
-		Version: K8SHELLD_VERSION,
-		Commit:  K8SHELLD_COMMIT,
-	}, nil
-}
-
 // Cleanup the stores by removing the entries that were deleted more than deleteDelay ago
-func (a *GRPCApiService) cleanupChannelStores() {
-	a.cleanupChannelStore(a.execStore, func(v any) bool {
+func (a *GRPCService) cleanupChannelStores() {
+	a.cleanupChannelStore(a.ExecStore, func(v any) bool {
 		data := v.(*ExecData)
 		return !data.Deleted.IsZero() && time.Since(data.Deleted) > deleteDelay
 	})
 
-	a.cleanupChannelStore(a.portForwardStore, func(v any) bool {
+	a.cleanupChannelStore(a.PortForwardStore, func(v any) bool {
 		data := v.(*PortForwardData)
 		return !data.Deleted.IsZero() && time.Since(data.Deleted) > deleteDelay
 	})
 
-	a.cleanupChannelStore(a.sessionStore, func(v any) bool {
+	a.cleanupChannelStore(a.SessionStore, func(v any) bool {
 		data := v.(*SessionData)
 		return !data.Deleted.IsZero() && time.Since(data.Deleted) > deleteDelay
 	})
 
-	a.cleanupChannelStore(a.unixSocketStore, func(v any) bool {
+	a.cleanupChannelStore(a.UnixSocketStore, func(v any) bool {
 		data := v.(*unixSocketData)
 		return !data.Deleted.IsZero() && time.Since(data.Deleted) > deleteDelay
 	})
@@ -368,7 +342,7 @@ func (a *GRPCApiService) cleanupChannelStores() {
 }
 
 // Generic cleanup function for any store
-func (a *GRPCApiService) cleanupChannelStore(store *sync.Map, shouldDelete func(any) bool) {
+func (a *GRPCService) cleanupChannelStore(store *sync.Map, shouldDelete func(any) bool) {
 	store.Range(func(key, value any) bool {
 		if shouldDelete(value) {
 			store.Delete(key)
@@ -377,7 +351,7 @@ func (a *GRPCApiService) cleanupChannelStore(store *sync.Map, shouldDelete func(
 	})
 }
 
-func (a *GRPCApiService) getAllChannelStoreData() ([]StoreRecord, error) {
+func (a *GRPCService) GetAllChannelStoreData() ([]StoreRecord, error) {
 	var result []StoreRecord
 
 	// Helper function to process each store
@@ -437,10 +411,10 @@ func (a *GRPCApiService) getAllChannelStoreData() ([]StoreRecord, error) {
 		})
 	}
 
-	processStore("exec", a.execStore)
-	processStore("port-forward", a.portForwardStore)
-	processStore("shell", a.sessionStore)
-	processStore("unix-socket", a.unixSocketStore)
+	processStore("exec", a.ExecStore)
+	processStore("port-forward", a.PortForwardStore)
+	processStore("shell", a.SessionStore)
+	processStore("unix-socket", a.UnixSocketStore)
 
 	return result, nil
 }

@@ -12,8 +12,7 @@ import (
 )
 
 // JsonLogger controls whether the logger outputs in JSON format or console format.
-// Set this to false to use a human-readable console format.
-var JsonLogger = true
+var JsonLogger = false
 
 type logEntry struct {
 	Timestamp string `json:"time"`      // from zerolog

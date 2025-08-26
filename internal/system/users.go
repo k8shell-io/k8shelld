@@ -1,4 +1,4 @@
-package server
+package system
 
 import (
 	"bufio"
@@ -24,14 +24,15 @@ type Group struct {
 
 // User represents a user in the workspace
 type User struct {
-	Username string `yaml:"username"`
-	Fullname string `yaml:"fullname"`
-	Uid      int    `yaml:"uid"`
-	Gid      int    `yaml:"gid"`
-	Shell    string `yaml:"shell"`
-	Sudo     bool   `yaml:"sudo"`
-	HomeDir  string
-	Groups   *[]Group `yaml:"groups,omitempty" json:"groups,omitempty"`
+	Username  string   `yaml:"username"`
+	Fullname  string   `yaml:"fullname"`
+	Uid       int      `yaml:"uid"`
+	Gid       int      `yaml:"gid"`
+	Shell     string   `yaml:"shell"`
+	Sudo      bool     `yaml:"sudo"`
+	Groups    *[]Group `yaml:"groups,omitempty" json:"groups,omitempty"`
+	HomeDir   string
+	UserToken string
 }
 
 const groupFilePath = "/etc/group"
@@ -187,8 +188,8 @@ func enablePasswordlessSudo(ctx context.Context, username string) error {
 	return os.Rename(tmpFile, sudoersFile)
 }
 
-// getUserLoginShell returns the login shell for the given user.
-func getUserLoginShell(username string) (string, error) {
+// GetUserLoginShell returns the login shell for the given user.
+func GetUserLoginShell(username string) (string, error) {
 	data, err := os.ReadFile("/etc/passwd")
 	if err != nil {
 		return "", fmt.Errorf("failed to open /etc/passwd: %v", err)
@@ -230,7 +231,7 @@ func copySkeletonFiles(ctx context.Context, uid, gid int, homeDir string) error 
 	return nil
 }
 
-func getSupplementalGroups(username string) []uint32 {
+func GetSupplementalGroups(username string) []uint32 {
 	u, err := user.Lookup(username)
 	if err != nil {
 		return nil

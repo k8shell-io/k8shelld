@@ -1,4 +1,4 @@
-package server
+package grpc
 
 import (
 	"bufio"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
@@ -23,7 +24,7 @@ import (
 // SessionData stores the data of a shell session.
 type SessionData struct {
 	Id       string
-	user     User
+	user     system.User
 	CmdShell string
 	Cmd      *exec.Cmd
 	Ptmx     *os.File
@@ -34,9 +35,16 @@ type SessionData struct {
 	BytesOut uint64
 }
 
+// ShellServiceServer is the service that handles the shell GRPC service server
+type ShellServiceServer struct {
+	grpcApi *GRPCService
+	logger  *zerolog.Logger
+	k8shelldpb.UnimplementedShellServiceServer
+}
+
 // streamWriter is a writer that sends the data to the client stream
 type streamWriter struct {
-	stream k8shelldpb.RemoteOSService_ShellServer
+	stream k8shelldpb.ShellService_ShellServer
 }
 
 // Write writes the data to the client stream
@@ -46,6 +54,14 @@ func (sw *streamWriter) Write(data []byte) (int, error) {
 		return 0, err
 	}
 	return len(data), nil
+}
+
+// NewShellServiceServer creates a new ShellServiceServer
+func NewShellServiceServer(grpcapi *GRPCService) *ShellServiceServer {
+	return &ShellServiceServer{
+		grpcApi: grpcapi,
+		logger:  log.NewLogger("grpc-shell"),
+	}
 }
 
 // getUserLoginShell verify if the shell is valid
@@ -64,7 +80,7 @@ func isValidShell(shell string) bool {
 }
 
 // Get the port-forward ID from the gRPC metadata "portforward-id"
-func (s *RemoteOSServiceServer) GetSessionID(ctx context.Context) (string, error) {
+func (s *ShellServiceServer) GetSessionID(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Errorf(codes.InvalidArgument, "missing metadata")
@@ -79,12 +95,12 @@ func (s *RemoteOSServiceServer) GetSessionID(ctx context.Context) (string, error
 }
 
 // Get the port-forward data from the store. It uses the port-forward ID retrieved from the metadata
-func (s *RemoteOSServiceServer) GetSessionData(ctx context.Context) (*SessionData, error) {
+func (s *ShellServiceServer) GetSessionData(ctx context.Context) (*SessionData, error) {
 	sid, err := s.GetSessionID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	value, ok := s.grpcApi.sessionStore.Load(sid)
+	value, ok := s.grpcApi.SessionStore.Load(sid)
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "session-id %s not found", sid)
 	}
@@ -93,8 +109,7 @@ func (s *RemoteOSServiceServer) GetSessionData(ctx context.Context) (*SessionDat
 
 // Shell is a gRPC method that starts a shell session. It is a bidirectional streaming RPC
 // that sends the shell output to the client and receives the client input to send to the shell.
-func (s *RemoteOSServiceServer) Shell(stream k8shelldpb.RemoteOSService_ShellServer) error {
-	logger := log.NewLogger("grpc-shell")
+func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) error {
 	sessionId, err := s.GetSessionID(stream.Context())
 	if err != nil {
 		return fmt.Errorf("failed to get session ID: %v", err)
@@ -111,7 +126,7 @@ func (s *RemoteOSServiceServer) Shell(stream k8shelldpb.RemoteOSService_ShellSer
 	}
 
 	// Get the login shell for the user
-	shell, err := getUserLoginShell(s.grpcApi.user.Username)
+	shell, err := system.GetUserLoginShell(s.grpcApi.user.Username)
 	if err != nil {
 		shell = shellReq.StartRequest.CmdShell
 	}
@@ -131,10 +146,10 @@ func (s *RemoteOSServiceServer) Shell(stream k8shelldpb.RemoteOSService_ShellSer
 	session.Cmd = exec.Command(shell)
 	session.Cmd.Args[0] = "-" + session.Cmd.Args[0] // make the shell a login shell
 
-	session.Cmd.Env = CreateEnvVars(shellReq.StartRequest.SetEnvVars, session.user.HomeDir)
+	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars, session.user.HomeDir)
 	session.Cmd.Dir = session.user.HomeDir
 
-	logger.Debug().Msgf("env: %v", session.Cmd.Env)
+	s.logger.Debug().Msgf("env: %v", session.Cmd.Env)
 
 	// Set process attributes for the shell
 	session.Cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -142,28 +157,28 @@ func (s *RemoteOSServiceServer) Shell(stream k8shelldpb.RemoteOSService_ShellSer
 		Credential: &syscall.Credential{
 			Uid:    uint32(session.user.Uid),
 			Gid:    uint32(session.user.Gid),
-			Groups: getSupplementalGroups(session.user.Username),
+			Groups: system.GetSupplementalGroups(session.user.Username),
 		},
 	}
 
-	s.grpcApi.sessionStore.Store(session.Id, session)
+	s.grpcApi.SessionStore.Store(session.Id, session)
 
 	defer func() {
 		s.cleanUpSession(session)
 		session.Deleted = time.Now()
-		logger.Info().Msgf("Shell session %s ended", sessionId)
+		s.logger.Info().Msgf("Shell session %s ended", sessionId)
 	}()
 
-	logger.Info().Msgf("Starting shell session %s, pty=%v", sessionId, shellReq.StartRequest.UsePty)
+	s.logger.Info().Msgf("Starting shell session %s, pty=%v", sessionId, shellReq.StartRequest.UsePty)
 
 	// Start the shell
 	if shellReq.StartRequest.UsePty {
-		err = s.handlePtySession(logger, session, stream, shellReq.StartRequest.Width, shellReq.StartRequest.Height)
+		err = s.handlePtySession(s.logger, session, stream, shellReq.StartRequest.Width, shellReq.StartRequest.Height)
 		if err != nil {
 			return fmt.Errorf("error handling PTY session: %v", err)
 		}
 	} else {
-		err = s.handleNonPtySession(logger, session, stream)
+		err = s.handleNonPtySession(s.logger, session, stream)
 		if err != nil {
 			return fmt.Errorf("error handling non-PTY session: %v", err)
 		}
@@ -174,7 +189,7 @@ func (s *RemoteOSServiceServer) Shell(stream k8shelldpb.RemoteOSService_ShellSer
 }
 
 // cleanUpSession cleans up the session by killing the shell process and closing the PTY
-func (s *RemoteOSServiceServer) cleanUpSession(session *SessionData) {
+func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
 	if session.Cmd != nil {
 		if session.Cmd.Process.Pid != 0 {
 			_ = syscall.Kill(-session.Cmd.Process.Pid, syscall.SIGKILL)
@@ -189,8 +204,8 @@ func (s *RemoteOSServiceServer) cleanUpSession(session *SessionData) {
 
 // handlePtySession handles a shell session with PTY. It creates the PTY session, sets the width and height of the terminal,
 // reads data from the PTY and sends the data back to the client and vice versa.
-func (s *RemoteOSServiceServer) handlePtySession(logger *zerolog.Logger, session *SessionData,
-	stream k8shelldpb.RemoteOSService_ShellServer, width uint32, height uint32) error {
+func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *SessionData,
+	stream k8shelldpb.ShellService_ShellServer, width uint32, height uint32) error {
 
 	var err error
 	session.Ptmx, err = pty.Start(session.Cmd)
@@ -198,7 +213,7 @@ func (s *RemoteOSServiceServer) handlePtySession(logger *zerolog.Logger, session
 		return fmt.Errorf("error starting the shell with PTY: %v", err)
 	}
 
-	AddPIDIgnoreTerminate(session.Cmd.Process.Pid)
+	s.grpcApi.procWatcher.AddPIDIgnoreTerminate(session.Cmd.Process.Pid)
 	session.Pid = session.Cmd.Process.Pid
 
 	if width > 0 && height > 0 {
@@ -253,8 +268,8 @@ func (s *RemoteOSServiceServer) handlePtySession(logger *zerolog.Logger, session
 
 // handleNonPtySession handles a shell session without PTY. It creates pipes for the stdin, stdout and stderr of the
 // shell process, reads data from the pipes and sends the data back to the client and vice versa.
-func (s *RemoteOSServiceServer) handleNonPtySession(logger *zerolog.Logger, session *SessionData,
-	stream k8shelldpb.RemoteOSService_ShellServer) error {
+func (s *ShellServiceServer) handleNonPtySession(logger *zerolog.Logger, session *SessionData,
+	stream k8shelldpb.ShellService_ShellServer) error {
 
 	var stdoutPipe io.ReadCloser
 	var stderrPipe io.ReadCloser
@@ -291,7 +306,7 @@ func (s *RemoteOSServiceServer) handleNonPtySession(logger *zerolog.Logger, sess
 		return fmt.Errorf("error starting shell session %s (no-pty): %v", session.Id, err)
 	}
 
-	AddPIDIgnoreTerminate(session.Cmd.Process.Pid)
+	s.grpcApi.procWatcher.AddPIDIgnoreTerminate(session.Cmd.Process.Pid)
 	session.Pid = session.Cmd.Process.Pid
 
 	// goroutine to read from stdout and stderr pipes and send the data to the client
@@ -343,15 +358,14 @@ func (s *RemoteOSServiceServer) handleNonPtySession(logger *zerolog.Logger, sess
 }
 
 // ResizeTerminal is a gRPC method that resizes the terminal of a shell session.
-func (s *RemoteOSServiceServer) ResizeTerminal(ctx context.Context,
+func (s *ShellServiceServer) ResizeTerminal(ctx context.Context,
 	req *k8shelldpb.ResizeTerminalRequest) (*k8shelldpb.ResizeTerminalResponse, error) {
 	session, err := s.GetSessionData(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	logger := log.NewLogger("grpc-shell")
-	logger.Debug().Msgf("Resizing shell session %s, cols: %d, rows: %d", session.Id, req.Width, req.Height)
+	s.logger.Debug().Msgf("Resizing shell session %s, cols: %d, rows: %d", session.Id, req.Width, req.Height)
 
 	pty.Setsize(session.Ptmx, &pty.Winsize{
 		Rows: uint16(req.Height),
@@ -361,6 +375,6 @@ func (s *RemoteOSServiceServer) ResizeTerminal(ctx context.Context,
 }
 
 // sendShellTerminate sends a terminate message to the client to close the shell session
-func (s *RemoteOSServiceServer) sendShellTerminate(stream k8shelldpb.RemoteOSService_ShellServer) error {
+func (s *ShellServiceServer) sendShellTerminate(stream k8shelldpb.ShellService_ShellServer) error {
 	return stream.Send(&k8shelldpb.ShellResponse{Response: &k8shelldpb.ShellResponse_Terminate{Terminate: true}})
 }

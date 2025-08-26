@@ -1,4 +1,4 @@
-package server
+package grpc
 
 import (
 	"context"
@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
+	"github.com/rs/zerolog"
 
 	"github.com/google/shlex"
 	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/system"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -30,6 +32,21 @@ type ExecData struct {
 	BytesOut uint64
 }
 
+// ExecServiceServer is the service that handles the exec GRPC service server
+type ExecServiceServer struct {
+	grpcApi *GRPCService
+	logger  *zerolog.Logger
+	k8shelldpb.UnimplementedExecServiceServer
+}
+
+// NewExecServiceServer creates a new ExecServiceServer
+func NewExecServiceServer(grpcapi *GRPCService) *ExecServiceServer {
+	return &ExecServiceServer{
+		grpcApi: grpcapi,
+		logger:  log.NewLogger("grpc-exec"),
+	}
+}
+
 func parseCommand(cmdStr string) ([]string, error) {
 	parts, err := shlex.Split(cmdStr)
 	if err != nil {
@@ -39,7 +56,7 @@ func parseCommand(cmdStr string) ([]string, error) {
 }
 
 // Get the exec ID from the gRPC metadata "exec-id"
-func (s *RemoteOSServiceServer) GetExecID(ctx context.Context) (string, error) {
+func (s *ExecServiceServer) GetExecID(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Errorf(codes.InvalidArgument, "missing metadata")
@@ -53,8 +70,7 @@ func (s *RemoteOSServiceServer) GetExecID(ctx context.Context) (string, error) {
 	return data[0], nil
 }
 
-func (s *RemoteOSServiceServer) Exec(stream k8shelldpb.RemoteOSService_ExecServer) error {
-	var logger = log.NewLogger("grpc-exec")
+func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error {
 	var cmd *exec.Cmd
 	var stdin io.WriteCloser
 	var stdout, stderr io.ReadCloser
@@ -65,7 +81,7 @@ func (s *RemoteOSServiceServer) Exec(stream k8shelldpb.RemoteOSService_ExecServe
 		return status.Errorf(codes.InvalidArgument, "failed to get exec ID: %v", err)
 	}
 
-	_, ok := s.grpcApi.execStore.Load(execId)
+	_, ok := s.grpcApi.ExecStore.Load(execId)
 	if ok {
 		return status.Errorf(codes.AlreadyExists, "exec-id %s already exists", execId)
 	}
@@ -148,7 +164,7 @@ func (s *RemoteOSServiceServer) Exec(stream k8shelldpb.RemoteOSService_ExecServe
 		BytesIn:  0,
 		BytesOut: 0,
 	}
-	s.grpcApi.execStore.Store(execData.Id, execData)
+	s.grpcApi.ExecStore.Store(execData.Id, execData)
 
 	// Start the command and check the output
 	// When command execution fails, we write the error to stderr and return the exit code
@@ -166,16 +182,16 @@ func (s *RemoteOSServiceServer) Exec(stream k8shelldpb.RemoteOSService_ExecServe
 			Response: &k8shelldpb.ExecResponse_Stderr{Stderr: []byte(err.Error() + "\n")},
 		})
 		stream.Send(&k8shelldpb.ExecResponse{Response: &k8shelldpb.ExecResponse_ExitCode{ExitCode: exitCode}})
-		logger.Error().Msgf("Failed to start command: %v, exit-code: %d", err, exitCode)
+		s.logger.Error().Msgf("Failed to start command: %v, exit-code: %d", err, exitCode)
 		return nil
 	}
 
 	processPID := cmd.Process.Pid
 
 	// all good, add the PID to the ignore list not to be terminated as it will be orphaned
-	AddPIDIgnoreTerminate(processPID)
+	s.grpcApi.procWatcher.AddPIDIgnoreTerminate(processPID)
 
-	logger.Debug().Msgf("Executing command: %v, PID: %d", cmdReq.CommandDetails, processPID)
+	s.logger.Debug().Msgf("Executing command: %v, PID: %d", cmdReq.CommandDetails, processPID)
 
 	// Handle terminate request from client
 	terminate := make(chan struct{})
@@ -184,14 +200,14 @@ func (s *RemoteOSServiceServer) Exec(stream k8shelldpb.RemoteOSService_ExecServe
 	// -> Stream input and terminate from client
 	go func() {
 		defer stdin.Close()
-		defer logger.Debug().Msgf("Closing stdin, PID=%d", processPID)
+		defer s.logger.Debug().Msgf("Closing stdin, PID=%d", processPID)
 		for {
 			req, err := stream.Recv()
 			if err != nil {
 				if err == io.EOF {
-					logger.Debug().Msgf("Client closed send (EOF), PID=%d", processPID)
+					s.logger.Debug().Msgf("Client closed send (EOF), PID=%d", processPID)
 				} else {
-					logger.Debug().Msgf("Recv error: %v, PID=%d", err, processPID)
+					s.logger.Debug().Msgf("Recv error: %v, PID=%d", err, processPID)
 				}
 				terminateOnce.Do(func() { close(terminate) })
 				return
@@ -203,10 +219,10 @@ func (s *RemoteOSServiceServer) Exec(stream k8shelldpb.RemoteOSService_ExecServe
 				execData.BytesIn += uint64(len(data))
 				stdin.Write(data)
 			case *k8shelldpb.ExecRequest_Signal:
-				logger.Debug().Msgf("Received signal %s, sending the signal to PID: %d", req.GetSignal(), processPID)
-				signal, err := getSignalValue(req.GetSignal())
+				s.logger.Debug().Msgf("Received signal %s, sending the signal to PID: %d", req.GetSignal(), processPID)
+				signal, err := system.GetSignalValue(req.GetSignal())
 				if err != nil {
-					logger.Error().Msgf("Received invalid signal value: %v, PID=%d. Using SIGTERM.", err, processPID)
+					s.logger.Error().Msgf("Received invalid signal value: %v, PID=%d. Using SIGTERM.", err, processPID)
 					signal = syscall.SIGTERM
 				}
 
@@ -217,7 +233,7 @@ func (s *RemoteOSServiceServer) Exec(stream k8shelldpb.RemoteOSService_ExecServe
 					if err != nil {
 						err = syscall.Kill(processPID, syscall.SIGKILL)
 						if err != nil {
-							logger.Error().Msgf("Failed to send kill process with PID %d: %v", processPID, err)
+							s.logger.Error().Msgf("Failed to send kill process with PID %d: %v", processPID, err)
 						}
 					}
 				}
@@ -230,19 +246,19 @@ func (s *RemoteOSServiceServer) Exec(stream k8shelldpb.RemoteOSService_ExecServe
 	// <- Stream stdout to client
 	go func() {
 		defer stdout.Close()
-		defer logger.Debug().Msgf("Closing stdout, PID=%d", processPID)
+		defer s.logger.Debug().Msgf("Closing stdout, PID=%d", processPID)
 		buf := make([]byte, 4096)
 
 		for {
 			n, err := stdout.Read(buf)
 			if err != nil {
 				if err == io.EOF {
-					logger.Debug().Msgf("Stdout closed by process, PID=%d", processPID)
+					s.logger.Debug().Msgf("Stdout closed by process, PID=%d", processPID)
 				} else {
-					logger.Debug().Msgf("Error reading stdout: %v, PID=%d", err, processPID)
+					s.logger.Debug().Msgf("Error reading stdout: %v, PID=%d", err, processPID)
 					if cmd.ProcessState == nil || !cmd.ProcessState.Exited() {
 						if cmd.Process != nil {
-							logger.Debug().Msgf("Sending SIGTERM to PID: %d due to stdout error", processPID)
+							s.logger.Debug().Msgf("Sending SIGTERM to PID: %d due to stdout error", processPID)
 							cmd.Process.Signal(syscall.SIGTERM)
 						}
 					}
@@ -256,7 +272,7 @@ func (s *RemoteOSServiceServer) Exec(stream k8shelldpb.RemoteOSService_ExecServe
 					Response: &k8shelldpb.ExecResponse_Stdout{Stdout: buf[:n]},
 				})
 				if streamErr != nil {
-					logger.Debug().Msgf("Failed to send stdout data: %v, PID=%d", streamErr, processPID)
+					s.logger.Debug().Msgf("Failed to send stdout data: %v, PID=%d", streamErr, processPID)
 					terminateOnce.Do(func() { close(terminate) })
 					return
 				} else {
@@ -269,18 +285,18 @@ func (s *RemoteOSServiceServer) Exec(stream k8shelldpb.RemoteOSService_ExecServe
 	// <- Stream stderr to client
 	go func() {
 		defer stderr.Close()
-		defer logger.Debug().Msgf("Closing stderr, PID=%d", processPID)
+		defer s.logger.Debug().Msgf("Closing stderr, PID=%d", processPID)
 		buf := make([]byte, 4096)
 		for {
 			n, err := stderr.Read(buf)
 			if err != nil {
 				if err == io.EOF {
-					logger.Debug().Msgf("Stderr closed by process, PID=%d", processPID)
+					s.logger.Debug().Msgf("Stderr closed by process, PID=%d", processPID)
 				} else {
-					logger.Debug().Msgf("Error reading stderr: %v, PID=%d", err, processPID)
+					s.logger.Debug().Msgf("Error reading stderr: %v, PID=%d", err, processPID)
 					if cmd.ProcessState == nil || !cmd.ProcessState.Exited() {
 						if cmd.Process != nil {
-							logger.Debug().Msgf("Sending SIGTERM to PID: %d due to stderr error", processPID)
+							s.logger.Debug().Msgf("Sending SIGTERM to PID: %d due to stderr error", processPID)
 							cmd.Process.Signal(syscall.SIGTERM)
 						}
 					}
@@ -304,26 +320,26 @@ func (s *RemoteOSServiceServer) Exec(stream k8shelldpb.RemoteOSService_ExecServe
 
 	// Retrieve the exit code
 	if cmd.ProcessState == nil {
-		logger.Debug().Msgf("Command process state is nil, PID=%d", processPID)
+		s.logger.Debug().Msgf("Command process state is nil, PID=%d", processPID)
 		exitCode = 1
 	} else {
 		if status, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok {
 			if status.Signaled() {
 				signal := status.Signal()
-				logger.Debug().Msgf("Process terminated by signal: %v, PID=%d", signal, processPID)
+				s.logger.Debug().Msgf("Process terminated by signal: %v, PID=%d", signal, processPID)
 				exitCode = 128 + int32(signal)
 			} else {
 				exitCode = int32(status.ExitStatus())
 			}
 		} else {
-			logger.Debug().Msgf("Unexpected process state type, PID=%d", processPID)
+			s.logger.Debug().Msgf("Unexpected process state type, PID=%d", processPID)
 			exitCode = 1
 		}
 	}
 
 	// Send the exit code to the client
 	stream.Send(&k8shelldpb.ExecResponse{Response: &k8shelldpb.ExecResponse_ExitCode{ExitCode: exitCode}})
-	logger.Debug().Msgf("Command execution complete: %v, PID=%d, exit-code=%d, bytes-in=%d, bytes-out=%d",
+	s.logger.Debug().Msgf("Command execution complete: %v, PID=%d, exit-code=%d, bytes-in=%d, bytes-out=%d",
 		cmdReq.CommandDetails, processPID, exitCode, execData.BytesIn, execData.BytesOut)
 
 	// Remove exec data from the store

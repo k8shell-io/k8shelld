@@ -4,56 +4,43 @@ package k8shelld;
 
 option go_package = "github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb;k8shelldpb";
 
-// *** InfoService definition
-service InfoService {
-  // Version gets the version of the service
-  rpc Version (VersionRequest) returns (VersionResponse);
+// *** Handshake service
+
+service SystemService {
+  rpc Handshake (HandshakeRequest) returns (HandshakeResponse);
 }
 
-// VersionRequest message
-message VersionRequest {
+// HandshakeRequest message
+message HandshakeRequest {
+  string client_version = 1;
+  User user = 2;
+  repeated string env_vars = 7;
 }
 
-// VersionResponse message
-message VersionResponse {
-  string version = 1; // Version of the service
-  string commit = 2;  // Commit hash of the service
+// User to be used to setup workspace
+message User {
+  string username = 1;
+  string fullname = 2;
+  uint32 uid = 3;
+  uint32 gid = 4;
+  string user_token = 5;
 }
 
-// *** InitService definition
-service InitService {
-  // Workspace initialization
-  rpc RunInitScripts (InitRequest) returns (InitResponse);
+// HandshakeResponse message
+message HandshakeResponse {
+  string server_version = 1;
+  bool accepted = 2;
+  string message = 3;
 }
 
-// ShellRequest message
-message InitRequest {
-  repeated string setEnvVars = 1;   
-}
+// *** ShellService
 
-// ShellRequest message
-message InitResponse {
-  string message = 1; 
-}
-
-// *** RemoteOSService definition
-service RemoteOSService {
+service ShellService {
   // Shell starts a shell session
   rpc Shell (stream ShellRequest) returns (stream ShellResponse);
 
   // ResizeTerminal resizes the terminal in a shell session
   rpc ResizeTerminal (ResizeTerminalRequest) returns (ResizeTerminalResponse);
-
-  // PortForward forwards a port to the specified destination IP and port
-  rpc PortForward (stream PortForwardRequest) returns (stream PortForwardResponse);
-
-  // Exec executes a command 
-  rpc Exec(stream ExecRequest) returns (stream ExecResponse);
-
-  // UnixSocket reads/writes to a Unix socket in the remote OS
-  // This is primarily used for SSH agent forwarding
-  rpc UnixSocket (stream UnixSocketRequest) returns (stream UnixSocketResponse);
-
 }
 
 // ShellRequest message
@@ -91,6 +78,42 @@ message ResizeTerminalRequest {
 message ResizeTerminalResponse {
 }
 
+// *** PortForwardService
+
+service PortForwardService {
+  // PortForward forwards a port to the specified destination IP and port
+  rpc PortForward (stream PortForwardRequest) returns (stream PortForwardResponse);
+}
+
+// Request for the PortForward operation
+message PortForwardRequest {
+  oneof request { 
+    Destination destination = 1; // Destination details
+    bytes data = 2;               // Data to send to the destination
+  }
+}
+
+// Destination details message
+message Destination {
+  string ip = 1; // Destination IP address
+  uint32 port = 2; // Destination port
+}
+
+// Response for the PortForward operation
+message PortForwardResponse {
+  oneof response { 
+    bytes data = 1;     // Data received from the destination
+    bool terminate = 2; // Terminate the port forward session
+  }
+}
+
+// *** ExecService
+
+service ExecService {
+  // Exec executes a command 
+  rpc Exec(stream ExecRequest) returns (stream ExecResponse);
+}
+
 // Request for the Exec operation
 message ExecRequest {
   oneof request {
@@ -116,26 +139,12 @@ message CommandDetails {
   repeated string setEnvVars = 3;   // Environment variables to be set for the command
 }
 
-// Request for the PortForward operation
-message PortForwardRequest {
-  oneof request { 
-    Destination destination = 1; // Destination details
-    bytes data = 2;               // Data to send to the destination
-  }
-}
+// *** UnixSocketService
 
-// Response for the PortForward operation
-message PortForwardResponse {
-  oneof response { 
-    bytes data = 1;     // Data received from the destination
-    bool terminate = 2; // Terminate the port forward session
-  }
-}
-
-// Destination details message
-message Destination {
-  string ip = 1; // Destination IP address
-  uint32 port = 2; // Destination port
+service UnixSocketService {
+  // UnixSocket reads/writes to a Unix socket in the remote OS
+  // This is primarily used for SSH agent forwarding
+  rpc UnixSocket (stream UnixSocketRequest) returns (stream UnixSocketResponse);
 }
 
 // Request for the UnixSocket operation

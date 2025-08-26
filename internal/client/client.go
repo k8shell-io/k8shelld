@@ -7,7 +7,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/k8shell-io/k8shelld/internal/common"
+	"github.com/k8shell-io/k8shelld/internal/models"
 )
 
 // Custom HTTP client that communicates over a Unix socket
@@ -21,7 +21,7 @@ func newUnixSocketClient(socketPath string) *http.Client {
 }
 
 func MakeRequest(method string, url string, headers map[string]string, data io.Reader) (*http.Response, error) {
-	client := newUnixSocketClient(common.DefaultRESTAPIUnixSocket)
+	client := newUnixSocketClient(models.RESTAPIUnixSocket)
 	req, err := http.NewRequest(method, "http://unix/api/v1"+url, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %v", err)

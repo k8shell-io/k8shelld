@@ -19,107 +19,105 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	InfoService_Version_FullMethodName = "/k8shelld.InfoService/Version"
+	SystemService_Handshake_FullMethodName = "/k8shelld.SystemService/Handshake"
 )
 
-// InfoServiceClient is the client API for InfoService service.
+// SystemServiceClient is the client API for SystemService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// *** InfoService definition
-type InfoServiceClient interface {
-	// Version gets the version of the service
-	Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error)
+// *** Handshake service
+type SystemServiceClient interface {
+	Handshake(ctx context.Context, in *HandshakeRequest, opts ...grpc.CallOption) (*HandshakeResponse, error)
 }
 
-type infoServiceClient struct {
+type systemServiceClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewInfoServiceClient(cc grpc.ClientConnInterface) InfoServiceClient {
-	return &infoServiceClient{cc}
+func NewSystemServiceClient(cc grpc.ClientConnInterface) SystemServiceClient {
+	return &systemServiceClient{cc}
 }
 
-func (c *infoServiceClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
+func (c *systemServiceClient) Handshake(ctx context.Context, in *HandshakeRequest, opts ...grpc.CallOption) (*HandshakeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(VersionResponse)
-	err := c.cc.Invoke(ctx, InfoService_Version_FullMethodName, in, out, cOpts...)
+	out := new(HandshakeResponse)
+	err := c.cc.Invoke(ctx, SystemService_Handshake_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// InfoServiceServer is the server API for InfoService service.
-// All implementations must embed UnimplementedInfoServiceServer
+// SystemServiceServer is the server API for SystemService service.
+// All implementations must embed UnimplementedSystemServiceServer
 // for forward compatibility.
 //
-// *** InfoService definition
-type InfoServiceServer interface {
-	// Version gets the version of the service
-	Version(context.Context, *VersionRequest) (*VersionResponse, error)
-	mustEmbedUnimplementedInfoServiceServer()
+// *** Handshake service
+type SystemServiceServer interface {
+	Handshake(context.Context, *HandshakeRequest) (*HandshakeResponse, error)
+	mustEmbedUnimplementedSystemServiceServer()
 }
 
-// UnimplementedInfoServiceServer must be embedded to have
+// UnimplementedSystemServiceServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedInfoServiceServer struct{}
+type UnimplementedSystemServiceServer struct{}
 
-func (UnimplementedInfoServiceServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Version not implemented")
+func (UnimplementedSystemServiceServer) Handshake(context.Context, *HandshakeRequest) (*HandshakeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Handshake not implemented")
 }
-func (UnimplementedInfoServiceServer) mustEmbedUnimplementedInfoServiceServer() {}
-func (UnimplementedInfoServiceServer) testEmbeddedByValue()                     {}
+func (UnimplementedSystemServiceServer) mustEmbedUnimplementedSystemServiceServer() {}
+func (UnimplementedSystemServiceServer) testEmbeddedByValue()                       {}
 
-// UnsafeInfoServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to InfoServiceServer will
+// UnsafeSystemServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to SystemServiceServer will
 // result in compilation errors.
-type UnsafeInfoServiceServer interface {
-	mustEmbedUnimplementedInfoServiceServer()
+type UnsafeSystemServiceServer interface {
+	mustEmbedUnimplementedSystemServiceServer()
 }
 
-func RegisterInfoServiceServer(s grpc.ServiceRegistrar, srv InfoServiceServer) {
-	// If the following call pancis, it indicates UnimplementedInfoServiceServer was
+func RegisterSystemServiceServer(s grpc.ServiceRegistrar, srv SystemServiceServer) {
+	// If the following call pancis, it indicates UnimplementedSystemServiceServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&InfoService_ServiceDesc, srv)
+	s.RegisterService(&SystemService_ServiceDesc, srv)
 }
 
-func _InfoService_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(VersionRequest)
+func _SystemService_Handshake_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HandshakeRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(InfoServiceServer).Version(ctx, in)
+		return srv.(SystemServiceServer).Handshake(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: InfoService_Version_FullMethodName,
+		FullMethod: SystemService_Handshake_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(InfoServiceServer).Version(ctx, req.(*VersionRequest))
+		return srv.(SystemServiceServer).Handshake(ctx, req.(*HandshakeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// InfoService_ServiceDesc is the grpc.ServiceDesc for InfoService service.
+// SystemService_ServiceDesc is the grpc.ServiceDesc for SystemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var InfoService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "k8shelld.InfoService",
-	HandlerType: (*InfoServiceServer)(nil),
+var SystemService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "k8shelld.SystemService",
+	HandlerType: (*SystemServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "Version",
-			Handler:    _InfoService_Version_Handler,
+			MethodName: "Handshake",
+			Handler:    _SystemService_Handshake_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -127,151 +125,33 @@ var InfoService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	InitService_RunInitScripts_FullMethodName = "/k8shelld.InitService/RunInitScripts"
+	ShellService_Shell_FullMethodName          = "/k8shelld.ShellService/Shell"
+	ShellService_ResizeTerminal_FullMethodName = "/k8shelld.ShellService/ResizeTerminal"
 )
 
-// InitServiceClient is the client API for InitService service.
+// ShellServiceClient is the client API for ShellService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// *** InitService definition
-type InitServiceClient interface {
-	// Workspace initialization
-	RunInitScripts(ctx context.Context, in *InitRequest, opts ...grpc.CallOption) (*InitResponse, error)
-}
-
-type initServiceClient struct {
-	cc grpc.ClientConnInterface
-}
-
-func NewInitServiceClient(cc grpc.ClientConnInterface) InitServiceClient {
-	return &initServiceClient{cc}
-}
-
-func (c *initServiceClient) RunInitScripts(ctx context.Context, in *InitRequest, opts ...grpc.CallOption) (*InitResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(InitResponse)
-	err := c.cc.Invoke(ctx, InitService_RunInitScripts_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// InitServiceServer is the server API for InitService service.
-// All implementations must embed UnimplementedInitServiceServer
-// for forward compatibility.
-//
-// *** InitService definition
-type InitServiceServer interface {
-	// Workspace initialization
-	RunInitScripts(context.Context, *InitRequest) (*InitResponse, error)
-	mustEmbedUnimplementedInitServiceServer()
-}
-
-// UnimplementedInitServiceServer must be embedded to have
-// forward compatible implementations.
-//
-// NOTE: this should be embedded by value instead of pointer to avoid a nil
-// pointer dereference when methods are called.
-type UnimplementedInitServiceServer struct{}
-
-func (UnimplementedInitServiceServer) RunInitScripts(context.Context, *InitRequest) (*InitResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RunInitScripts not implemented")
-}
-func (UnimplementedInitServiceServer) mustEmbedUnimplementedInitServiceServer() {}
-func (UnimplementedInitServiceServer) testEmbeddedByValue()                     {}
-
-// UnsafeInitServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to InitServiceServer will
-// result in compilation errors.
-type UnsafeInitServiceServer interface {
-	mustEmbedUnimplementedInitServiceServer()
-}
-
-func RegisterInitServiceServer(s grpc.ServiceRegistrar, srv InitServiceServer) {
-	// If the following call pancis, it indicates UnimplementedInitServiceServer was
-	// embedded by pointer and is nil.  This will cause panics if an
-	// unimplemented method is ever invoked, so we test this at initialization
-	// time to prevent it from happening at runtime later due to I/O.
-	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
-		t.testEmbeddedByValue()
-	}
-	s.RegisterService(&InitService_ServiceDesc, srv)
-}
-
-func _InitService_RunInitScripts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(InitRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(InitServiceServer).RunInitScripts(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: InitService_RunInitScripts_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(InitServiceServer).RunInitScripts(ctx, req.(*InitRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-// InitService_ServiceDesc is the grpc.ServiceDesc for InitService service.
-// It's only intended for direct use with grpc.RegisterService,
-// and not to be introspected or modified (even as a copy)
-var InitService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "k8shelld.InitService",
-	HandlerType: (*InitServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "RunInitScripts",
-			Handler:    _InitService_RunInitScripts_Handler,
-		},
-	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: "pkg/api/k8shelld.proto",
-}
-
-const (
-	RemoteOSService_Shell_FullMethodName          = "/k8shelld.RemoteOSService/Shell"
-	RemoteOSService_ResizeTerminal_FullMethodName = "/k8shelld.RemoteOSService/ResizeTerminal"
-	RemoteOSService_PortForward_FullMethodName    = "/k8shelld.RemoteOSService/PortForward"
-	RemoteOSService_Exec_FullMethodName           = "/k8shelld.RemoteOSService/Exec"
-	RemoteOSService_UnixSocket_FullMethodName     = "/k8shelld.RemoteOSService/UnixSocket"
-)
-
-// RemoteOSServiceClient is the client API for RemoteOSService service.
-//
-// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// *** RemoteOSService definition
-type RemoteOSServiceClient interface {
+// *** ShellService definition
+type ShellServiceClient interface {
 	// Shell starts a shell session
 	Shell(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ShellRequest, ShellResponse], error)
 	// ResizeTerminal resizes the terminal in a shell session
 	ResizeTerminal(ctx context.Context, in *ResizeTerminalRequest, opts ...grpc.CallOption) (*ResizeTerminalResponse, error)
-	// PortForward forwards a port to the specified destination IP and port
-	PortForward(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[PortForwardRequest, PortForwardResponse], error)
-	// Exec executes a command
-	Exec(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ExecRequest, ExecResponse], error)
-	// UnixSocket reads/writes to a Unix socket in the remote OS
-	// This is primarily used for SSH agent forwarding
-	UnixSocket(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[UnixSocketRequest, UnixSocketResponse], error)
 }
 
-type remoteOSServiceClient struct {
+type shellServiceClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewRemoteOSServiceClient(cc grpc.ClientConnInterface) RemoteOSServiceClient {
-	return &remoteOSServiceClient{cc}
+func NewShellServiceClient(cc grpc.ClientConnInterface) ShellServiceClient {
+	return &shellServiceClient{cc}
 }
 
-func (c *remoteOSServiceClient) Shell(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ShellRequest, ShellResponse], error) {
+func (c *shellServiceClient) Shell(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ShellRequest, ShellResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &RemoteOSService_ServiceDesc.Streams[0], RemoteOSService_Shell_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &ShellService_ServiceDesc.Streams[0], ShellService_Shell_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -280,21 +160,136 @@ func (c *remoteOSServiceClient) Shell(ctx context.Context, opts ...grpc.CallOpti
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type RemoteOSService_ShellClient = grpc.BidiStreamingClient[ShellRequest, ShellResponse]
+type ShellService_ShellClient = grpc.BidiStreamingClient[ShellRequest, ShellResponse]
 
-func (c *remoteOSServiceClient) ResizeTerminal(ctx context.Context, in *ResizeTerminalRequest, opts ...grpc.CallOption) (*ResizeTerminalResponse, error) {
+func (c *shellServiceClient) ResizeTerminal(ctx context.Context, in *ResizeTerminalRequest, opts ...grpc.CallOption) (*ResizeTerminalResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ResizeTerminalResponse)
-	err := c.cc.Invoke(ctx, RemoteOSService_ResizeTerminal_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ShellService_ResizeTerminal_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *remoteOSServiceClient) PortForward(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[PortForwardRequest, PortForwardResponse], error) {
+// ShellServiceServer is the server API for ShellService service.
+// All implementations must embed UnimplementedShellServiceServer
+// for forward compatibility.
+//
+// *** ShellService definition
+type ShellServiceServer interface {
+	// Shell starts a shell session
+	Shell(grpc.BidiStreamingServer[ShellRequest, ShellResponse]) error
+	// ResizeTerminal resizes the terminal in a shell session
+	ResizeTerminal(context.Context, *ResizeTerminalRequest) (*ResizeTerminalResponse, error)
+	mustEmbedUnimplementedShellServiceServer()
+}
+
+// UnimplementedShellServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedShellServiceServer struct{}
+
+func (UnimplementedShellServiceServer) Shell(grpc.BidiStreamingServer[ShellRequest, ShellResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method Shell not implemented")
+}
+func (UnimplementedShellServiceServer) ResizeTerminal(context.Context, *ResizeTerminalRequest) (*ResizeTerminalResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResizeTerminal not implemented")
+}
+func (UnimplementedShellServiceServer) mustEmbedUnimplementedShellServiceServer() {}
+func (UnimplementedShellServiceServer) testEmbeddedByValue()                      {}
+
+// UnsafeShellServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ShellServiceServer will
+// result in compilation errors.
+type UnsafeShellServiceServer interface {
+	mustEmbedUnimplementedShellServiceServer()
+}
+
+func RegisterShellServiceServer(s grpc.ServiceRegistrar, srv ShellServiceServer) {
+	// If the following call pancis, it indicates UnimplementedShellServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&ShellService_ServiceDesc, srv)
+}
+
+func _ShellService_Shell_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ShellServiceServer).Shell(&grpc.GenericServerStream[ShellRequest, ShellResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ShellService_ShellServer = grpc.BidiStreamingServer[ShellRequest, ShellResponse]
+
+func _ShellService_ResizeTerminal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResizeTerminalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShellServiceServer).ResizeTerminal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShellService_ResizeTerminal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShellServiceServer).ResizeTerminal(ctx, req.(*ResizeTerminalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// ShellService_ServiceDesc is the grpc.ServiceDesc for ShellService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var ShellService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "k8shelld.ShellService",
+	HandlerType: (*ShellServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ResizeTerminal",
+			Handler:    _ShellService_ResizeTerminal_Handler,
+		},
+	},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Shell",
+			Handler:       _ShellService_Shell_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
+	Metadata: "pkg/api/k8shelld.proto",
+}
+
+const (
+	PortForwardService_PortForward_FullMethodName = "/k8shelld.PortForwardService/PortForward"
+)
+
+// PortForwardServiceClient is the client API for PortForwardService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type PortForwardServiceClient interface {
+	// PortForward forwards a port to the specified destination IP and port
+	PortForward(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[PortForwardRequest, PortForwardResponse], error)
+}
+
+type portForwardServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewPortForwardServiceClient(cc grpc.ClientConnInterface) PortForwardServiceClient {
+	return &portForwardServiceClient{cc}
+}
+
+func (c *portForwardServiceClient) PortForward(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[PortForwardRequest, PortForwardResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &RemoteOSService_ServiceDesc.Streams[1], RemoteOSService_PortForward_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &PortForwardService_ServiceDesc.Streams[0], PortForwardService_PortForward_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -303,11 +298,96 @@ func (c *remoteOSServiceClient) PortForward(ctx context.Context, opts ...grpc.Ca
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type RemoteOSService_PortForwardClient = grpc.BidiStreamingClient[PortForwardRequest, PortForwardResponse]
+type PortForwardService_PortForwardClient = grpc.BidiStreamingClient[PortForwardRequest, PortForwardResponse]
 
-func (c *remoteOSServiceClient) Exec(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ExecRequest, ExecResponse], error) {
+// PortForwardServiceServer is the server API for PortForwardService service.
+// All implementations must embed UnimplementedPortForwardServiceServer
+// for forward compatibility.
+type PortForwardServiceServer interface {
+	// PortForward forwards a port to the specified destination IP and port
+	PortForward(grpc.BidiStreamingServer[PortForwardRequest, PortForwardResponse]) error
+	mustEmbedUnimplementedPortForwardServiceServer()
+}
+
+// UnimplementedPortForwardServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedPortForwardServiceServer struct{}
+
+func (UnimplementedPortForwardServiceServer) PortForward(grpc.BidiStreamingServer[PortForwardRequest, PortForwardResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method PortForward not implemented")
+}
+func (UnimplementedPortForwardServiceServer) mustEmbedUnimplementedPortForwardServiceServer() {}
+func (UnimplementedPortForwardServiceServer) testEmbeddedByValue()                            {}
+
+// UnsafePortForwardServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to PortForwardServiceServer will
+// result in compilation errors.
+type UnsafePortForwardServiceServer interface {
+	mustEmbedUnimplementedPortForwardServiceServer()
+}
+
+func RegisterPortForwardServiceServer(s grpc.ServiceRegistrar, srv PortForwardServiceServer) {
+	// If the following call pancis, it indicates UnimplementedPortForwardServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&PortForwardService_ServiceDesc, srv)
+}
+
+func _PortForwardService_PortForward_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(PortForwardServiceServer).PortForward(&grpc.GenericServerStream[PortForwardRequest, PortForwardResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type PortForwardService_PortForwardServer = grpc.BidiStreamingServer[PortForwardRequest, PortForwardResponse]
+
+// PortForwardService_ServiceDesc is the grpc.ServiceDesc for PortForwardService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var PortForwardService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "k8shelld.PortForwardService",
+	HandlerType: (*PortForwardServiceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "PortForward",
+			Handler:       _PortForwardService_PortForward_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
+	Metadata: "pkg/api/k8shelld.proto",
+}
+
+const (
+	ExecService_Exec_FullMethodName = "/k8shelld.ExecService/Exec"
+)
+
+// ExecServiceClient is the client API for ExecService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type ExecServiceClient interface {
+	// Exec executes a command
+	Exec(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ExecRequest, ExecResponse], error)
+}
+
+type execServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewExecServiceClient(cc grpc.ClientConnInterface) ExecServiceClient {
+	return &execServiceClient{cc}
+}
+
+func (c *execServiceClient) Exec(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ExecRequest, ExecResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &RemoteOSService_ServiceDesc.Streams[2], RemoteOSService_Exec_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &ExecService_ServiceDesc.Streams[0], ExecService_Exec_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -316,11 +396,97 @@ func (c *remoteOSServiceClient) Exec(ctx context.Context, opts ...grpc.CallOptio
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type RemoteOSService_ExecClient = grpc.BidiStreamingClient[ExecRequest, ExecResponse]
+type ExecService_ExecClient = grpc.BidiStreamingClient[ExecRequest, ExecResponse]
 
-func (c *remoteOSServiceClient) UnixSocket(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[UnixSocketRequest, UnixSocketResponse], error) {
+// ExecServiceServer is the server API for ExecService service.
+// All implementations must embed UnimplementedExecServiceServer
+// for forward compatibility.
+type ExecServiceServer interface {
+	// Exec executes a command
+	Exec(grpc.BidiStreamingServer[ExecRequest, ExecResponse]) error
+	mustEmbedUnimplementedExecServiceServer()
+}
+
+// UnimplementedExecServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedExecServiceServer struct{}
+
+func (UnimplementedExecServiceServer) Exec(grpc.BidiStreamingServer[ExecRequest, ExecResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method Exec not implemented")
+}
+func (UnimplementedExecServiceServer) mustEmbedUnimplementedExecServiceServer() {}
+func (UnimplementedExecServiceServer) testEmbeddedByValue()                     {}
+
+// UnsafeExecServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ExecServiceServer will
+// result in compilation errors.
+type UnsafeExecServiceServer interface {
+	mustEmbedUnimplementedExecServiceServer()
+}
+
+func RegisterExecServiceServer(s grpc.ServiceRegistrar, srv ExecServiceServer) {
+	// If the following call pancis, it indicates UnimplementedExecServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&ExecService_ServiceDesc, srv)
+}
+
+func _ExecService_Exec_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ExecServiceServer).Exec(&grpc.GenericServerStream[ExecRequest, ExecResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ExecService_ExecServer = grpc.BidiStreamingServer[ExecRequest, ExecResponse]
+
+// ExecService_ServiceDesc is the grpc.ServiceDesc for ExecService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var ExecService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "k8shelld.ExecService",
+	HandlerType: (*ExecServiceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Exec",
+			Handler:       _ExecService_Exec_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
+	Metadata: "pkg/api/k8shelld.proto",
+}
+
+const (
+	UnixSocketService_UnixSocket_FullMethodName = "/k8shelld.UnixSocketService/UnixSocket"
+)
+
+// UnixSocketServiceClient is the client API for UnixSocketService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type UnixSocketServiceClient interface {
+	// UnixSocket reads/writes to a Unix socket in the remote OS
+	// This is primarily used for SSH agent forwarding
+	UnixSocket(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[UnixSocketRequest, UnixSocketResponse], error)
+}
+
+type unixSocketServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewUnixSocketServiceClient(cc grpc.ClientConnInterface) UnixSocketServiceClient {
+	return &unixSocketServiceClient{cc}
+}
+
+func (c *unixSocketServiceClient) UnixSocket(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[UnixSocketRequest, UnixSocketResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &RemoteOSService_ServiceDesc.Streams[3], RemoteOSService_UnixSocket_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &UnixSocketService_ServiceDesc.Streams[0], UnixSocketService_UnixSocket_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -329,151 +495,67 @@ func (c *remoteOSServiceClient) UnixSocket(ctx context.Context, opts ...grpc.Cal
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type RemoteOSService_UnixSocketClient = grpc.BidiStreamingClient[UnixSocketRequest, UnixSocketResponse]
+type UnixSocketService_UnixSocketClient = grpc.BidiStreamingClient[UnixSocketRequest, UnixSocketResponse]
 
-// RemoteOSServiceServer is the server API for RemoteOSService service.
-// All implementations must embed UnimplementedRemoteOSServiceServer
+// UnixSocketServiceServer is the server API for UnixSocketService service.
+// All implementations must embed UnimplementedUnixSocketServiceServer
 // for forward compatibility.
-//
-// *** RemoteOSService definition
-type RemoteOSServiceServer interface {
-	// Shell starts a shell session
-	Shell(grpc.BidiStreamingServer[ShellRequest, ShellResponse]) error
-	// ResizeTerminal resizes the terminal in a shell session
-	ResizeTerminal(context.Context, *ResizeTerminalRequest) (*ResizeTerminalResponse, error)
-	// PortForward forwards a port to the specified destination IP and port
-	PortForward(grpc.BidiStreamingServer[PortForwardRequest, PortForwardResponse]) error
-	// Exec executes a command
-	Exec(grpc.BidiStreamingServer[ExecRequest, ExecResponse]) error
+type UnixSocketServiceServer interface {
 	// UnixSocket reads/writes to a Unix socket in the remote OS
 	// This is primarily used for SSH agent forwarding
 	UnixSocket(grpc.BidiStreamingServer[UnixSocketRequest, UnixSocketResponse]) error
-	mustEmbedUnimplementedRemoteOSServiceServer()
+	mustEmbedUnimplementedUnixSocketServiceServer()
 }
 
-// UnimplementedRemoteOSServiceServer must be embedded to have
+// UnimplementedUnixSocketServiceServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedRemoteOSServiceServer struct{}
+type UnimplementedUnixSocketServiceServer struct{}
 
-func (UnimplementedRemoteOSServiceServer) Shell(grpc.BidiStreamingServer[ShellRequest, ShellResponse]) error {
-	return status.Errorf(codes.Unimplemented, "method Shell not implemented")
-}
-func (UnimplementedRemoteOSServiceServer) ResizeTerminal(context.Context, *ResizeTerminalRequest) (*ResizeTerminalResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ResizeTerminal not implemented")
-}
-func (UnimplementedRemoteOSServiceServer) PortForward(grpc.BidiStreamingServer[PortForwardRequest, PortForwardResponse]) error {
-	return status.Errorf(codes.Unimplemented, "method PortForward not implemented")
-}
-func (UnimplementedRemoteOSServiceServer) Exec(grpc.BidiStreamingServer[ExecRequest, ExecResponse]) error {
-	return status.Errorf(codes.Unimplemented, "method Exec not implemented")
-}
-func (UnimplementedRemoteOSServiceServer) UnixSocket(grpc.BidiStreamingServer[UnixSocketRequest, UnixSocketResponse]) error {
+func (UnimplementedUnixSocketServiceServer) UnixSocket(grpc.BidiStreamingServer[UnixSocketRequest, UnixSocketResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method UnixSocket not implemented")
 }
-func (UnimplementedRemoteOSServiceServer) mustEmbedUnimplementedRemoteOSServiceServer() {}
-func (UnimplementedRemoteOSServiceServer) testEmbeddedByValue()                         {}
+func (UnimplementedUnixSocketServiceServer) mustEmbedUnimplementedUnixSocketServiceServer() {}
+func (UnimplementedUnixSocketServiceServer) testEmbeddedByValue()                           {}
 
-// UnsafeRemoteOSServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to RemoteOSServiceServer will
+// UnsafeUnixSocketServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to UnixSocketServiceServer will
 // result in compilation errors.
-type UnsafeRemoteOSServiceServer interface {
-	mustEmbedUnimplementedRemoteOSServiceServer()
+type UnsafeUnixSocketServiceServer interface {
+	mustEmbedUnimplementedUnixSocketServiceServer()
 }
 
-func RegisterRemoteOSServiceServer(s grpc.ServiceRegistrar, srv RemoteOSServiceServer) {
-	// If the following call pancis, it indicates UnimplementedRemoteOSServiceServer was
+func RegisterUnixSocketServiceServer(s grpc.ServiceRegistrar, srv UnixSocketServiceServer) {
+	// If the following call pancis, it indicates UnimplementedUnixSocketServiceServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&RemoteOSService_ServiceDesc, srv)
+	s.RegisterService(&UnixSocketService_ServiceDesc, srv)
 }
 
-func _RemoteOSService_Shell_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(RemoteOSServiceServer).Shell(&grpc.GenericServerStream[ShellRequest, ShellResponse]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type RemoteOSService_ShellServer = grpc.BidiStreamingServer[ShellRequest, ShellResponse]
-
-func _RemoteOSService_ResizeTerminal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ResizeTerminalRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(RemoteOSServiceServer).ResizeTerminal(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RemoteOSService_ResizeTerminal_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RemoteOSServiceServer).ResizeTerminal(ctx, req.(*ResizeTerminalRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _RemoteOSService_PortForward_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(RemoteOSServiceServer).PortForward(&grpc.GenericServerStream[PortForwardRequest, PortForwardResponse]{ServerStream: stream})
+func _UnixSocketService_UnixSocket_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(UnixSocketServiceServer).UnixSocket(&grpc.GenericServerStream[UnixSocketRequest, UnixSocketResponse]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type RemoteOSService_PortForwardServer = grpc.BidiStreamingServer[PortForwardRequest, PortForwardResponse]
+type UnixSocketService_UnixSocketServer = grpc.BidiStreamingServer[UnixSocketRequest, UnixSocketResponse]
 
-func _RemoteOSService_Exec_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(RemoteOSServiceServer).Exec(&grpc.GenericServerStream[ExecRequest, ExecResponse]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type RemoteOSService_ExecServer = grpc.BidiStreamingServer[ExecRequest, ExecResponse]
-
-func _RemoteOSService_UnixSocket_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(RemoteOSServiceServer).UnixSocket(&grpc.GenericServerStream[UnixSocketRequest, UnixSocketResponse]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type RemoteOSService_UnixSocketServer = grpc.BidiStreamingServer[UnixSocketRequest, UnixSocketResponse]
-
-// RemoteOSService_ServiceDesc is the grpc.ServiceDesc for RemoteOSService service.
+// UnixSocketService_ServiceDesc is the grpc.ServiceDesc for UnixSocketService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var RemoteOSService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "k8shelld.RemoteOSService",
-	HandlerType: (*RemoteOSServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "ResizeTerminal",
-			Handler:    _RemoteOSService_ResizeTerminal_Handler,
-		},
-	},
+var UnixSocketService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "k8shelld.UnixSocketService",
+	HandlerType: (*UnixSocketServiceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "Shell",
-			Handler:       _RemoteOSService_Shell_Handler,
-			ServerStreams: true,
-			ClientStreams: true,
-		},
-		{
-			StreamName:    "PortForward",
-			Handler:       _RemoteOSService_PortForward_Handler,
-			ServerStreams: true,
-			ClientStreams: true,
-		},
-		{
-			StreamName:    "Exec",
-			Handler:       _RemoteOSService_Exec_Handler,
-			ServerStreams: true,
-			ClientStreams: true,
-		},
-		{
 			StreamName:    "UnixSocket",
-			Handler:       _RemoteOSService_UnixSocket_Handler,
+			Handler:       _UnixSocketService_UnixSocket_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

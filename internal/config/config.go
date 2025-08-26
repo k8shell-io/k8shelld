@@ -1,4 +1,4 @@
-package server
+package config
 
 import (
 	"fmt"
@@ -7,16 +7,18 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-)
 
-var (
-	K8SHELLD_VERSION = "0.0.0"
-	K8SHELLD_COMMIT  = "0000000"
+	"github.com/k8shell-io/k8shelld/internal/system"
 )
 
 // Maximum packet size for streaming data
 const (
 	DEFAULT_MAX_PACKET_SIZE = 1 << 15 // 32 KB
+)
+
+var (
+	K8SHELLD_VERSION = "0.0.0"
+	K8SHELLD_COMMIT  = "0000000"
 )
 
 // Configuration file structure
@@ -51,7 +53,6 @@ type ReapZombies struct {
 // Keys represents the keys
 type Keys struct {
 	A1Key string // Access key for GRPC API
-	A2Key string // Access key for REST API
 }
 
 // Env represents the environment variables (regexp patterns) to be unset in the workspace
@@ -69,9 +70,8 @@ type PortForwardingRule struct {
 // Config represents the main configuration file structure
 type Config struct {
 	System              System           `yaml:"system"`
-	MainUser            User             `yaml:"mainUser"`
+	User                system.User      `yaml:"user"`
 	Env                 Env              `yaml:"env"`
-	DockerDNS           DockerDNSConf    `yaml:"dockerDNS"`
 	PortForwarding      []string         `yaml:"portForwarding"`
 	TerminateOrphans    TerminateOrphans `yaml:"terminateOrphans"`
 	ReapZombies         ReapZombies      `yaml:"reapZombies"`

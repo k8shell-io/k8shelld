@@ -1,6 +1,6 @@
-package common
+package models
 
-var DefaultRESTAPIUnixSocket = "/var/run/k8shelld.sock"
+var RESTAPIUnixSocket = "/var/run/k8shelld.sock"
 
 // SystemInfoResponse represents the response for system info
 type SystemInfoResponse struct {

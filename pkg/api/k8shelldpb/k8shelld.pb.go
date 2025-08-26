@@ -21,27 +21,30 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// VersionRequest message
-type VersionRequest struct {
+// HandshakeRequest message
+type HandshakeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	ClientVersion string                 `protobuf:"bytes,1,opt,name=client_version,json=clientVersion,proto3" json:"client_version,omitempty"`
+	User          *User                  `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`
+	EnvVars       []string               `protobuf:"bytes,7,rep,name=env_vars,json=envVars,proto3" json:"env_vars,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *VersionRequest) Reset() {
-	*x = VersionRequest{}
+func (x *HandshakeRequest) Reset() {
+	*x = HandshakeRequest{}
 	mi := &file_pkg_api_k8shelld_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *VersionRequest) String() string {
+func (x *HandshakeRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*VersionRequest) ProtoMessage() {}
+func (*HandshakeRequest) ProtoMessage() {}
 
-func (x *VersionRequest) ProtoReflect() protoreflect.Message {
+func (x *HandshakeRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_pkg_api_k8shelld_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -53,132 +56,59 @@ func (x *VersionRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use VersionRequest.ProtoReflect.Descriptor instead.
-func (*VersionRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use HandshakeRequest.ProtoReflect.Descriptor instead.
+func (*HandshakeRequest) Descriptor() ([]byte, []int) {
 	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{0}
 }
 
-// VersionResponse message
-type VersionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"` // Version of the service
-	Commit        string                 `protobuf:"bytes,2,opt,name=commit,proto3" json:"commit,omitempty"`   // Commit hash of the service
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *VersionResponse) Reset() {
-	*x = VersionResponse{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *VersionResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*VersionResponse) ProtoMessage() {}
-
-func (x *VersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[1]
+func (x *HandshakeRequest) GetClientVersion() string {
 	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use VersionResponse.ProtoReflect.Descriptor instead.
-func (*VersionResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *VersionResponse) GetVersion() string {
-	if x != nil {
-		return x.Version
+		return x.ClientVersion
 	}
 	return ""
 }
 
-func (x *VersionResponse) GetCommit() string {
+func (x *HandshakeRequest) GetUser() *User {
 	if x != nil {
-		return x.Commit
-	}
-	return ""
-}
-
-// ShellRequest message
-type InitRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SetEnvVars    []string               `protobuf:"bytes,1,rep,name=setEnvVars,proto3" json:"setEnvVars,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *InitRequest) Reset() {
-	*x = InitRequest{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *InitRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*InitRequest) ProtoMessage() {}
-
-func (x *InitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use InitRequest.ProtoReflect.Descriptor instead.
-func (*InitRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *InitRequest) GetSetEnvVars() []string {
-	if x != nil {
-		return x.SetEnvVars
+		return x.User
 	}
 	return nil
 }
 
-// ShellRequest message
-type InitResponse struct {
+func (x *HandshakeRequest) GetEnvVars() []string {
+	if x != nil {
+		return x.EnvVars
+	}
+	return nil
+}
+
+// User to be used to setup workspace
+type User struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	Username      string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
+	Fullname      string                 `protobuf:"bytes,2,opt,name=fullname,proto3" json:"fullname,omitempty"`
+	Uid           uint32                 `protobuf:"varint,3,opt,name=uid,proto3" json:"uid,omitempty"`
+	Gid           uint32                 `protobuf:"varint,4,opt,name=gid,proto3" json:"gid,omitempty"`
+	UserToken     string                 `protobuf:"bytes,5,opt,name=user_token,json=userToken,proto3" json:"user_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *InitResponse) Reset() {
-	*x = InitResponse{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[3]
+func (x *User) Reset() {
+	*x = User{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *InitResponse) String() string {
+func (x *User) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*InitResponse) ProtoMessage() {}
+func (*User) ProtoMessage() {}
 
-func (x *InitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[3]
+func (x *User) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -189,12 +119,101 @@ func (x *InitResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use InitResponse.ProtoReflect.Descriptor instead.
-func (*InitResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{3}
+// Deprecated: Use User.ProtoReflect.Descriptor instead.
+func (*User) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *InitResponse) GetMessage() string {
+func (x *User) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *User) GetFullname() string {
+	if x != nil {
+		return x.Fullname
+	}
+	return ""
+}
+
+func (x *User) GetUid() uint32 {
+	if x != nil {
+		return x.Uid
+	}
+	return 0
+}
+
+func (x *User) GetGid() uint32 {
+	if x != nil {
+		return x.Gid
+	}
+	return 0
+}
+
+func (x *User) GetUserToken() string {
+	if x != nil {
+		return x.UserToken
+	}
+	return ""
+}
+
+// HandshakeResponse message
+type HandshakeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ServerVersion string                 `protobuf:"bytes,1,opt,name=server_version,json=serverVersion,proto3" json:"server_version,omitempty"`
+	Accepted      bool                   `protobuf:"varint,2,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HandshakeResponse) Reset() {
+	*x = HandshakeResponse{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HandshakeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HandshakeResponse) ProtoMessage() {}
+
+func (x *HandshakeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HandshakeResponse.ProtoReflect.Descriptor instead.
+func (*HandshakeResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *HandshakeResponse) GetServerVersion() string {
+	if x != nil {
+		return x.ServerVersion
+	}
+	return ""
+}
+
+func (x *HandshakeResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *HandshakeResponse) GetMessage() string {
 	if x != nil {
 		return x.Message
 	}
@@ -215,7 +234,7 @@ type ShellRequest struct {
 
 func (x *ShellRequest) Reset() {
 	*x = ShellRequest{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[4]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -227,7 +246,7 @@ func (x *ShellRequest) String() string {
 func (*ShellRequest) ProtoMessage() {}
 
 func (x *ShellRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[4]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -240,7 +259,7 @@ func (x *ShellRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShellRequest.ProtoReflect.Descriptor instead.
 func (*ShellRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{4}
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ShellRequest) GetRequest() isShellRequest_Request {
@@ -298,7 +317,7 @@ type ShellResponse struct {
 
 func (x *ShellResponse) Reset() {
 	*x = ShellResponse{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[5]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -310,7 +329,7 @@ func (x *ShellResponse) String() string {
 func (*ShellResponse) ProtoMessage() {}
 
 func (x *ShellResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[5]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -323,7 +342,7 @@ func (x *ShellResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShellResponse.ProtoReflect.Descriptor instead.
 func (*ShellResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{5}
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ShellResponse) GetResponse() isShellResponse_Response {
@@ -381,7 +400,7 @@ type ShellStartRequest struct {
 
 func (x *ShellStartRequest) Reset() {
 	*x = ShellStartRequest{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[6]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -393,7 +412,7 @@ func (x *ShellStartRequest) String() string {
 func (*ShellStartRequest) ProtoMessage() {}
 
 func (x *ShellStartRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[6]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -406,7 +425,7 @@ func (x *ShellStartRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShellStartRequest.ProtoReflect.Descriptor instead.
 func (*ShellStartRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{6}
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ShellStartRequest) GetCmdShell() string {
@@ -455,7 +474,7 @@ type ResizeTerminalRequest struct {
 
 func (x *ResizeTerminalRequest) Reset() {
 	*x = ResizeTerminalRequest{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[7]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -467,7 +486,7 @@ func (x *ResizeTerminalRequest) String() string {
 func (*ResizeTerminalRequest) ProtoMessage() {}
 
 func (x *ResizeTerminalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[7]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -480,7 +499,7 @@ func (x *ResizeTerminalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResizeTerminalRequest.ProtoReflect.Descriptor instead.
 func (*ResizeTerminalRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{7}
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ResizeTerminalRequest) GetWidth() uint32 {
@@ -506,7 +525,7 @@ type ResizeTerminalResponse struct {
 
 func (x *ResizeTerminalResponse) Reset() {
 	*x = ResizeTerminalResponse{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[8]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -518,7 +537,7 @@ func (x *ResizeTerminalResponse) String() string {
 func (*ResizeTerminalResponse) ProtoMessage() {}
 
 func (x *ResizeTerminalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[8]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -531,8 +550,227 @@ func (x *ResizeTerminalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResizeTerminalResponse.ProtoReflect.Descriptor instead.
 func (*ResizeTerminalResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{7}
+}
+
+// Request for the PortForward operation
+type PortForwardRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Request:
+	//
+	//	*PortForwardRequest_Destination
+	//	*PortForwardRequest_Data
+	Request       isPortForwardRequest_Request `protobuf_oneof:"request"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PortForwardRequest) Reset() {
+	*x = PortForwardRequest{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PortForwardRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PortForwardRequest) ProtoMessage() {}
+
+func (x *PortForwardRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PortForwardRequest.ProtoReflect.Descriptor instead.
+func (*PortForwardRequest) Descriptor() ([]byte, []int) {
 	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{8}
 }
+
+func (x *PortForwardRequest) GetRequest() isPortForwardRequest_Request {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *PortForwardRequest) GetDestination() *Destination {
+	if x != nil {
+		if x, ok := x.Request.(*PortForwardRequest_Destination); ok {
+			return x.Destination
+		}
+	}
+	return nil
+}
+
+func (x *PortForwardRequest) GetData() []byte {
+	if x != nil {
+		if x, ok := x.Request.(*PortForwardRequest_Data); ok {
+			return x.Data
+		}
+	}
+	return nil
+}
+
+type isPortForwardRequest_Request interface {
+	isPortForwardRequest_Request()
+}
+
+type PortForwardRequest_Destination struct {
+	Destination *Destination `protobuf:"bytes,1,opt,name=destination,proto3,oneof"` // Destination details
+}
+
+type PortForwardRequest_Data struct {
+	Data []byte `protobuf:"bytes,2,opt,name=data,proto3,oneof"` // Data to send to the destination
+}
+
+func (*PortForwardRequest_Destination) isPortForwardRequest_Request() {}
+
+func (*PortForwardRequest_Data) isPortForwardRequest_Request() {}
+
+// Destination details message
+type Destination struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ip            string                 `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`      // Destination IP address
+	Port          uint32                 `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"` // Destination port
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Destination) Reset() {
+	*x = Destination{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Destination) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Destination) ProtoMessage() {}
+
+func (x *Destination) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Destination.ProtoReflect.Descriptor instead.
+func (*Destination) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Destination) GetIp() string {
+	if x != nil {
+		return x.Ip
+	}
+	return ""
+}
+
+func (x *Destination) GetPort() uint32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+// Response for the PortForward operation
+type PortForwardResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Response:
+	//
+	//	*PortForwardResponse_Data
+	//	*PortForwardResponse_Terminate
+	Response      isPortForwardResponse_Response `protobuf_oneof:"response"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PortForwardResponse) Reset() {
+	*x = PortForwardResponse{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PortForwardResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PortForwardResponse) ProtoMessage() {}
+
+func (x *PortForwardResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PortForwardResponse.ProtoReflect.Descriptor instead.
+func (*PortForwardResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *PortForwardResponse) GetResponse() isPortForwardResponse_Response {
+	if x != nil {
+		return x.Response
+	}
+	return nil
+}
+
+func (x *PortForwardResponse) GetData() []byte {
+	if x != nil {
+		if x, ok := x.Response.(*PortForwardResponse_Data); ok {
+			return x.Data
+		}
+	}
+	return nil
+}
+
+func (x *PortForwardResponse) GetTerminate() bool {
+	if x != nil {
+		if x, ok := x.Response.(*PortForwardResponse_Terminate); ok {
+			return x.Terminate
+		}
+	}
+	return false
+}
+
+type isPortForwardResponse_Response interface {
+	isPortForwardResponse_Response()
+}
+
+type PortForwardResponse_Data struct {
+	Data []byte `protobuf:"bytes,1,opt,name=data,proto3,oneof"` // Data received from the destination
+}
+
+type PortForwardResponse_Terminate struct {
+	Terminate bool `protobuf:"varint,2,opt,name=terminate,proto3,oneof"` // Terminate the port forward session
+}
+
+func (*PortForwardResponse_Data) isPortForwardResponse_Response() {}
+
+func (*PortForwardResponse_Terminate) isPortForwardResponse_Response() {}
 
 // Request for the Exec operation
 type ExecRequest struct {
@@ -549,7 +787,7 @@ type ExecRequest struct {
 
 func (x *ExecRequest) Reset() {
 	*x = ExecRequest{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[9]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -561,7 +799,7 @@ func (x *ExecRequest) String() string {
 func (*ExecRequest) ProtoMessage() {}
 
 func (x *ExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[9]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -574,7 +812,7 @@ func (x *ExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecRequest.ProtoReflect.Descriptor instead.
 func (*ExecRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{9}
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ExecRequest) GetRequest() isExecRequest_Request {
@@ -648,7 +886,7 @@ type ExecResponse struct {
 
 func (x *ExecResponse) Reset() {
 	*x = ExecResponse{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[10]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -660,7 +898,7 @@ func (x *ExecResponse) String() string {
 func (*ExecResponse) ProtoMessage() {}
 
 func (x *ExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[10]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -673,7 +911,7 @@ func (x *ExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecResponse.ProtoReflect.Descriptor instead.
 func (*ExecResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{10}
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ExecResponse) GetResponse() isExecResponse_Response {
@@ -744,7 +982,7 @@ type CommandDetails struct {
 
 func (x *CommandDetails) Reset() {
 	*x = CommandDetails{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[11]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -756,7 +994,7 @@ func (x *CommandDetails) String() string {
 func (*CommandDetails) ProtoMessage() {}
 
 func (x *CommandDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[11]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -769,7 +1007,7 @@ func (x *CommandDetails) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandDetails.ProtoReflect.Descriptor instead.
 func (*CommandDetails) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{11}
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CommandDetails) GetCommand() string {
@@ -793,225 +1031,6 @@ func (x *CommandDetails) GetSetEnvVars() []string {
 	return nil
 }
 
-// Request for the PortForward operation
-type PortForwardRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Request:
-	//
-	//	*PortForwardRequest_Destination
-	//	*PortForwardRequest_Data
-	Request       isPortForwardRequest_Request `protobuf_oneof:"request"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PortForwardRequest) Reset() {
-	*x = PortForwardRequest{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PortForwardRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PortForwardRequest) ProtoMessage() {}
-
-func (x *PortForwardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PortForwardRequest.ProtoReflect.Descriptor instead.
-func (*PortForwardRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *PortForwardRequest) GetRequest() isPortForwardRequest_Request {
-	if x != nil {
-		return x.Request
-	}
-	return nil
-}
-
-func (x *PortForwardRequest) GetDestination() *Destination {
-	if x != nil {
-		if x, ok := x.Request.(*PortForwardRequest_Destination); ok {
-			return x.Destination
-		}
-	}
-	return nil
-}
-
-func (x *PortForwardRequest) GetData() []byte {
-	if x != nil {
-		if x, ok := x.Request.(*PortForwardRequest_Data); ok {
-			return x.Data
-		}
-	}
-	return nil
-}
-
-type isPortForwardRequest_Request interface {
-	isPortForwardRequest_Request()
-}
-
-type PortForwardRequest_Destination struct {
-	Destination *Destination `protobuf:"bytes,1,opt,name=destination,proto3,oneof"` // Destination details
-}
-
-type PortForwardRequest_Data struct {
-	Data []byte `protobuf:"bytes,2,opt,name=data,proto3,oneof"` // Data to send to the destination
-}
-
-func (*PortForwardRequest_Destination) isPortForwardRequest_Request() {}
-
-func (*PortForwardRequest_Data) isPortForwardRequest_Request() {}
-
-// Response for the PortForward operation
-type PortForwardResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Response:
-	//
-	//	*PortForwardResponse_Data
-	//	*PortForwardResponse_Terminate
-	Response      isPortForwardResponse_Response `protobuf_oneof:"response"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PortForwardResponse) Reset() {
-	*x = PortForwardResponse{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PortForwardResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PortForwardResponse) ProtoMessage() {}
-
-func (x *PortForwardResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PortForwardResponse.ProtoReflect.Descriptor instead.
-func (*PortForwardResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *PortForwardResponse) GetResponse() isPortForwardResponse_Response {
-	if x != nil {
-		return x.Response
-	}
-	return nil
-}
-
-func (x *PortForwardResponse) GetData() []byte {
-	if x != nil {
-		if x, ok := x.Response.(*PortForwardResponse_Data); ok {
-			return x.Data
-		}
-	}
-	return nil
-}
-
-func (x *PortForwardResponse) GetTerminate() bool {
-	if x != nil {
-		if x, ok := x.Response.(*PortForwardResponse_Terminate); ok {
-			return x.Terminate
-		}
-	}
-	return false
-}
-
-type isPortForwardResponse_Response interface {
-	isPortForwardResponse_Response()
-}
-
-type PortForwardResponse_Data struct {
-	Data []byte `protobuf:"bytes,1,opt,name=data,proto3,oneof"` // Data received from the destination
-}
-
-type PortForwardResponse_Terminate struct {
-	Terminate bool `protobuf:"varint,2,opt,name=terminate,proto3,oneof"` // Terminate the port forward session
-}
-
-func (*PortForwardResponse_Data) isPortForwardResponse_Response() {}
-
-func (*PortForwardResponse_Terminate) isPortForwardResponse_Response() {}
-
-// Destination details message
-type Destination struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ip            string                 `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`      // Destination IP address
-	Port          uint32                 `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"` // Destination port
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Destination) Reset() {
-	*x = Destination{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Destination) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Destination) ProtoMessage() {}
-
-func (x *Destination) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Destination.ProtoReflect.Descriptor instead.
-func (*Destination) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *Destination) GetIp() string {
-	if x != nil {
-		return x.Ip
-	}
-	return ""
-}
-
-func (x *Destination) GetPort() uint32 {
-	if x != nil {
-		return x.Port
-	}
-	return 0
-}
-
 // Request for the UnixSocket operation
 type UnixSocketRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1026,7 +1045,7 @@ type UnixSocketRequest struct {
 
 func (x *UnixSocketRequest) Reset() {
 	*x = UnixSocketRequest{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[15]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1038,7 +1057,7 @@ func (x *UnixSocketRequest) String() string {
 func (*UnixSocketRequest) ProtoMessage() {}
 
 func (x *UnixSocketRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[15]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1051,7 +1070,7 @@ func (x *UnixSocketRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnixSocketRequest.ProtoReflect.Descriptor instead.
 func (*UnixSocketRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{15}
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UnixSocketRequest) GetRequest() isUnixSocketRequest_Request {
@@ -1109,7 +1128,7 @@ type UnixSocketResponse struct {
 
 func (x *UnixSocketResponse) Reset() {
 	*x = UnixSocketResponse{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[16]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1121,7 +1140,7 @@ func (x *UnixSocketResponse) String() string {
 func (*UnixSocketResponse) ProtoMessage() {}
 
 func (x *UnixSocketResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[16]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1134,7 +1153,7 @@ func (x *UnixSocketResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnixSocketResponse.ProtoReflect.Descriptor instead.
 func (*UnixSocketResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{16}
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UnixSocketResponse) GetResponse() isUnixSocketResponse_Response {
@@ -1188,7 +1207,7 @@ type UnixSocketStartRequest struct {
 
 func (x *UnixSocketStartRequest) Reset() {
 	*x = UnixSocketStartRequest{}
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[17]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1200,7 +1219,7 @@ func (x *UnixSocketStartRequest) String() string {
 func (*UnixSocketStartRequest) ProtoMessage() {}
 
 func (x *UnixSocketStartRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_api_k8shelld_proto_msgTypes[17]
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1213,7 +1232,7 @@ func (x *UnixSocketStartRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnixSocketStartRequest.ProtoReflect.Descriptor instead.
 func (*UnixSocketStartRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{17}
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UnixSocketStartRequest) GetSocketPath() string {
@@ -1227,17 +1246,22 @@ var File_pkg_api_k8shelld_proto protoreflect.FileDescriptor
 
 const file_pkg_api_k8shelld_proto_rawDesc = "" +
 	"\n" +
-	"\x16pkg/api/k8shelld.proto\x12\bk8shelld\"\x10\n" +
-	"\x0eVersionRequest\"C\n" +
-	"\x0fVersionResponse\x12\x18\n" +
-	"\aversion\x18\x01 \x01(\tR\aversion\x12\x16\n" +
-	"\x06commit\x18\x02 \x01(\tR\x06commit\"-\n" +
-	"\vInitRequest\x12\x1e\n" +
+	"\x16pkg/api/k8shelld.proto\x12\bk8shelld\"x\n" +
+	"\x10HandshakeRequest\x12%\n" +
+	"\x0eclient_version\x18\x01 \x01(\tR\rclientVersion\x12\"\n" +
+	"\x04user\x18\x02 \x01(\v2\x0e.k8shelld.UserR\x04user\x12\x19\n" +
+	"\benv_vars\x18\a \x03(\tR\aenvVars\"\x81\x01\n" +
+	"\x04User\x12\x1a\n" +
+	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
+	"\bfullname\x18\x02 \x01(\tR\bfullname\x12\x10\n" +
+	"\x03uid\x18\x03 \x01(\rR\x03uid\x12\x10\n" +
+	"\x03gid\x18\x04 \x01(\rR\x03gid\x12\x1d\n" +
 	"\n" +
-	"setEnvVars\x18\x01 \x03(\tR\n" +
-	"setEnvVars\"(\n" +
-	"\fInitResponse\x12\x18\n" +
-	"\amessage\x18\x01 \x01(\tR\amessage\"s\n" +
+	"user_token\x18\x05 \x01(\tR\tuserToken\"p\n" +
+	"\x11HandshakeResponse\x12%\n" +
+	"\x0eserver_version\x18\x01 \x01(\tR\rserverVersion\x12\x1a\n" +
+	"\baccepted\x18\x02 \x01(\bR\baccepted\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"s\n" +
 	"\fShellRequest\x12B\n" +
 	"\rstart_request\x18\x01 \x01(\v2\x1b.k8shelld.ShellStartRequestH\x00R\fstartRequest\x12\x14\n" +
 	"\x04data\x18\x03 \x01(\fH\x00R\x04dataB\t\n" +
@@ -1258,7 +1282,19 @@ const file_pkg_api_k8shelld_proto_rawDesc = "" +
 	"\x15ResizeTerminalRequest\x12\x14\n" +
 	"\x05width\x18\x02 \x01(\rR\x05width\x12\x16\n" +
 	"\x06height\x18\x03 \x01(\rR\x06height\"\x18\n" +
-	"\x16ResizeTerminalResponse\"\x8f\x01\n" +
+	"\x16ResizeTerminalResponse\"p\n" +
+	"\x12PortForwardRequest\x129\n" +
+	"\vdestination\x18\x01 \x01(\v2\x15.k8shelld.DestinationH\x00R\vdestination\x12\x14\n" +
+	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
+	"\arequest\"1\n" +
+	"\vDestination\x12\x0e\n" +
+	"\x02ip\x18\x01 \x01(\tR\x02ip\x12\x12\n" +
+	"\x04port\x18\x02 \x01(\rR\x04port\"W\n" +
+	"\x13PortForwardResponse\x12\x14\n" +
+	"\x04data\x18\x01 \x01(\fH\x00R\x04data\x12\x1e\n" +
+	"\tterminate\x18\x02 \x01(\bH\x00R\tterminateB\n" +
+	"\n" +
+	"\bresponse\"\x8f\x01\n" +
 	"\vExecRequest\x12C\n" +
 	"\x0fcommand_details\x18\x01 \x01(\v2\x18.k8shelld.CommandDetailsH\x00R\x0ecommandDetails\x12\x16\n" +
 	"\x05input\x18\x02 \x01(\fH\x00R\x05input\x12\x18\n" +
@@ -1275,19 +1311,7 @@ const file_pkg_api_k8shelld_proto_rawDesc = "" +
 	"\fshell_binary\x18\x02 \x01(\tR\vshellBinary\x12\x1e\n" +
 	"\n" +
 	"setEnvVars\x18\x03 \x03(\tR\n" +
-	"setEnvVars\"p\n" +
-	"\x12PortForwardRequest\x129\n" +
-	"\vdestination\x18\x01 \x01(\v2\x15.k8shelld.DestinationH\x00R\vdestination\x12\x14\n" +
-	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
-	"\arequest\"W\n" +
-	"\x13PortForwardResponse\x12\x14\n" +
-	"\x04data\x18\x01 \x01(\fH\x00R\x04data\x12\x1e\n" +
-	"\tterminate\x18\x02 \x01(\bH\x00R\tterminateB\n" +
-	"\n" +
-	"\bresponse\"1\n" +
-	"\vDestination\x12\x0e\n" +
-	"\x02ip\x18\x01 \x01(\tR\x02ip\x12\x12\n" +
-	"\x04port\x18\x02 \x01(\rR\x04port\"}\n" +
+	"setEnvVars\"}\n" +
 	"\x11UnixSocketRequest\x12G\n" +
 	"\rstart_request\x18\x01 \x01(\v2 .k8shelld.UnixSocketStartRequestH\x00R\fstartRequest\x12\x14\n" +
 	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
@@ -1300,16 +1324,17 @@ const file_pkg_api_k8shelld_proto_rawDesc = "" +
 	"\x16UnixSocketStartRequest\x12\x1e\n" +
 	"\n" +
 	"socketPath\x18\x02 \x01(\tR\n" +
-	"socketPath2M\n" +
-	"\vInfoService\x12>\n" +
-	"\aVersion\x12\x18.k8shelld.VersionRequest\x1a\x19.k8shelld.VersionResponse2N\n" +
-	"\vInitService\x12?\n" +
-	"\x0eRunInitScripts\x12\x15.k8shelld.InitRequest\x1a\x16.k8shelld.InitResponse2\xfc\x02\n" +
-	"\x0fRemoteOSService\x12<\n" +
+	"socketPath2U\n" +
+	"\rSystemService\x12D\n" +
+	"\tHandshake\x12\x1a.k8shelld.HandshakeRequest\x1a\x1b.k8shelld.HandshakeResponse2\xa1\x01\n" +
+	"\fShellService\x12<\n" +
 	"\x05Shell\x12\x16.k8shelld.ShellRequest\x1a\x17.k8shelld.ShellResponse(\x010\x01\x12S\n" +
-	"\x0eResizeTerminal\x12\x1f.k8shelld.ResizeTerminalRequest\x1a .k8shelld.ResizeTerminalResponse\x12N\n" +
-	"\vPortForward\x12\x1c.k8shelld.PortForwardRequest\x1a\x1d.k8shelld.PortForwardResponse(\x010\x01\x129\n" +
-	"\x04Exec\x12\x15.k8shelld.ExecRequest\x1a\x16.k8shelld.ExecResponse(\x010\x01\x12K\n" +
+	"\x0eResizeTerminal\x12\x1f.k8shelld.ResizeTerminalRequest\x1a .k8shelld.ResizeTerminalResponse2d\n" +
+	"\x12PortForwardService\x12N\n" +
+	"\vPortForward\x12\x1c.k8shelld.PortForwardRequest\x1a\x1d.k8shelld.PortForwardResponse(\x010\x012H\n" +
+	"\vExecService\x129\n" +
+	"\x04Exec\x12\x15.k8shelld.ExecRequest\x1a\x16.k8shelld.ExecResponse(\x010\x012`\n" +
+	"\x11UnixSocketService\x12K\n" +
 	"\n" +
 	"UnixSocket\x12\x1b.k8shelld.UnixSocketRequest\x1a\x1c.k8shelld.UnixSocketResponse(\x010\x01B>Z<github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb;k8shelldpbb\x06proto3"
 
@@ -1325,51 +1350,49 @@ func file_pkg_api_k8shelld_proto_rawDescGZIP() []byte {
 	return file_pkg_api_k8shelld_proto_rawDescData
 }
 
-var file_pkg_api_k8shelld_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_pkg_api_k8shelld_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_pkg_api_k8shelld_proto_goTypes = []any{
-	(*VersionRequest)(nil),         // 0: k8shelld.VersionRequest
-	(*VersionResponse)(nil),        // 1: k8shelld.VersionResponse
-	(*InitRequest)(nil),            // 2: k8shelld.InitRequest
-	(*InitResponse)(nil),           // 3: k8shelld.InitResponse
-	(*ShellRequest)(nil),           // 4: k8shelld.ShellRequest
-	(*ShellResponse)(nil),          // 5: k8shelld.ShellResponse
-	(*ShellStartRequest)(nil),      // 6: k8shelld.ShellStartRequest
-	(*ResizeTerminalRequest)(nil),  // 7: k8shelld.ResizeTerminalRequest
-	(*ResizeTerminalResponse)(nil), // 8: k8shelld.ResizeTerminalResponse
-	(*ExecRequest)(nil),            // 9: k8shelld.ExecRequest
-	(*ExecResponse)(nil),           // 10: k8shelld.ExecResponse
-	(*CommandDetails)(nil),         // 11: k8shelld.CommandDetails
-	(*PortForwardRequest)(nil),     // 12: k8shelld.PortForwardRequest
-	(*PortForwardResponse)(nil),    // 13: k8shelld.PortForwardResponse
-	(*Destination)(nil),            // 14: k8shelld.Destination
-	(*UnixSocketRequest)(nil),      // 15: k8shelld.UnixSocketRequest
-	(*UnixSocketResponse)(nil),     // 16: k8shelld.UnixSocketResponse
-	(*UnixSocketStartRequest)(nil), // 17: k8shelld.UnixSocketStartRequest
+	(*HandshakeRequest)(nil),       // 0: k8shelld.HandshakeRequest
+	(*User)(nil),                   // 1: k8shelld.User
+	(*HandshakeResponse)(nil),      // 2: k8shelld.HandshakeResponse
+	(*ShellRequest)(nil),           // 3: k8shelld.ShellRequest
+	(*ShellResponse)(nil),          // 4: k8shelld.ShellResponse
+	(*ShellStartRequest)(nil),      // 5: k8shelld.ShellStartRequest
+	(*ResizeTerminalRequest)(nil),  // 6: k8shelld.ResizeTerminalRequest
+	(*ResizeTerminalResponse)(nil), // 7: k8shelld.ResizeTerminalResponse
+	(*PortForwardRequest)(nil),     // 8: k8shelld.PortForwardRequest
+	(*Destination)(nil),            // 9: k8shelld.Destination
+	(*PortForwardResponse)(nil),    // 10: k8shelld.PortForwardResponse
+	(*ExecRequest)(nil),            // 11: k8shelld.ExecRequest
+	(*ExecResponse)(nil),           // 12: k8shelld.ExecResponse
+	(*CommandDetails)(nil),         // 13: k8shelld.CommandDetails
+	(*UnixSocketRequest)(nil),      // 14: k8shelld.UnixSocketRequest
+	(*UnixSocketResponse)(nil),     // 15: k8shelld.UnixSocketResponse
+	(*UnixSocketStartRequest)(nil), // 16: k8shelld.UnixSocketStartRequest
 }
 var file_pkg_api_k8shelld_proto_depIdxs = []int32{
-	6,  // 0: k8shelld.ShellRequest.start_request:type_name -> k8shelld.ShellStartRequest
-	11, // 1: k8shelld.ExecRequest.command_details:type_name -> k8shelld.CommandDetails
-	14, // 2: k8shelld.PortForwardRequest.destination:type_name -> k8shelld.Destination
-	17, // 3: k8shelld.UnixSocketRequest.start_request:type_name -> k8shelld.UnixSocketStartRequest
-	0,  // 4: k8shelld.InfoService.Version:input_type -> k8shelld.VersionRequest
-	2,  // 5: k8shelld.InitService.RunInitScripts:input_type -> k8shelld.InitRequest
-	4,  // 6: k8shelld.RemoteOSService.Shell:input_type -> k8shelld.ShellRequest
-	7,  // 7: k8shelld.RemoteOSService.ResizeTerminal:input_type -> k8shelld.ResizeTerminalRequest
-	12, // 8: k8shelld.RemoteOSService.PortForward:input_type -> k8shelld.PortForwardRequest
-	9,  // 9: k8shelld.RemoteOSService.Exec:input_type -> k8shelld.ExecRequest
-	15, // 10: k8shelld.RemoteOSService.UnixSocket:input_type -> k8shelld.UnixSocketRequest
-	1,  // 11: k8shelld.InfoService.Version:output_type -> k8shelld.VersionResponse
-	3,  // 12: k8shelld.InitService.RunInitScripts:output_type -> k8shelld.InitResponse
-	5,  // 13: k8shelld.RemoteOSService.Shell:output_type -> k8shelld.ShellResponse
-	8,  // 14: k8shelld.RemoteOSService.ResizeTerminal:output_type -> k8shelld.ResizeTerminalResponse
-	13, // 15: k8shelld.RemoteOSService.PortForward:output_type -> k8shelld.PortForwardResponse
-	10, // 16: k8shelld.RemoteOSService.Exec:output_type -> k8shelld.ExecResponse
-	16, // 17: k8shelld.RemoteOSService.UnixSocket:output_type -> k8shelld.UnixSocketResponse
-	11, // [11:18] is the sub-list for method output_type
-	4,  // [4:11] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	1,  // 0: k8shelld.HandshakeRequest.user:type_name -> k8shelld.User
+	5,  // 1: k8shelld.ShellRequest.start_request:type_name -> k8shelld.ShellStartRequest
+	9,  // 2: k8shelld.PortForwardRequest.destination:type_name -> k8shelld.Destination
+	13, // 3: k8shelld.ExecRequest.command_details:type_name -> k8shelld.CommandDetails
+	16, // 4: k8shelld.UnixSocketRequest.start_request:type_name -> k8shelld.UnixSocketStartRequest
+	0,  // 5: k8shelld.SystemService.Handshake:input_type -> k8shelld.HandshakeRequest
+	3,  // 6: k8shelld.ShellService.Shell:input_type -> k8shelld.ShellRequest
+	6,  // 7: k8shelld.ShellService.ResizeTerminal:input_type -> k8shelld.ResizeTerminalRequest
+	8,  // 8: k8shelld.PortForwardService.PortForward:input_type -> k8shelld.PortForwardRequest
+	11, // 9: k8shelld.ExecService.Exec:input_type -> k8shelld.ExecRequest
+	14, // 10: k8shelld.UnixSocketService.UnixSocket:input_type -> k8shelld.UnixSocketRequest
+	2,  // 11: k8shelld.SystemService.Handshake:output_type -> k8shelld.HandshakeResponse
+	4,  // 12: k8shelld.ShellService.Shell:output_type -> k8shelld.ShellResponse
+	7,  // 13: k8shelld.ShellService.ResizeTerminal:output_type -> k8shelld.ResizeTerminalResponse
+	10, // 14: k8shelld.PortForwardService.PortForward:output_type -> k8shelld.PortForwardResponse
+	12, // 15: k8shelld.ExecService.Exec:output_type -> k8shelld.ExecResponse
+	15, // 16: k8shelld.UnixSocketService.UnixSocket:output_type -> k8shelld.UnixSocketResponse
+	11, // [11:17] is the sub-list for method output_type
+	5,  // [5:11] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_pkg_api_k8shelld_proto_init() }
@@ -1377,37 +1400,37 @@ func file_pkg_api_k8shelld_proto_init() {
 	if File_pkg_api_k8shelld_proto != nil {
 		return
 	}
-	file_pkg_api_k8shelld_proto_msgTypes[4].OneofWrappers = []any{
+	file_pkg_api_k8shelld_proto_msgTypes[3].OneofWrappers = []any{
 		(*ShellRequest_StartRequest)(nil),
 		(*ShellRequest_Data)(nil),
 	}
-	file_pkg_api_k8shelld_proto_msgTypes[5].OneofWrappers = []any{
+	file_pkg_api_k8shelld_proto_msgTypes[4].OneofWrappers = []any{
 		(*ShellResponse_Data)(nil),
 		(*ShellResponse_Terminate)(nil),
 	}
-	file_pkg_api_k8shelld_proto_msgTypes[9].OneofWrappers = []any{
+	file_pkg_api_k8shelld_proto_msgTypes[8].OneofWrappers = []any{
+		(*PortForwardRequest_Destination)(nil),
+		(*PortForwardRequest_Data)(nil),
+	}
+	file_pkg_api_k8shelld_proto_msgTypes[10].OneofWrappers = []any{
+		(*PortForwardResponse_Data)(nil),
+		(*PortForwardResponse_Terminate)(nil),
+	}
+	file_pkg_api_k8shelld_proto_msgTypes[11].OneofWrappers = []any{
 		(*ExecRequest_CommandDetails)(nil),
 		(*ExecRequest_Input)(nil),
 		(*ExecRequest_Signal)(nil),
 	}
-	file_pkg_api_k8shelld_proto_msgTypes[10].OneofWrappers = []any{
+	file_pkg_api_k8shelld_proto_msgTypes[12].OneofWrappers = []any{
 		(*ExecResponse_Stdout)(nil),
 		(*ExecResponse_Stderr)(nil),
 		(*ExecResponse_ExitCode)(nil),
 	}
-	file_pkg_api_k8shelld_proto_msgTypes[12].OneofWrappers = []any{
-		(*PortForwardRequest_Destination)(nil),
-		(*PortForwardRequest_Data)(nil),
-	}
-	file_pkg_api_k8shelld_proto_msgTypes[13].OneofWrappers = []any{
-		(*PortForwardResponse_Data)(nil),
-		(*PortForwardResponse_Terminate)(nil),
-	}
-	file_pkg_api_k8shelld_proto_msgTypes[15].OneofWrappers = []any{
+	file_pkg_api_k8shelld_proto_msgTypes[14].OneofWrappers = []any{
 		(*UnixSocketRequest_StartRequest)(nil),
 		(*UnixSocketRequest_Data)(nil),
 	}
-	file_pkg_api_k8shelld_proto_msgTypes[16].OneofWrappers = []any{
+	file_pkg_api_k8shelld_proto_msgTypes[15].OneofWrappers = []any{
 		(*UnixSocketResponse_Data)(nil),
 		(*UnixSocketResponse_Terminate)(nil),
 	}
@@ -1417,9 +1440,9 @@ func file_pkg_api_k8shelld_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_api_k8shelld_proto_rawDesc), len(file_pkg_api_k8shelld_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   17,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   5,
 		},
 		GoTypes:           file_pkg_api_k8shelld_proto_goTypes,
 		DependencyIndexes: file_pkg_api_k8shelld_proto_depIdxs,

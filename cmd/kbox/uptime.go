@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/client"
-	"github.com/k8shell-io/k8shelld/internal/common"
+	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/spf13/cobra"
 )
 
@@ -34,7 +34,7 @@ var UptimeCmd = &cobra.Command{
 			return
 		}
 
-		var data common.SystemInfoResponse
+		var data models.SystemInfoResponse
 		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 			fmt.Println("Error parsing response:", err)
 			return
