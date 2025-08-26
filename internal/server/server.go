@@ -19,6 +19,7 @@ import (
 
 type Server struct {
 	logger      *zerolog.Logger
+	config      *config.Config
 	restService *RESTService
 	grpcService *grpc.GRPCService
 	procWatcher *system.ProcessWatcher
@@ -32,6 +33,7 @@ func NewServer(cfg *config.Config, keys *config.Keys, grpcApiListenPort int, ser
 
 	s := &Server{
 		logger:  log.NewLogger("k8shelld"),
+		config:  cfg,
 		pprof:   cfg.System.PProf,
 		sysInfo: nil,
 	}

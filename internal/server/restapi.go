@@ -23,7 +23,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const APIServerBaseUrl = "http://api-internal/api/v1"
+const API_VERSION = "v1"
 
 type RESTService struct {
 	unixSocketPath string
@@ -106,8 +106,8 @@ func (a *RESTService) logRoutes(router *mux.Router) {
 
 // MakeApiServerRequest makes an HTTP request to the upstream API server
 func (a *RESTService) MakeApiServerRequest(method string, url string, headers map[string]string) (string, error) {
-	workspace := os.Getenv("WORKSPACE")
-	fullURL := fmt.Sprintf("%s/workspaces/%s/%s", APIServerBaseUrl, workspace, url)
+	fullURL := fmt.Sprintf("%s/api/%s/users/%s/%s", a.server.config.System.ApiServer,
+		API_VERSION, a.server.restService.user.Username, url)
 
 	req, err := http.NewRequest(method, fullURL, nil)
 	if err != nil {

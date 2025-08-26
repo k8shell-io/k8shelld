@@ -34,8 +34,9 @@ var (
 
 // System represents the general system configuration
 type System struct {
-	PProf    bool   `yaml:"pprof"`
-	LogLevel string `yaml:"logLevel" jsonschema:"enum=debug,enum=info,enum=warn,enum=error,default=info"`
+	PProf     bool   `yaml:"pprof"`
+	LogLevel  string `yaml:"logLevel" jsonschema:"enum=debug,enum=info,enum=warn,enum=error,default=info"`
+	ApiServer string `yaml:"apiServer"`
 }
 
 // TerminateOrphans represents the configuration for the terminate orphans feature of process watcher
