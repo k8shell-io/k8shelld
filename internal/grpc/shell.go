@@ -233,7 +233,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 				} else {
 					logger.Error().Msgf("Error reading from terminal: %v", err)
 				}
-				s.sendShellTerminate(stream)
+				//s.sendShellTerminate(stream)
 				return
 			}
 			err = stream.Send(&k8shelldpb.ShellResponse{Response: &k8shelldpb.ShellResponse_Data{Data: buf[:n]}})
@@ -318,7 +318,7 @@ func (s *ShellServiceServer) handleNonPtySession(logger *zerolog.Logger, session
 			logger.Error().Msgf("Error writing to stdout: %v", err)
 		}
 		logger.Debug().Msgf("Closing stdout pipe, session %s", session.Id)
-		s.sendShellTerminate(stream)
+		//s.sendShellTerminate(stream)
 	}()
 
 	go func() {
@@ -327,7 +327,7 @@ func (s *ShellServiceServer) handleNonPtySession(logger *zerolog.Logger, session
 			logger.Error().Msgf("Error writing to stderr: %v", err)
 		}
 		logger.Debug().Msgf("Closing stderr pipe, session %s", session.Id)
-		s.sendShellTerminate(stream)
+		//s.sendShellTerminate(stream)
 	}()
 
 	// Read from the client stream and write to the stdin pipe

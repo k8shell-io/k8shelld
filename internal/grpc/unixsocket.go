@@ -146,7 +146,7 @@ func (s *UnixSocketServiceServer) communicate(unixsocket *unixSocketData,
 					} else {
 						s.logger.Error().Msgf("Failed to accept connection: %v", err)
 					}
-					s.sendUnixSocketTerminate(stream)
+					//s.sendUnixSocketTerminate(stream)
 					break
 				}
 
@@ -221,6 +221,6 @@ func (s *UnixSocketServiceServer) communicate(unixsocket *unixSocketData,
 	return nil
 }
 
-func (s *UnixSocketServiceServer) sendUnixSocketTerminate(stream k8shelldpb.UnixSocketService_UnixSocketServer) error {
-	return stream.Send(&k8shelldpb.UnixSocketResponse{Response: &k8shelldpb.UnixSocketResponse_Terminate{Terminate: true}})
-}
+// func (s *UnixSocketServiceServer) sendUnixSocketTerminate(stream k8shelldpb.UnixSocketService_UnixSocketServer) error {
+// 	return stream.Send(&k8shelldpb.UnixSocketResponse{Response: &k8shelldpb.UnixSocketResponse_Terminate{Terminate: true}})
+// }

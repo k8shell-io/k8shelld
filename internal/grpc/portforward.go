@@ -235,8 +235,8 @@ func (s *PortForwardServiceServer) PortForward(stream k8shelldpb.PortForwardServ
 				} else {
 					s.logger.Error().Msgf("Error reading from TCP connection: %v", err)
 				}
-				stream.Send(&k8shelldpb.PortForwardResponse{
-					Response: &k8shelldpb.PortForwardResponse_Terminate{Terminate: true}})
+				// stream.Send(&k8shelldpb.PortForwardResponse{
+				// 	Response: &k8shelldpb.PortForwardResponse_Terminate{Terminate: true}})
 				return
 			}
 
