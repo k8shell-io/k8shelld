@@ -146,7 +146,6 @@ func (s *UnixSocketServiceServer) communicate(unixsocket *unixSocketData,
 					} else {
 						s.logger.Error().Msgf("Failed to accept connection: %v", err)
 					}
-					//s.sendUnixSocketTerminate(stream)
 					break
 				}
 
@@ -172,7 +171,7 @@ func (s *UnixSocketServiceServer) communicate(unixsocket *unixSocketData,
 					} else {
 						// Send data to the gRPC stream
 						if err := stream.Send(&k8shelldpb.UnixSocketResponse{
-							Response: &k8shelldpb.UnixSocketResponse_Data{Data: buf[:n]},
+							Data: buf[:n],
 						}); err != nil {
 							s.logger.Error().Msgf("Failed to send data to the client: %v", err)
 							break
@@ -220,7 +219,3 @@ func (s *UnixSocketServiceServer) communicate(unixsocket *unixSocketData,
 	unixsocket.listener.Close()
 	return nil
 }
-
-// func (s *UnixSocketServiceServer) sendUnixSocketTerminate(stream k8shelldpb.UnixSocketService_UnixSocketServer) error {
-// 	return stream.Send(&k8shelldpb.UnixSocketResponse{Response: &k8shelldpb.UnixSocketResponse_Terminate{Terminate: true}})
-// }

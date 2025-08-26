@@ -250,7 +250,7 @@ func (s *PortForwardServiceServer) PortForward(
 			}
 
 			if serr := stream.Send(&k8shelldpb.PortForwardResponse{
-				Response: &k8shelldpb.PortForwardResponse_Data{Data: append([]byte(nil), buf[:n]...)},
+				Data: append([]byte(nil), buf[:n]...),
 			}); serr != nil {
 				recvErrCh <- fmt.Errorf("grpc send: %w", serr)
 				return

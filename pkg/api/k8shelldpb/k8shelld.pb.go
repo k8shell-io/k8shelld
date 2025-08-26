@@ -691,12 +691,8 @@ func (x *Destination) GetPort() uint32 {
 
 // Response for the PortForward operation
 type PortForwardResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Response:
-	//
-	//	*PortForwardResponse_Data
-	//	*PortForwardResponse_Terminate
-	Response      isPortForwardResponse_Response `protobuf_oneof:"response"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"` // Data received from the destination
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -731,46 +727,12 @@ func (*PortForwardResponse) Descriptor() ([]byte, []int) {
 	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *PortForwardResponse) GetResponse() isPortForwardResponse_Response {
-	if x != nil {
-		return x.Response
-	}
-	return nil
-}
-
 func (x *PortForwardResponse) GetData() []byte {
 	if x != nil {
-		if x, ok := x.Response.(*PortForwardResponse_Data); ok {
-			return x.Data
-		}
+		return x.Data
 	}
 	return nil
 }
-
-func (x *PortForwardResponse) GetTerminate() bool {
-	if x != nil {
-		if x, ok := x.Response.(*PortForwardResponse_Terminate); ok {
-			return x.Terminate
-		}
-	}
-	return false
-}
-
-type isPortForwardResponse_Response interface {
-	isPortForwardResponse_Response()
-}
-
-type PortForwardResponse_Data struct {
-	Data []byte `protobuf:"bytes,1,opt,name=data,proto3,oneof"` // Data received from the destination
-}
-
-type PortForwardResponse_Terminate struct {
-	Terminate bool `protobuf:"varint,2,opt,name=terminate,proto3,oneof"` // Terminate the port forward session
-}
-
-func (*PortForwardResponse_Data) isPortForwardResponse_Response() {}
-
-func (*PortForwardResponse_Terminate) isPortForwardResponse_Response() {}
 
 // Request for the Exec operation
 type ExecRequest struct {
@@ -975,7 +937,7 @@ type CommandDetails struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Command       string                 `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`                            // Initial command with arguments
 	ShellBinary   string                 `protobuf:"bytes,2,opt,name=shell_binary,json=shellBinary,proto3" json:"shell_binary,omitempty"` // Optional shell binary to use (e.g., "/bin/sh"), empty for none
-	SetEnvVars    []string               `protobuf:"bytes,3,rep,name=setEnvVars,proto3" json:"setEnvVars,omitempty"`                      // Environment variables to be set for the command
+	EnvVars       []string               `protobuf:"bytes,3,rep,name=env_vars,json=envVars,proto3" json:"env_vars,omitempty"`             // Environment variables to be set for the command
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1024,9 +986,9 @@ func (x *CommandDetails) GetShellBinary() string {
 	return ""
 }
 
-func (x *CommandDetails) GetSetEnvVars() []string {
+func (x *CommandDetails) GetEnvVars() []string {
 	if x != nil {
-		return x.SetEnvVars
+		return x.EnvVars
 	}
 	return nil
 }
@@ -1116,12 +1078,8 @@ func (*UnixSocketRequest_Data) isUnixSocketRequest_Request() {}
 
 // Response for the UnixSocket operation
 type UnixSocketResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Response:
-	//
-	//	*UnixSocketResponse_Data
-	//	*UnixSocketResponse_Terminate
-	Response      isUnixSocketResponse_Response `protobuf_oneof:"response"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"` // Data to send to the Unix socket
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1156,46 +1114,12 @@ func (*UnixSocketResponse) Descriptor() ([]byte, []int) {
 	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{15}
 }
 
-func (x *UnixSocketResponse) GetResponse() isUnixSocketResponse_Response {
-	if x != nil {
-		return x.Response
-	}
-	return nil
-}
-
 func (x *UnixSocketResponse) GetData() []byte {
 	if x != nil {
-		if x, ok := x.Response.(*UnixSocketResponse_Data); ok {
-			return x.Data
-		}
+		return x.Data
 	}
 	return nil
 }
-
-func (x *UnixSocketResponse) GetTerminate() bool {
-	if x != nil {
-		if x, ok := x.Response.(*UnixSocketResponse_Terminate); ok {
-			return x.Terminate
-		}
-	}
-	return false
-}
-
-type isUnixSocketResponse_Response interface {
-	isUnixSocketResponse_Response()
-}
-
-type UnixSocketResponse_Data struct {
-	Data []byte `protobuf:"bytes,1,opt,name=data,proto3,oneof"` // Data to send to the Unix socket
-}
-
-type UnixSocketResponse_Terminate struct {
-	Terminate bool `protobuf:"varint,2,opt,name=terminate,proto3,oneof"` // Terminate the Unix socket session
-}
-
-func (*UnixSocketResponse_Data) isUnixSocketResponse_Response() {}
-
-func (*UnixSocketResponse_Terminate) isUnixSocketResponse_Response() {}
 
 // UnixSocketStartRequest message
 type UnixSocketStartRequest struct {
@@ -1289,12 +1213,9 @@ const file_pkg_api_k8shelld_proto_rawDesc = "" +
 	"\arequest\"1\n" +
 	"\vDestination\x12\x0e\n" +
 	"\x02ip\x18\x01 \x01(\tR\x02ip\x12\x12\n" +
-	"\x04port\x18\x02 \x01(\rR\x04port\"W\n" +
-	"\x13PortForwardResponse\x12\x14\n" +
-	"\x04data\x18\x01 \x01(\fH\x00R\x04data\x12\x1e\n" +
-	"\tterminate\x18\x02 \x01(\bH\x00R\tterminateB\n" +
-	"\n" +
-	"\bresponse\"\x8f\x01\n" +
+	"\x04port\x18\x02 \x01(\rR\x04port\")\n" +
+	"\x13PortForwardResponse\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"\x8f\x01\n" +
 	"\vExecRequest\x12C\n" +
 	"\x0fcommand_details\x18\x01 \x01(\v2\x18.k8shelld.CommandDetailsH\x00R\x0ecommandDetails\x12\x16\n" +
 	"\x05input\x18\x02 \x01(\fH\x00R\x05input\x12\x18\n" +
@@ -1305,22 +1226,17 @@ const file_pkg_api_k8shelld_proto_rawDesc = "" +
 	"\x06stderr\x18\x02 \x01(\fH\x00R\x06stderr\x12\x1d\n" +
 	"\texit_code\x18\x03 \x01(\x05H\x00R\bexitCodeB\n" +
 	"\n" +
-	"\bresponse\"m\n" +
+	"\bresponse\"h\n" +
 	"\x0eCommandDetails\x12\x18\n" +
 	"\acommand\x18\x01 \x01(\tR\acommand\x12!\n" +
-	"\fshell_binary\x18\x02 \x01(\tR\vshellBinary\x12\x1e\n" +
-	"\n" +
-	"setEnvVars\x18\x03 \x03(\tR\n" +
-	"setEnvVars\"}\n" +
+	"\fshell_binary\x18\x02 \x01(\tR\vshellBinary\x12\x19\n" +
+	"\benv_vars\x18\x03 \x03(\tR\aenvVars\"}\n" +
 	"\x11UnixSocketRequest\x12G\n" +
 	"\rstart_request\x18\x01 \x01(\v2 .k8shelld.UnixSocketStartRequestH\x00R\fstartRequest\x12\x14\n" +
 	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
-	"\arequest\"V\n" +
-	"\x12UnixSocketResponse\x12\x14\n" +
-	"\x04data\x18\x01 \x01(\fH\x00R\x04data\x12\x1e\n" +
-	"\tterminate\x18\x02 \x01(\bH\x00R\tterminateB\n" +
-	"\n" +
-	"\bresponse\"8\n" +
+	"\arequest\"(\n" +
+	"\x12UnixSocketResponse\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"8\n" +
 	"\x16UnixSocketStartRequest\x12\x1e\n" +
 	"\n" +
 	"socketPath\x18\x02 \x01(\tR\n" +
@@ -1412,10 +1328,6 @@ func file_pkg_api_k8shelld_proto_init() {
 		(*PortForwardRequest_Destination)(nil),
 		(*PortForwardRequest_Data)(nil),
 	}
-	file_pkg_api_k8shelld_proto_msgTypes[10].OneofWrappers = []any{
-		(*PortForwardResponse_Data)(nil),
-		(*PortForwardResponse_Terminate)(nil),
-	}
 	file_pkg_api_k8shelld_proto_msgTypes[11].OneofWrappers = []any{
 		(*ExecRequest_CommandDetails)(nil),
 		(*ExecRequest_Input)(nil),
@@ -1429,10 +1341,6 @@ func file_pkg_api_k8shelld_proto_init() {
 	file_pkg_api_k8shelld_proto_msgTypes[14].OneofWrappers = []any{
 		(*UnixSocketRequest_StartRequest)(nil),
 		(*UnixSocketRequest_Data)(nil),
-	}
-	file_pkg_api_k8shelld_proto_msgTypes[15].OneofWrappers = []any{
-		(*UnixSocketResponse_Data)(nil),
-		(*UnixSocketResponse_Terminate)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

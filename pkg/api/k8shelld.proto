@@ -101,10 +101,7 @@ message Destination {
 
 // Response for the PortForward operation
 message PortForwardResponse {
-  oneof response { 
-    bytes data = 1;     // Data received from the destination
-    bool terminate = 2; // Terminate the port forward session
-  }
+  bytes data = 1;     // Data received from the destination
 }
 
 // *** ExecService
@@ -136,7 +133,7 @@ message ExecResponse {
 message CommandDetails {
   string command = 1;       // Initial command with arguments
   string shell_binary = 2;  // Optional shell binary to use (e.g., "/bin/sh"), empty for none
-  repeated string setEnvVars = 3;   // Environment variables to be set for the command
+  repeated string env_vars = 3;   // Environment variables to be set for the command
 }
 
 // *** UnixSocketService
@@ -157,10 +154,7 @@ message UnixSocketRequest {
 
 // Response for the UnixSocket operation
 message UnixSocketResponse {
-  oneof response {
-    bytes data = 1; // Data to send to the Unix socket
-    bool terminate = 2; // Terminate the Unix socket session
-  }
+  bytes data = 1; // Data to send to the Unix socket
 }
 
 // UnixSocketStartRequest message

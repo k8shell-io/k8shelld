@@ -25,8 +25,6 @@ const (
 // SystemServiceClient is the client API for SystemService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// *** Handshake service
 type SystemServiceClient interface {
 	Handshake(ctx context.Context, in *HandshakeRequest, opts ...grpc.CallOption) (*HandshakeResponse, error)
 }
@@ -52,8 +50,6 @@ func (c *systemServiceClient) Handshake(ctx context.Context, in *HandshakeReques
 // SystemServiceServer is the server API for SystemService service.
 // All implementations must embed UnimplementedSystemServiceServer
 // for forward compatibility.
-//
-// *** Handshake service
 type SystemServiceServer interface {
 	Handshake(context.Context, *HandshakeRequest) (*HandshakeResponse, error)
 	mustEmbedUnimplementedSystemServiceServer()
@@ -132,8 +128,6 @@ const (
 // ShellServiceClient is the client API for ShellService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// *** ShellService definition
 type ShellServiceClient interface {
 	// Shell starts a shell session
 	Shell(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ShellRequest, ShellResponse], error)
@@ -175,8 +169,6 @@ func (c *shellServiceClient) ResizeTerminal(ctx context.Context, in *ResizeTermi
 // ShellServiceServer is the server API for ShellService service.
 // All implementations must embed UnimplementedShellServiceServer
 // for forward compatibility.
-//
-// *** ShellService definition
 type ShellServiceServer interface {
 	// Shell starts a shell session
 	Shell(grpc.BidiStreamingServer[ShellRequest, ShellResponse]) error

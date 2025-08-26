@@ -114,7 +114,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 		}
 		newEnv = append(newEnv, e)
 	}
-	newEnv = append(newEnv, cmdReq.CommandDetails.SetEnvVars...)
+	newEnv = append(newEnv, cmdReq.CommandDetails.EnvVars...)
 
 	// Adjust the shell path if it is "sh" or "bash"
 	if args[0] == "sh" || args[0] == "bash" {
