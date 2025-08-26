@@ -223,47 +223,74 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 		})
 	}
 
+	ctx := stream.Context()
+	reqCh := make(chan *k8shelldpb.ShellRequest, 8)
+	recvErrCh := make(chan error, 1)
+	ptyDone := make(chan struct{})
+
+	// PTY -> client
 	go func() {
-		buf := make([]byte, 1024)
+		buf := make([]byte, 32*1024)
 		for {
 			n, err := session.Ptmx.Read(buf)
 			if err != nil {
-				if err == io.EOF {
-					logger.Info().Msgf("Terminal closed")
-				} else {
-					logger.Error().Msgf("Error reading from terminal: %v", err)
+				close(ptyDone)
+				return
+			}
+			if n > 0 {
+				if sendErr := stream.Send(&k8shelldpb.ShellResponse{
+					Response: &k8shelldpb.ShellResponse_Data{Data: append([]byte(nil), buf[:n]...)},
+				}); sendErr != nil {
+					recvErrCh <- sendErr // surface error; main will return
+					return
 				}
-				//s.sendShellTerminate(stream)
-				return
 			}
-			err = stream.Send(&k8shelldpb.ShellResponse{Response: &k8shelldpb.ShellResponse_Data{Data: buf[:n]}})
+		}
+	}()
+
+	// client -> PTY
+	go func() {
+		defer close(reqCh) // signal consumer to stop when Recv ends
+		for {
+			req, err := stream.Recv()
 			if err != nil {
-				logger.Error().Msgf("Failed to send data to client: %v", err)
+				recvErrCh <- err // io.EOF or canceled or real error
 				return
 			}
-			session.BytesOut += uint64(n)
+			reqCh <- req
 		}
 	}()
 
 	for {
-		req, err := stream.Recv()
-		if err == io.EOF {
-			logger.Info().Msgf("Client closed the stream")
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("failed to receive: %v", err)
-		}
-		data := req.GetData()
-		if data != nil {
-			session.Ptmx.Write(data)
-			session.BytesIn += uint64(len(data))
-		} else {
-			return fmt.Errorf("received empty data")
+		select {
+		case <-ctx.Done():
+			// client canceled; returning will close server->client side
+			return nil
+
+		case <-ptyDone:
+			// PTY ended; finish RPC so client Recv() sees EOF
+			return nil
+
+		case err := <-recvErrCh:
+			if err == io.EOF {
+				logger.Info().Msg("client closed stream")
+				return nil
+			}
+			// propagate other errors (or log and return nil if you prefer)
+			return fmt.Errorf("stream error: %w", err)
+
+		case req, ok := <-reqCh:
+			if !ok {
+				// Recv goroutine ended; nothing more to read from client
+				return nil
+			}
+			if data := req.GetData(); data != nil {
+				if _, werr := session.Ptmx.Write(data); werr != nil {
+					return fmt.Errorf("pty write: %w", werr)
+				}
+			}
 		}
 	}
-
-	return nil
 }
 
 // handleNonPtySession handles a shell session without PTY. It creates pipes for the stdin, stdout and stderr of the
