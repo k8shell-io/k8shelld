@@ -66,7 +66,10 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 	s.grpcApi.user.UserToken = req.User.UserToken
 
 	if !s.initScriptsRun {
-		s.RunInitScripts(ctx, s.grpcApi.initScriptsDir, s.grpcApi.user, req.EnvVars)
+		err := s.RunInitScripts(ctx, s.grpcApi.initScriptsDir, s.grpcApi.user, req.EnvVars)
+		if err != nil {
+			s.logger.Error().Msgf("Failed to run init scripts: %v", err)
+		}
 		s.initScriptsRun = true
 	}
 
