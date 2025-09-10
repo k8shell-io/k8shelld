@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"net"
 	"net/http"
@@ -104,59 +103,6 @@ func (a *RESTService) logRoutes(router *mux.Router) {
 	}
 }
 
-// MakeApiServerRequest makes an HTTP request to the upstream API server
-func (a *RESTService) MakeApiServerRequest(method string, url string, headers map[string]string) (string, error) {
-	fullURL := fmt.Sprintf("%s/api/%s/users/%s/%s", a.server.config.System.ApiServer,
-		API_VERSION, a.server.restService.user.Username, url)
-
-	req, err := http.NewRequest(method, fullURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create API server request: %v", err)
-	}
-
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.user.UserToken))
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-
-	client := &http.Client{Timeout: 1000 * time.Millisecond}
-
-	sanitizedHeaders := make(map[string]string)
-	for key, values := range req.Header {
-		if strings.ToLower(key) == "authorization" {
-			sanitizedHeaders[key] = "***"
-		} else {
-			sanitizedHeaders[key] = values[0]
-		}
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %v", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		var errorResponse struct {
-			Errno   int    `json:"errno"`
-			Message string `json:"message"`
-		}
-
-		if err := json.Unmarshal(body, &errorResponse); err != nil {
-			return string(body), fmt.Errorf("API call failed with status %d: %s", resp.StatusCode, body)
-		}
-
-		return string(body), fmt.Errorf("%s", errorResponse.Message)
-	}
-
-	return string(body), nil
-}
-
 // Middleware to log requests and responses
 func (a *RESTService) loggingMiddleware(next http.Handler) http.Handler {
 	skipPaths := map[string]bool{
@@ -195,20 +141,36 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := fmt.Sprintf("%s/creds?address=%s", credsType, address)
-	headers := map[string]string{"Accept": "application/json"}
+	a.logger.Debug().Msgf("Fetching %s credentials for address: %s", credsType, address)
 
-	creds, err := a.MakeApiServerRequest("GET", url, headers)
+	creds, err := a.server.apiClient.GetUserCredentials(r.Context(), a.user.Username)
 	if err != nil {
-		a.logger.Warn().Msgf("Cannot retrieve address for %s credential helper when calling upstream API %s: %v",
-			credsType, url, err)
+		a.logger.Warn().Msgf("Cannot retrieve user credentials: %v", err)
 		http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(creds))
+	for _, cred := range creds {
+		a.logger.Debug().Msgf("Checking credential: ServiceName=%s, ServiceURL=%s, Username=%s",
+			cred.ServiceName, cred.ServiceURL, cred.ExternalID)
+		if cred.ServiceName == "docker" && cred.ServiceURL == address {
+			credStr := fmt.Sprintf(`{"ServerURL": "%s", "Username": "%s", "Secret": "%s"}`,
+				cred.ServiceURL, cred.ExternalID, cred.ExternalToken)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(credStr))
+			return
+		}
+		if cred.ServiceName == "git" && cred.ServiceURL == address {
+			credStr := fmt.Sprintf(`{"Username": "%s", "Password": "%s"}`,
+				cred.ExternalID, cred.ExternalToken)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(credStr))
+			return
+		}
+	}
+
+	a.logger.Warn().Msgf("No credentials found for address: %s and type: %s", address, credsType)
+	http.Error(w, "Credentials not found", http.StatusNotFound)
 }
 
 func (a *RESTService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {

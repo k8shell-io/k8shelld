@@ -64,6 +64,7 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 	}
 
 	s.grpcApi.user.UserToken = req.User.UserToken
+	s.grpcApi.apiClient.UpdateToken(req.User.UserToken)
 
 	if !s.initScriptsRun {
 		err := s.RunInitScripts(ctx, s.grpcApi.initScriptsDir, s.grpcApi.user, req.EnvVars)

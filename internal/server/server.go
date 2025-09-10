@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/k8shell-io/api-server/pkg/client"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/log"
@@ -23,6 +24,7 @@ type Server struct {
 	restService *RESTService
 	grpcService *grpc.GRPCService
 	procWatcher *system.ProcessWatcher
+	apiClient   *client.Client
 	pprof       bool
 	sysInfo     *system.SystemInfo
 	sysInfoMu   sync.Mutex
@@ -32,10 +34,11 @@ func NewServer(cfg *config.Config, keys *config.Keys, grpcApiListenPort int, ser
 	keyLogFilePath string, restApiUnixSocketPath string, initScriptsDir string) (*Server, error) {
 
 	s := &Server{
-		logger:  log.NewLogger("k8shelld"),
-		config:  cfg,
-		pprof:   cfg.System.PProf,
-		sysInfo: nil,
+		logger:    log.NewLogger("k8shelld"),
+		config:    cfg,
+		pprof:     cfg.System.PProf,
+		sysInfo:   nil,
+		apiClient: client.NewClient(cfg.System.ApiServer, cfg.User.UserToken),
 	}
 
 	var err error
@@ -43,7 +46,7 @@ func NewServer(cfg *config.Config, keys *config.Keys, grpcApiListenPort int, ser
 		cfg.TerminateOrphans.CheckInterval, cfg.TerminateOrphans.Exclude)
 
 	s.grpcService, err = grpc.NewGRPCService(grpcApiListenPort, keys.A1Key, cfg.User, serverKeyPath,
-		serverCertPath, keyLogFilePath, cfg.PortForwardingRules, initScriptsDir, s.procWatcher)
+		serverCertPath, keyLogFilePath, cfg.PortForwardingRules, initScriptsDir, s.procWatcher, s.apiClient)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}

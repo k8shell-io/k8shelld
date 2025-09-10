@@ -25,6 +25,7 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 
+	apiClient "github.com/k8shell-io/api-server/pkg/client"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -63,6 +64,7 @@ type GRPCService struct {
 	PortForwardStore    *sync.Map                   // The store for the port forwarding data
 	SessionStore        *sync.Map                   // The store for the session data
 	UnixSocketStore     *sync.Map                   // The store for the unix socket data
+	apiClient           *apiClient.Client           // The API client to communicate with the API server
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -161,7 +163,7 @@ func LoadDecryptedKeyPair(serverCertPath, encryptedKeyPath, accessKey string) (t
 func NewGRPCService(tcpPort int, accessKey string, user system.User,
 	serverKeyPath string, serverCertPath string, keyLogFilePath string,
 	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
-	procWatcher *system.ProcessWatcher) (*GRPCService, error) {
+	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client) (*GRPCService, error) {
 
 	logger := log.NewLogger("grpc")
 
@@ -184,6 +186,7 @@ func NewGRPCService(tcpPort int, accessKey string, user system.User,
 		PortForwardStore:    &sync.Map{},
 		SessionStore:        &sync.Map{},
 		UnixSocketStore:     &sync.Map{},
+		apiClient:           apiClient,
 	}, nil
 }
 
