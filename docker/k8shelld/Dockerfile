@@ -6,12 +6,15 @@ ARG COMMIT_ID
 LABEL VERSION=$VERSION
 LABEL COMMIT_ID=$COMMIT_ID
 
-WORKDIR /go/src/workspace-tools
-COPY files .
+WORKDIR /go/src/k8shelld
 
-RUN go mod download
+COPY files .
+ENV GOFLAGS="-mod=vendor"
+
 RUN CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/k8shell-io/k8shelld/internal/config.K8SHELLD_VERSION=$VERSION -X github.com/k8shell-io/k8shelld/internal/config.K8SHELLD_COMMIT=$COMMIT_ID" -o /go/bin/k8shelld ./cmd/k8shelld
+
 RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$VERSION -X main.commit_id=$COMMIT_ID" -o /go/bin/kbox ./cmd/kbox
+
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /go/bin/sftp ./sftp
 
 FROM alpine:3.21.3
