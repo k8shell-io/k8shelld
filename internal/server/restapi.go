@@ -153,14 +153,14 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 	for _, cred := range creds {
 		a.logger.Debug().Msgf("Checking credential: ServiceName=%s, ServiceURL=%s, Username=%s",
 			cred.ServiceName, cred.ServiceURL, cred.ExternalID)
-		if cred.ServiceName == "docker" && cred.ServiceURL == address {
+		if credsType == "docker" && cred.ServiceName == "registry" && cred.ServiceURL == address {
 			credStr := fmt.Sprintf(`{"ServerURL": "%s", "Username": "%s", "Secret": "%s"}`,
 				cred.ServiceURL, cred.ExternalID, cred.ExternalToken)
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(credStr))
 			return
 		}
-		if cred.ServiceName == "git" && cred.ServiceURL == address {
+		if credsType == "git" && cred.ServiceName == "github" && cred.ServiceURL == address {
 			credStr := fmt.Sprintf(`{"Username": "%s", "Password": "%s"}`,
 				cred.ExternalID, cred.ExternalToken)
 			w.Header().Set("Content-Type", "application/json")
