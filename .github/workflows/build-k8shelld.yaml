@@ -33,6 +33,12 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "COMMIT_ID=$COMMIT_ID" >> $GITHUB_ENV
 
+      - name: Vendor Go modules
+        run: |
+          go mod vendor
+          mkdir -p docker/k8shelld/files
+          cp -r vendor docker/k8shelld/files/
+
       - name: Copy sources to docker context
         run: |
           mkdir -p docker/k8shelld/files
