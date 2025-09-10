@@ -86,7 +86,8 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 func (s *SystemServiceServer) RunInitScripts(ctx context.Context, scriptsDir string,
 	user system.User, envVars []string) error {
 
-	s.logger.Info().Msg("Running init scripts...")
+	s.logger.Info().Msgf("Running init scripts, scriptsDir: %s, env: %s",
+		scriptsDir, strings.Join(envVars, ", "))
 	if _, err := os.Stat(scriptsDir); os.IsNotExist(err) {
 		return fmt.Errorf("invalid init scripts directory: %s", scriptsDir)
 	}
