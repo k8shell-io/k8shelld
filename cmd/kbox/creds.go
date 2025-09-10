@@ -62,7 +62,7 @@ func dockerCredsHelper(operation string) {
 
 		address := strings.TrimSpace(scanner.Text())
 
-		url := fmt.Sprintf("/docker/creds?type=docker&address=%s", address)
+		url := fmt.Sprintf("/creds?type=docker&address=%s", address)
 		headers := map[string]string{"Accept": "application/json"}
 
 		resp, err := client.MakeRequest("GET", url, headers, nil)
