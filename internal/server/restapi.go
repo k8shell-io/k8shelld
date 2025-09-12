@@ -74,6 +74,7 @@ func (a *RESTService) initializeRouter() *mux.Router {
 
 	// Define API endpoints
 	apiRouter.HandleFunc("/creds", a.GetCredsHelper).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/sessions", a.GetSessions).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/ssh/channels", a.GetSSHChannels).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/logs", a.GetLogs).Methods(http.MethodGet)
@@ -123,6 +124,29 @@ func (a *RESTService) loggingMiddleware(next http.Handler) http.Handler {
 		a.logger.Debug().Msgf("Response: status %d, body: %s", rec.statusCode,
 			sanitizeLogMessage(rec.body.String()))
 	})
+}
+
+func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
+	num := r.URL.Query().Get("num")
+	if num == "" {
+		num = "20"
+	}
+	n, err := strconv.Atoi(num)
+	if err != nil || n <= 0 || n > 100 {
+		http.Error(w, "Invalid 'num' parameter, must be between 1 and 100", http.StatusBadRequest)
+		return
+	}
+
+	a.logger.Debug().Msgf("Fetching last %d sessions for user %s", n, a.user.Username)
+	sessions, err := a.server.apiClient.ListUserSessions(r.Context(), a.user.Username, n, 0, true)
+	if err != nil {
+		a.logger.Warn().Msgf("Cannot retrieve user sessions: %v", err)
+		http.Error(w, "Failed to retrieve sessions", http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sessions)
 }
 
 func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
