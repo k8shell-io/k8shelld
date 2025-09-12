@@ -21,6 +21,7 @@ import (
 type Server struct {
 	logger      *zerolog.Logger
 	config      *config.Config
+	workspace   string
 	restService *RESTService
 	grpcService *grpc.GRPCService
 	procWatcher *system.ProcessWatcher
@@ -42,6 +43,11 @@ func NewServer(cfg *config.Config, keys *config.Keys, grpcApiListenPort int, ser
 	}
 
 	var err error
+	s.workspace = os.Getenv("WORKSPACE")
+	if s.workspace == "" {
+		return nil, fmt.Errorf("cannot get the workspace name from WORKSPACE environment variable")
+	}
+
 	s.procWatcher = system.NewProcessWatcher(cfg.TerminateOrphans.Enabled, cfg.ReapZombies.Enabled,
 		cfg.TerminateOrphans.CheckInterval, cfg.TerminateOrphans.Exclude)
 
