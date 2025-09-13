@@ -76,6 +76,7 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/ssh/channels", a.GetSSHChannels).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/logs", a.GetLogs).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/shutdown", a.Shutdown).Methods(http.MethodPost)
 	a.logRoutes(router)
 	return router
 }
@@ -144,6 +145,16 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sessions)
+}
+
+func (a *RESTService) Shutdown(w http.ResponseWriter, r *http.Request) {
+	a.logger.Debug().Msgf("Shutting down workspace %s", a.server.workspace)
+	if err := a.server.apiClient.DeleteWorkspace(r.Context(), a.user.Username, a.server.workspace); err != nil {
+		a.logger.Warn().Msgf("Cannot shutdown workspace: %v", err)
+		http.Error(w, "Failed to shutdown workspace", http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
