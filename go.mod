@@ -8,7 +8,8 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/gorilla/mux v1.8.1
 	github.com/invopop/jsonschema v0.13.0
-	github.com/k8shell-io/api-server v0.11.9
+	github.com/k8shell-io/api-server v0.11.12
+	github.com/k8shell-io/common v0.11.24
 	github.com/pkg/sftp v1.13.9
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.9.1
@@ -36,8 +37,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/k8shell-io/common v0.11.24 // indirect
-	github.com/k8shell-io/identity v0.11.19 // indirect
+	github.com/k8shell-io/identity v0.11.22 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect

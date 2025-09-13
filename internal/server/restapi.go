@@ -134,7 +134,8 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.logger.Debug().Msgf("Fetching last %d sessions for user %s", n, a.user.Username)
-	sessions, err := a.server.apiClient.ListUserSessions(r.Context(), a.user.Username, n, 0, true)
+	sessions, err := a.server.apiClient.ListUserSessions(r.Context(), a.user.Username,
+		a.server.workspace, n, 0, true)
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot retrieve user sessions: %v", err)
 		http.Error(w, "Failed to retrieve sessions", http.StatusBadGateway)
