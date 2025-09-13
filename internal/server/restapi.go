@@ -9,9 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -117,19 +115,17 @@ func (a *RESTService) loggingMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		a.logger.Debug().Msgf("Request: method %s, path %s, qs: %s", r.Method,
-			r.URL.Path, r.URL.RawQuery)
+		a.logger.Debug().Msgf("Request: method %s, path %s, qs: %s", r.Method, r.URL.Path, r.URL.RawQuery)
 		rec := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		a.logger.Debug().Msgf("Response: status %d, body: %s", rec.statusCode,
-			sanitizeLogMessage(rec.body.String()))
+		a.logger.Debug().Msgf("Response: status %d", rec.statusCode)
 	})
 }
 
 func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 	num := r.URL.Query().Get("num")
 	if num == "" {
-		num = "20"
+		num = "10"
 	}
 	n, err := strconv.Atoi(num)
 	if err != nil || n <= 0 || n > 100 {
@@ -375,26 +371,4 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 			continue
 		}
 	}
-}
-
-// compile once for efficiency
-var sensitivePatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)"?(password|secret|token)"?\s*:\s*"[^"]*"`),
-	regexp.MustCompile(`(?i)(password|secret|token)\s*=\s*[^&\s]+`), // e.g. in query string
-}
-
-func sanitizeLogMessage(s string) string {
-	for _, re := range sensitivePatterns {
-		s = re.ReplaceAllStringFunc(s, func(match string) string {
-			parts := strings.SplitN(match, ":", 2)
-			if len(parts) < 2 {
-				parts = strings.SplitN(match, "=", 2)
-			}
-			if len(parts) == 2 {
-				return parts[0] + ":\"****\""
-			}
-			return match
-		})
-	}
-	return s
 }
