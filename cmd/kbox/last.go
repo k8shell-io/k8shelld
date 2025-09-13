@@ -82,21 +82,21 @@ func formatLastEntry(session models.SSHSession, wideFormat bool) {
 		isStillLoggedIn = true
 	}
 
-	username := fmt.Sprintf("%-10s", session.Username)
+	username := fmt.Sprintf("%-8s", session.Username)
 	terminal := "pts/0   "
 	clientIP := fmt.Sprintf("%-16s", session.ClientIP)
 	startFormatted := startTime.Format("Mon Jan _2 15:04")
 
-	var bytesInfo string
-	if wideFormat {
-		bytesInfo = fmt.Sprintf(" [in: %s, out: %s]",
-			formatBytes(session.BytesIn),
-			formatBytes(session.BytesOut))
-	}
-
 	if isStillLoggedIn {
-		fmt.Printf("%s %s %s %s   still logged in%s\n",
-			username, terminal, clientIP, startFormatted, bytesInfo)
+		statusColumn := fmt.Sprintf("%-20s", "still logged in")
+		if wideFormat {
+			fmt.Printf("%s %s %s %s   %s -> %8s <- %8s\n",
+				username, terminal, clientIP, startFormatted, statusColumn,
+				formatBytes(session.BytesIn), formatBytes(session.BytesOut))
+		} else {
+			fmt.Printf("%s %s %s %s   still logged in\n",
+				username, terminal, clientIP, startFormatted)
+		}
 	} else {
 		endFormatted := endTime.Format("15:04")
 
@@ -105,13 +105,27 @@ func formatLastEntry(session models.SSHSession, wideFormat bool) {
 		minutes := int(duration.Minutes()) % 60
 		durationFormatted := fmt.Sprintf("(%02d:%02d)", hours, minutes)
 
+		var timeColumn string
 		if startTime.Format("2006-01-02") == endTime.Format("2006-01-02") {
-			fmt.Printf("%s %s %s %s - %s  %s%s\n",
-				username, terminal, clientIP, startFormatted, endFormatted, durationFormatted, bytesInfo)
+			timeColumn = fmt.Sprintf("%s - %s  %s", startFormatted, endFormatted, durationFormatted)
 		} else {
 			endFormattedFull := endTime.Format("Mon Jan _2 15:04")
-			fmt.Printf("%s %s %s %s - %s  %s%s\n",
-				username, terminal, clientIP, startFormatted, endFormattedFull, durationFormatted, bytesInfo)
+			timeColumn = fmt.Sprintf("%s - %s  %s", startFormatted, endFormattedFull, durationFormatted)
+		}
+
+		if wideFormat {
+			fmt.Printf("%s %s %s %-20s -> %8s <- %8s\n",
+				username, terminal, clientIP, timeColumn,
+				formatBytes(session.BytesIn), formatBytes(session.BytesOut))
+		} else {
+			if startTime.Format("2006-01-02") == endTime.Format("2006-01-02") {
+				fmt.Printf("%s %s %s %s - %s  %s\n",
+					username, terminal, clientIP, startFormatted, endFormatted, durationFormatted)
+			} else {
+				endFormattedFull := endTime.Format("Mon Jan _2 15:04")
+				fmt.Printf("%s %s %s %s - %s  %s\n",
+					username, terminal, clientIP, startFormatted, endFormattedFull, durationFormatted)
+			}
 		}
 	}
 }
