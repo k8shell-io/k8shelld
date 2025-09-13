@@ -5,4 +5,3 @@ bin/kbox
 docker/k8shelld/BUILD
 docker/k8shelld/files
 __debug*
-kbox

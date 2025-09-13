@@ -116,16 +116,11 @@ func formatLastEntry(session models.SSHSession, wideFormat bool) {
 	}
 
 	if wideFormat {
-		fmt.Printf("%-8s %-8s %-16s %-34s %7s %7s\n",
+		fmt.Printf("%-10s %-8s %-16s %-34s %7s %7s\n",
 			username, terminal, clientIP, timeCol,
 			formatBytes(session.BytesIn), formatBytes(session.BytesOut))
 	} else {
-		if isStillLoggedIn {
-			fmt.Printf("%s %s %s %s  still logged in\n",
-				username, terminal, clientIP, startStr)
-		} else {
-			fmt.Printf("%s %s %s %s\n",
-				username, terminal, clientIP, timeCol)
-		}
+		fmt.Printf("%-10s %-8s %-16s %-34s\n",
+			username, terminal, clientIP, timeCol)
 	}
 }
