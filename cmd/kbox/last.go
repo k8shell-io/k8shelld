@@ -24,7 +24,18 @@ func init() {
 var LastCmd = &cobra.Command{
 	Use:   "last",
 	Short: "Display last user sessions",
-	Long:  "Display last user sessions.",
+	Long: `Display last user sessions.
+
+The command displays the following fields:
+- username
+- terminal
+- client IP
+- login time
+- logout time or "still logged in"
+- duration of the session
+- bytes received
+- bytes sent
+`,
 
 	Run: func(cmd *cobra.Command, args []string) {
 		resp, err := client.MakeRequest("GET", fmt.Sprintf("/sessions?num=%d", lastNumLines), nil, nil)
@@ -71,61 +82,50 @@ func formatLastEntry(session models.SSHSession, wideFormat bool) {
 		fmt.Printf("Error: start time is nil\n")
 		return
 	}
-	startTime := *session.StartTime
+	start := *session.StartTime
 
-	var endTime time.Time
-	var isStillLoggedIn bool
-
+	var (
+		end             time.Time
+		isStillLoggedIn bool
+	)
 	if session.EndTime != nil {
-		endTime = *session.EndTime
+		end = *session.EndTime
 	} else {
 		isStillLoggedIn = true
 	}
 
-	username := fmt.Sprintf("%-8s", session.Username)
-	terminal := "pts/0   "
-	clientIP := fmt.Sprintf("%-16s", session.ClientIP)
-	startFormatted := startTime.Format("Mon Jan _2 15:04")
+	username := session.Username
+	terminal := "pts/0"
+	clientIP := session.ClientIP
+	startStr := start.Format("Mon Jan _2 15:04")
 
+	var timeCol string
 	if isStillLoggedIn {
-		statusColumn := fmt.Sprintf("%-20s", "still logged in")
-		if wideFormat {
-			fmt.Printf("%s %s %s %s   %s -> %8s <- %8s\n",
-				username, terminal, clientIP, startFormatted, statusColumn,
-				formatBytes(session.BytesIn), formatBytes(session.BytesOut))
-		} else {
-			fmt.Printf("%s %s %s %s   still logged in\n",
-				username, terminal, clientIP, startFormatted)
-		}
+		timeCol = startStr + "   still logged in"
 	} else {
-		endFormatted := endTime.Format("15:04")
+		d := end.Sub(start)
+		h := int(d.Hours())
+		m := int(d.Minutes()) % 60
+		dur := fmt.Sprintf("(%02d:%02d)", h, m)
 
-		duration := endTime.Sub(startTime)
-		hours := int(duration.Hours())
-		minutes := int(duration.Minutes()) % 60
-		durationFormatted := fmt.Sprintf("(%02d:%02d)", hours, minutes)
-
-		var timeColumn string
-		if startTime.Format("2006-01-02") == endTime.Format("2006-01-02") {
-			timeColumn = fmt.Sprintf("%s - %s  %s", startFormatted, endFormatted, durationFormatted)
+		if start.Format("2006-01-02") == end.Format("2006-01-02") {
+			timeCol = fmt.Sprintf("%s - %s  %s", startStr, end.Format("15:04"), dur)
 		} else {
-			endFormattedFull := endTime.Format("Mon Jan _2 15:04")
-			timeColumn = fmt.Sprintf("%s - %s  %s", startFormatted, endFormattedFull, durationFormatted)
+			timeCol = fmt.Sprintf("%s - %s  %s", startStr, end.Format("Mon Jan _2 15:04"), dur)
 		}
+	}
 
-		if wideFormat {
-			fmt.Printf("%s %s %s %-20s -> %8s <- %8s\n",
-				username, terminal, clientIP, timeColumn,
-				formatBytes(session.BytesIn), formatBytes(session.BytesOut))
+	if wideFormat {
+		fmt.Printf("%-8s %-8s %-16s %-34s %7s %7s\n",
+			username, terminal, clientIP, timeCol,
+			formatBytes(session.BytesIn), formatBytes(session.BytesOut))
+	} else {
+		if isStillLoggedIn {
+			fmt.Printf("%s %s %s %s  still logged in\n",
+				username, terminal, clientIP, startStr)
 		} else {
-			if startTime.Format("2006-01-02") == endTime.Format("2006-01-02") {
-				fmt.Printf("%s %s %s %s - %s  %s\n",
-					username, terminal, clientIP, startFormatted, endFormatted, durationFormatted)
-			} else {
-				endFormattedFull := endTime.Format("Mon Jan _2 15:04")
-				fmt.Printf("%s %s %s %s - %s  %s\n",
-					username, terminal, clientIP, startFormatted, endFormattedFull, durationFormatted)
-			}
+			fmt.Printf("%s %s %s %s\n",
+				username, terminal, clientIP, timeCol)
 		}
 	}
 }
