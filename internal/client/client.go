@@ -36,7 +36,7 @@ func MakeRequest(method string, url string, headers map[string]string, data io.R
 		return nil, fmt.Errorf("failed to make HTTP request: %v", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("API call failed with status %d: %s", resp.StatusCode, bodyBytes)
 	}

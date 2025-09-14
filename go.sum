@@ -65,6 +65,8 @@ github.com/k8shell-io/api-server v0.11.12 h1:/Llzr9yhjPasIsp0HyGZXxkGkVikEURreTf
 github.com/k8shell-io/api-server v0.11.12/go.mod h1:pTzDW44+b03GBTXmrYfyxBdiKbGE8POD7rho+13gZWE=
 github.com/k8shell-io/api-server v0.11.13 h1:iipOWtgCZD2XnG0XlGNsFcx7QMEfPtOp4J0VzVK2FV8=
 github.com/k8shell-io/api-server v0.11.13/go.mod h1:vpGgHl2rlbs3rEJWMtkjHMAkgzBIkaw0v/7RJ0KRZMA=
+github.com/k8shell-io/api-server v0.11.14 h1:F6QN3tc7UWmlF3jylx4NxBvadBKrHrxMRZg6PvTEUPo=
+github.com/k8shell-io/api-server v0.11.14/go.mod h1:ixSCI9TKFlja5sgfwRt1cID99se/NIK0AY9GvzKgTGI=
 github.com/k8shell-io/common v0.11.24 h1:zKhlFlWJIjRKFxMTy8HJUWBPhVqmeIgfKUAYynxp9MA=
 github.com/k8shell-io/common v0.11.24/go.mod h1:VUdmC/yJECg1kU4LrFljJsaVweJFEOH0wpte6in4pzk=
 github.com/k8shell-io/common v0.11.28 h1:j7uYb98QGwz3TF3P/aYD7K8bRaU6RyPVrmmrGtRBGOM=
@@ -73,6 +75,8 @@ github.com/k8shell-io/identity v0.11.22 h1:xmz5il5Y5mxULXpc5TLYv9e6jW/RNr+H9R3wU
 github.com/k8shell-io/identity v0.11.22/go.mod h1:W7mZf3hLs492eglqal48V02QXrv2zRIxXFghUMhn8DM=
 github.com/k8shell-io/provisioner v0.11.26 h1:PQuk4xVovJzsZAd6HS/1YRlWsk21MXegToQreB1X5f4=
 github.com/k8shell-io/provisioner v0.11.26/go.mod h1:UbEzZqbJuWfBj8kWahHFDGfOzA0sNPfmFLxXXgkhCDk=
+github.com/k8shell-io/provisioner v0.11.29 h1:ZR/2Lvu4e2L1ew2wm8IgS47sbZfmNmtag5COQos1yNg=
+github.com/k8shell-io/provisioner v0.11.29/go.mod h1:UbEzZqbJuWfBj8kWahHFDGfOzA0sNPfmFLxXXgkhCDk=
 github.com/klauspost/cpuid/v2 v2.0.9/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=
 github.com/klauspost/cpuid/v2 v2.2.7 h1:ZWSB3igEs+d0qvnxR/ZBzXVmxkgt8DdzP6m9pfuVLDM=
 github.com/klauspost/cpuid/v2 v2.2.7/go.mod h1:Lcz8mBdAVJIBVzewtcLocK12l3Y+JytZYpaMropDUws=

@@ -136,6 +136,14 @@ func (s *Server) Serve() {
 
 	sig := <-sigChan
 	s.logger.Info().Msgf("Received signal: %s. Initiating shutdown...", sig)
+
+	// kill all processes
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		system.KillAllProcesses(s.logger)
+	}()
+
 	cancel()
 	wg.Wait()
 

@@ -294,3 +294,36 @@ func (p *ProcessWatcher) terminateOrphans() {
 	p.ignorePIDsTerminate = newIgnoreList
 	p.ignorePIDsMutex.Unlock()
 }
+
+func KillAllProcesses(logger *zerolog.Logger) {
+	files, err := os.ReadDir("/proc")
+	if err != nil {
+		logger.Error().Msgf("Failed to read /proc: %v", err)
+		return
+	}
+
+	for _, file := range files {
+		pid, err := strconv.Atoi(file.Name())
+		if err != nil {
+			continue
+		}
+
+		if pid == 1 || pid == os.Getpid() {
+			continue
+		}
+
+		err = syscall.Kill(-pid, syscall.SIGHUP)
+		if err == nil {
+			logger.Info().Msgf("Sent SIGHUP to process group PID %d", pid)
+		} else {
+			err = syscall.Kill(pid, syscall.SIGHUP)
+			if err != nil {
+				logger.Error().Msgf("Failed to send SIGHUP to PID %d: %v, sending SIGKILL...", pid, err)
+				err = syscall.Kill(pid, syscall.SIGKILL)
+				if err != nil {
+					logger.Error().Msgf("Failed to send SIGKILL to PID %d: %v", pid, err)
+				}
+			}
+		}
+	}
+}

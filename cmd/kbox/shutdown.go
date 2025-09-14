@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 
 	"github.com/k8shell-io/k8shelld/internal/client"
 	"github.com/spf13/cobra"
@@ -24,11 +23,11 @@ var ShutdownCmd = &cobra.Command{
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusNoContent {
+		if resp.StatusCode >= 400 {
 			fmt.Printf("Server returned error: %s\n", resp.Status)
 			return
 		}
 
-		fmt.Println("Workspace shut down successfully.")
+		fmt.Println("Request to shutdown the workspace was submitted.")
 	},
 }
