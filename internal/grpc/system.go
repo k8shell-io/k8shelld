@@ -63,9 +63,20 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 		return nil, status.Error(codes.PermissionDenied, "user gid mismatch")
 	}
 
-	s.grpcApi.user.UserToken = req.User.UserToken
-	s.grpcApi.apiClient.UpdateToken(req.User.UserToken)
-	s.logger.Debug().Msgf("User token updated in API client: token=***%s", req.User.UserToken[:4])
+	if req.User.UserToken == "" {
+		s.logger.Warn().Msg("Empty user token received in handshake")
+	} else {
+		var tokenPreview string
+		if len(req.User.UserToken) >= 4 {
+			tokenPreview = req.User.UserToken[:4]
+		} else {
+			tokenPreview = "****"
+		}
+
+		s.logger.Debug().Msgf("User token received in handshake: token=***%s", tokenPreview)
+		s.grpcApi.user.UserToken = req.User.UserToken
+		s.grpcApi.apiClient.UpdateToken(req.User.UserToken)
+	}
 
 	if !s.initScriptsRun {
 		err := s.RunInitScripts(ctx, s.grpcApi.initScriptsDir, s.grpcApi.user, req.EnvVars)
