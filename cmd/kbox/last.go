@@ -107,6 +107,10 @@ func formatLastEntry(session models.SSHSession, wideFormat bool) {
 		h := int(d.Hours())
 		m := int(d.Minutes()) % 60
 		dur := fmt.Sprintf("(%02d:%02d)", h, m)
+		if wideFormat {
+			s := int(d.Seconds()) % 60
+			dur = fmt.Sprintf("(%02d:%02d:%02d)", h, m, s)
+		}
 
 		if start.Format("2006-01-02") == end.Format("2006-01-02") {
 			timeCol = fmt.Sprintf("%s - %s  %s", startStr, end.Format("15:04"), dur)
@@ -116,7 +120,7 @@ func formatLastEntry(session models.SSHSession, wideFormat bool) {
 	}
 
 	if wideFormat {
-		fmt.Printf("%-10s %-8s %-16s %-34s %7s %7s\n",
+		fmt.Printf("%-10s %-8s %-16s %-37s %7s %7s\n",
 			username, terminal, clientIP, timeCol,
 			formatBytes(session.BytesIn), formatBytes(session.BytesOut))
 	} else {
