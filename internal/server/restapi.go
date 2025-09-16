@@ -135,7 +135,7 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.logger.Debug().Msgf("Fetching last %d sessions for workspace %s", n, a.server.workspace)
-	sessions, err := a.server.apiClient.ListUserSessions(r.Context(), "",
+	sessions, err := a.server.apiClient.ListUserSessions(r.Context(), a.user.Username,
 		a.server.workspace, n, 0, true)
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot retrieve workspace sessions: %v", err)
