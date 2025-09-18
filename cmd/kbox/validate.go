@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/k8shell-io/k8shelld/internal/client"
 	"github.com/k8shell-io/k8shelld/internal/models"
@@ -33,8 +34,18 @@ var ValidateCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		resp, err := client.MakeRequest("POST", fmt.Sprintf("/validate?file=%s&compose=%t",
-			k8shellFile, compose), nil, nil)
+		if _, err := os.Stat(k8shellFile); os.IsNotExist(err) {
+			fmt.Printf("Error: file '%s' does not exist\n", k8shellFile)
+			os.Exit(1)
+		}
+
+		absPath, err := filepath.Abs(k8shellFile)
+		if err != nil {
+			fmt.Printf("Error getting absolute path: %v\n", err)
+			os.Exit(1)
+		}
+
+		resp, err := client.MakeRequest("POST", fmt.Sprintf("/validate?file=%s&compose=%t", absPath, compose), nil, nil)
 		if err != nil {
 			fmt.Printf("Error validating k8shell file: %v\n", err)
 			os.Exit(1)
