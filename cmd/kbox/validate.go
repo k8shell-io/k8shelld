@@ -19,7 +19,7 @@ var (
 func init() {
 	ValidateCmd.Flags().StringVarP(&k8shellFile, "file", "f", "", "Path to the k8shell file")
 	ValidateCmd.MarkFlagRequired("file")
-	ValidateCmd.Flags().BoolVarP(&compose, "compose", "c", true, "Test to compose the final blueprint")
+	ValidateCmd.Flags().BoolVarP(&compose, "compose", "c", false, "Test to compose the final blueprint")
 }
 
 var ValidateCmd = &cobra.Command{

@@ -19,6 +19,7 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/rs/zerolog"
+	"gopkg.in/yaml.v3"
 )
 
 const API_VERSION = "v1"
@@ -333,13 +334,19 @@ func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Reques
 
 	a.logger.Debug().Msgf("Validating k8shell file: %s", filename)
 
-	blueprintYAML, err := os.ReadFile(filename)
+	k8shellFileYAML, err := os.ReadFile(filename)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to read file %s", filename), http.StatusBadRequest)
 		return
 	}
 
-	bp, errors := commonModels.ValidateCustomBlueprint(blueprintYAML)
+	var k8shellFile commonModels.K8shellFile
+	if err := yaml.Unmarshal(k8shellFileYAML, &k8shellFile); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid YAML format: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	_, errors := commonModels.ValidateK8shellFile(k8shellFile)
 	var response models.K8shellFileValidationResponse
 	if len(errors) == 0 {
 		response = models.K8shellFileValidationResponse{
@@ -349,7 +356,7 @@ func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Reques
 		}
 
 		if compose {
-			_, err := a.server.apiClient.ComposeBlueprint(r.Context(), a.user.Username, bp)
+			_, err := a.server.apiClient.ComposeBlueprint(r.Context(), a.user.Username, &k8shellFile)
 			if err != nil {
 				response.Status = "invalid"
 				response.Errors = []string{fmt.Sprintf("Failed to compose final blueprint: %v", err)}
