@@ -34,12 +34,18 @@ var ValidateCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		if _, err := os.Stat(k8shellFile); os.IsNotExist(err) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Printf("Error getting current working directory: %v\n", err)
+			os.Exit(1)
+		}
+
+		if _, err := os.Stat(filepath.Join(cwd, k8shellFile)); os.IsNotExist(err) {
 			fmt.Printf("Error: file '%s' does not exist\n", k8shellFile)
 			os.Exit(1)
 		}
 
-		absPath, err := filepath.Abs(k8shellFile)
+		absPath, err := filepath.Abs(filepath.Join(cwd, k8shellFile))
 		if err != nil {
 			fmt.Printf("Error getting absolute path: %v\n", err)
 			os.Exit(1)
