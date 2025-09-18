@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	commonModels "github.com/k8shell-io/common/models"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/log"
 	"github.com/k8shell-io/k8shelld/internal/models"
@@ -77,6 +78,7 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/logs", a.GetLogs).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/shutdown", a.Shutdown).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/validate", a.ValidateK8shelldFile).Methods(http.MethodPost)
 	a.logRoutes(router)
 	return router
 }
@@ -319,6 +321,53 @@ func (a *RESTService) GetLogs(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
+}
+
+func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Request) {
+	filename := r.URL.Query().Get("file")
+	if filename == "" {
+		http.Error(w, "Missing 'file' query parameter", http.StatusBadRequest)
+		return
+	}
+	compose := r.URL.Query().Get("compose") == "false"
+
+	a.logger.Debug().Msgf("Validating k8shelld file: %s", filename)
+
+	blueprintYAML, err := os.ReadFile(filename)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to read file %s", filename), http.StatusBadRequest)
+		return
+	}
+
+	bp, errors := commonModels.ValidateCustomBlueprint(blueprintYAML)
+	var response models.K8shellFileValidationResponse
+	if len(errors) == 0 {
+		response = models.K8shellFileValidationResponse{
+			Status:   "valid",
+			Filename: filename,
+			Errors:   nil,
+		}
+
+		if compose {
+			_, err := a.server.apiClient.ComposeBlueprint(r.Context(), a.user.Username, bp)
+			if err != nil {
+				response.Status = "invalid"
+				response.Errors = []string{fmt.Sprintf("Failed to compose final blueprint: %v", err)}
+			}
+		}
+
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		response = models.K8shellFileValidationResponse{
+			Status:   "invalid",
+			Filename: filename,
+			Errors:   errors,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusOK)
 }
 
 func (a *RESTService) Serve(ctx context.Context) {
