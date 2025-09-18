@@ -37,6 +37,7 @@ func init() {
 	kboxCmd.AddCommand(LastCmd)
 	kboxCmd.AddCommand(LogsCmd)
 	kboxCmd.AddCommand(ShutdownCmd)
+	kboxCmd.AddCommand(ValidateCmd)
 
 	kboxCmd.PersistentFlags().StringVar(&socketPath, "socket", models.RESTAPIUnixSocket,
 		"k8shelld unix socket path")
