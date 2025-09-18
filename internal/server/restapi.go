@@ -329,9 +329,9 @@ func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "Missing 'file' query parameter", http.StatusBadRequest)
 		return
 	}
-	compose := r.URL.Query().Get("compose") == "false"
+	compose := r.URL.Query().Get("compose") == "true"
 
-	a.logger.Debug().Msgf("Validating k8shelld file: %s", filename)
+	a.logger.Debug().Msgf("Validating k8shell file: %s", filename)
 
 	blueprintYAML, err := os.ReadFile(filename)
 	if err != nil {

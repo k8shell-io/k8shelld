@@ -19,7 +19,7 @@ var (
 func init() {
 	ValidateCmd.Flags().StringVarP(&k8shellFile, "file", "f", "", "Path to the k8shell file")
 	ValidateCmd.MarkFlagRequired("file")
-	ValidateCmd.Flags().BoolVarP(&compose, "compose", "c", false, "Test to compose the final blueprint")
+	ValidateCmd.Flags().BoolVarP(&compose, "compose", "c", true, "Test to compose the final blueprint")
 }
 
 var ValidateCmd = &cobra.Command{
@@ -54,11 +54,11 @@ var ValidateCmd = &cobra.Command{
 		}
 
 		if response.Status == "valid" {
-			fmt.Printf("K8shelld file '%s' is valid.\n", response.Filename)
+			fmt.Printf("k8shell file %s is valid.\n", response.Filename)
 			return
 		}
 
-		fmt.Printf("K8shelld file '%s' is invalid. Errors:\n", response.Filename)
+		fmt.Printf("k8shell file %s is invalid.\n", response.Filename)
 		for _, err := range response.Errors {
 			fmt.Printf(" - %s\n", err)
 		}
