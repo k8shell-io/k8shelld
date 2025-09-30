@@ -36,33 +36,36 @@ func main() {
 		logger.Fatal().Msgf("error loading keys: %v", err)
 	}
 
-	config, err := ValidateAndLoadConfig(opts.ConfigPath, keys.A1Key)
+	cfg, err := ValidateAndLoadConfig(opts.ConfigPath, keys.A1Key)
 	if err != nil {
 		logger.Fatal().Msgf("Error loading configuration: %v", err)
 	}
 	logger.Info().Msgf("Configuration loaded, file=%s", opts.ConfigPath)
-	logger.Debug().Msgf("Configuration: %+v", config)
+	logger.Debug().Msgf("Configuration: %+v", cfg)
 
 	err = exec.Command("kbox", "tools-init").Run()
 	if err != nil {
 		logger.Error().Msgf("Error running kbox tools-init: %v", err)
 	}
 
-	if err := system.CreateUser(config.User); err != nil {
+	if err := system.CreateUser(cfg.User); err != nil {
 		logger.Fatal().Msgf("Error creating user: %v", err)
 	}
 
-	dockerSocketPath := "/var/run/docker/docker.sock"
-	dockerSocketSymlink := "/var/run/docker.sock"
-	if _, err := os.Lstat(dockerSocketSymlink); err != nil {
-		if err := os.Symlink(dockerSocketPath, dockerSocketSymlink); err != nil {
-			logger.Error().Msgf("Error creating docker socket symlink: %v", err)
+	if cfg.Docker.CreateDockerSockSymlink {
+		if _, err := os.Lstat(config.DOCKER_SOCKET_SYMLINK); err != nil {
+			if err := os.Symlink(config.DOCKER_SOCKET_PATH, config.DOCKER_SOCKET_SYMLINK); err != nil {
+				logger.Error().Msgf("Error creating docker socket symlink: %v", err)
+			} else {
+				logger.Info().Msgf("Created Docker socket symlink: %s -> %s",
+					config.DOCKER_SOCKET_SYMLINK, config.DOCKER_SOCKET_PATH)
+			}
 		} else {
-			logger.Info().Msgf("Created Docker socket symlink: %s -> %s", dockerSocketSymlink, dockerSocketPath)
+			logger.Warn().Msgf("Docker socket symlink already exists: %s", config.DOCKER_SOCKET_SYMLINK)
 		}
 	}
 
-	server, err := server.NewServer(config, keys, opts.ApiTCPPort, opts.ServerKeyPath,
+	server, err := server.NewServer(cfg, keys, opts.ApiTCPPort, opts.ServerKeyPath,
 		opts.ServerCertPath, opts.KeyLogFilePath, opts.UnixSocketPath, opts.InitScriptsDir)
 	if err != nil {
 		logger.Fatal().Msgf("Error creating server: %v", err)

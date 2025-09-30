@@ -21,6 +21,11 @@ var (
 	K8SHELLD_COMMIT  = "0000000"
 )
 
+const (
+	DOCKER_SOCKET_PATH    = "/var/run/docker/docker.sock"
+	DOCKER_SOCKET_SYMLINK = "/var/run/docker.sock"
+)
+
 // Configuration file structure
 // The configuration file is a YAML file that contains the following fields:
 // - system: General system configuration.
@@ -68,6 +73,11 @@ type PortForwardingRule struct {
 	Port   uint16
 }
 
+// DockerConfig represents the configuration for the Docker feature
+type DockerConfig struct {
+	CreateDockerSockSymlink bool `yaml:"createDockerSockSymlink"`
+}
+
 // Config represents the main configuration file structure
 type Config struct {
 	System              System           `yaml:"system"`
@@ -76,6 +86,7 @@ type Config struct {
 	PortForwarding      []string         `yaml:"portForwarding"`
 	TerminateOrphans    TerminateOrphans `yaml:"terminateOrphans"`
 	ReapZombies         ReapZombies      `yaml:"reapZombies"`
+	Docker              DockerConfig     `yaml:"docker"`
 	PortForwardingRules []PortForwardingRule
 }
 
