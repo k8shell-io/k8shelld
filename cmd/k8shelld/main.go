@@ -52,6 +52,18 @@ func main() {
 		logger.Fatal().Msgf("Error creating user: %v", err)
 	}
 
+	dockerSocketPath := "/var/run/docker/docker.sock"
+	dockerSocketSymlink := "/var/run/docker.sock"
+	if _, err := os.Stat(dockerSocketPath); err == nil {
+		if _, err := os.Lstat(dockerSocketSymlink); err != nil {
+			if err := os.Symlink(dockerSocketPath, dockerSocketSymlink); err != nil {
+				logger.Error().Msgf("Error creating docker socket symlink: %v", err)
+			} else {
+				logger.Info().Msgf("Created Docker socket symlink: %s -> %s", dockerSocketSymlink, dockerSocketPath)
+			}
+		}
+	}
+
 	server, err := server.NewServer(config, keys, opts.ApiTCPPort, opts.ServerKeyPath,
 		opts.ServerCertPath, opts.KeyLogFilePath, opts.UnixSocketPath, opts.InitScriptsDir)
 	if err != nil {
