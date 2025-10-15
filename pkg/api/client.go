@@ -13,6 +13,7 @@ import (
 	"github.com/k8shell-io/common/pkg/models"
 	pb "github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
+	"google.golang.org/grpc/metadata"
 )
 
 // BufferedReadWriter is an interface that is used to read and write data with
@@ -91,6 +92,11 @@ func (c *K8shelld) Handshake(ctx context.Context, user *models.User, envVars []s
 // RunShell creates a PTY shell session over gRPC and bridges it with the BufferedReadWriter.
 func (c *K8shelld) RunShell(ctx context.Context, rw BufferedReadWriter, sessionId string, envVars []string,
 	width, height uint32, usePty bool) error {
+	md := metadata.Pairs(
+		"session-id", sessionId,
+	)
+	ctx = metadata.NewOutgoingContext(ctx, md)
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -188,6 +194,9 @@ func (c *K8shelld) RunShell(ctx context.Context, rw BufferedReadWriter, sessionI
 
 // ResizeTerminal resizes the terminal
 func (c *K8shelld) ResizeTerminal(ctx context.Context, sessionId string, width, height uint32) error {
+	md := metadata.Pairs("session-id", sessionId)
+	ctx = metadata.NewOutgoingContext(ctx, md)
+
 	req := &pb.ResizeTerminalRequest{
 		Width:  width,
 		Height: height,
@@ -199,6 +208,11 @@ func (c *K8shelld) ResizeTerminal(ctx context.Context, sessionId string, width, 
 
 // RunUnixSocket creates a Unix socket connection over gRPC and bridges it with the RW channel.
 func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWriter, agentUnixID, socketPath string) error {
+	md := metadata.Pairs(
+		"unixsocket-id", agentUnixID,
+	)
+	ctx = metadata.NewOutgoingContext(ctx, md)
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -287,6 +301,11 @@ func (c *K8shelld) RunPortForward(ctx context.Context, upstream BufferedReadWrit
 		destinationIP = "localhost"
 	}
 
+	md := metadata.Pairs(
+		"portforward-id", portForwardID,
+	)
+	ctx = metadata.NewOutgoingContext(ctx, md)
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -372,6 +391,9 @@ func (c *K8shelld) RunPortForward(ctx context.Context, upstream BufferedReadWrit
 // RunExec executes a command in a remote shell over gRPC.
 func (c *K8shelld) RunExec(ctx context.Context, upstream BufferedReadWriter, execID string,
 	command string, shellBinary string, envVars []string, signalChan <-chan string) (int32, error) {
+
+	md := metadata.Pairs("exec-id", execID)
+	ctx = metadata.NewOutgoingContext(ctx, md)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
