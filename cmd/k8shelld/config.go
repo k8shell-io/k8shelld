@@ -19,13 +19,9 @@ import (
 
 // Options represents the command line options
 type Options struct {
-	ApiTCPPort     int
 	UnixSocketPath string
 	ConfigPath     string
-	ServerKeyPath  string
-	ServerCertPath string
 	InitScriptsDir string
-	KeyLogFilePath string
 	showVersion    bool
 }
 
@@ -68,24 +64,16 @@ func copyConfigJSON(original *config.Config) *config.Config {
 func getOptions(version string, commit_id string) (*Options, error) {
 	// Default options
 	options := &Options{
-		ApiTCPPort:     2822,
 		UnixSocketPath: models.RESTAPIUnixSocket,
 		ConfigPath:     "/etc/k8shell/config.yaml",
-		ServerKeyPath:  "/etc/k8shell/server.key",
-		ServerCertPath: "/etc/k8shell/server.crt",
 		InitScriptsDir: "/usr/local/k8shell/system",
-		KeyLogFilePath: "",
 		showVersion:    false,
 	}
 
 	// Parse command line flags
 	flag.StringVar(&options.ConfigPath, "config", options.ConfigPath, "Path to the configuration file")
-	flag.IntVar(&options.ApiTCPPort, "port", options.ApiTCPPort, "API TCP port")
-	flag.StringVar(&options.ServerKeyPath, "server-key", options.ServerKeyPath, "Server key file")
-	flag.StringVar(&options.ServerCertPath, "server-cert", options.ServerCertPath, "Server certificate file")
 	flag.StringVar(&options.UnixSocketPath, "socket", options.UnixSocketPath, "Unix socket path")
 	flag.StringVar(&options.InitScriptsDir, "init-scripts", options.InitScriptsDir, "Directory for init scripts")
-	flag.StringVar(&options.KeyLogFilePath, "keylog", options.KeyLogFilePath, "File to log TLS master secrets in NSS key log format")
 	flag.BoolVar(&options.showVersion, "v", false, "Show version information")
 
 	// Print usage
@@ -94,12 +82,8 @@ func getOptions(version string, commit_id string) (*Options, error) {
 		fmt.Fprint(os.Stderr, "\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  --config <file>         Configuration file (default: %s)\n", options.ConfigPath)
-		fmt.Fprintf(os.Stderr, "  --port <int>            GRPC API TCP port (default: %d)\n", options.ApiTCPPort)
 		fmt.Fprintf(os.Stderr, "  --socket <file>         REST API Unix socket path (default: %s)\n", options.UnixSocketPath)
-		fmt.Fprintf(os.Stderr, "  --server-cert <file>    Server certificate file (default: %s)\n", options.ServerCertPath)
-		fmt.Fprintf(os.Stderr, "  --server-key <file>     Server key file (default: %s)\n", options.ServerKeyPath)
 		fmt.Fprintf(os.Stderr, "  --init-scripts <dir>    Directory for init scripts (default: %s)\n", options.InitScriptsDir)
-		fmt.Fprint(os.Stderr, "  --keylog <file>         File to log TLS master secrets in NSS key log format\n", options.KeyLogFilePath)
 		fmt.Fprint(os.Stderr, "  --test                  Enable test mode\n")
 		fmt.Fprint(os.Stderr, "  -v                      Show version and exit\n")
 	}
@@ -114,23 +98,8 @@ func getOptions(version string, commit_id string) (*Options, error) {
 	return options, nil
 }
 
-// LoadKeys reads the access keys from environment variables and unsets them after reading
-// This is done to prevent the keys from being leaked in the process environment.
-// There are two keys: A1K for the GRPC API and A2K for k8shell REST API
-func loadKeys() (*config.Keys, error) {
-	keys := &config.Keys{}
-
-	keys.A1Key = os.Getenv("A1K")
-	if keys.A1Key == "" {
-		return nil, fmt.Errorf("A1K environment variable is not set")
-	}
-	os.Unsetenv("A1K")
-
-	return keys, nil
-}
-
 // ValidateAndLoadConfig validates and loads the configuration file
-func ValidateAndLoadConfig(configPath string, accessKey string) (*config.Config, error) {
+func ValidateAndLoadConfig(configPath string) (*config.Config, error) {
 	yamlData, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %v", err)

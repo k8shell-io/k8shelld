@@ -31,12 +31,7 @@ func main() {
 
 	logger.Info().Msgf("Starting k8shelld, version: %s", config.K8SHELLD_VERSION)
 
-	keys, err := loadKeys()
-	if err != nil {
-		logger.Fatal().Msgf("error loading keys: %v", err)
-	}
-
-	cfg, err := ValidateAndLoadConfig(opts.ConfigPath, keys.A1Key)
+	cfg, err := ValidateAndLoadConfig(opts.ConfigPath)
 	if err != nil {
 		logger.Fatal().Msgf("Error loading configuration: %v", err)
 	}
@@ -65,8 +60,7 @@ func main() {
 		}
 	}
 
-	server, err := server.NewServer(cfg, keys, opts.ApiTCPPort, opts.ServerKeyPath,
-		opts.ServerCertPath, opts.KeyLogFilePath, opts.UnixSocketPath, opts.InitScriptsDir)
+	server, err := server.NewServer(cfg, opts.UnixSocketPath, opts.InitScriptsDir)
 	if err != nil {
 		logger.Fatal().Msgf("Error creating server: %v", err)
 	}

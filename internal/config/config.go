@@ -58,11 +58,6 @@ type ReapZombies struct {
 	Enabled bool `yaml:"enabled"`
 }
 
-// Keys represents the keys
-type Keys struct {
-	A1Key string // Access key for GRPC API
-}
-
 // Env represents the environment variables (regexp patterns) to be unset in the workspace
 type Env struct {
 	Unset         []string `yaml:"unset"`

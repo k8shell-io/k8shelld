@@ -31,8 +31,7 @@ type Server struct {
 	sysInfoMu   sync.Mutex
 }
 
-func NewServer(cfg *config.Config, keys *config.Keys, grpcApiListenPort int, serverKeyPath string, serverCertPath string,
-	keyLogFilePath string, restApiUnixSocketPath string, initScriptsDir string) (*Server, error) {
+func NewServer(cfg *config.Config, restApiUnixSocketPath string, initScriptsDir string) (*Server, error) {
 
 	s := &Server{
 		logger:    log.NewLogger("k8shelld"),
