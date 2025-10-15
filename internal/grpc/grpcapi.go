@@ -8,14 +8,7 @@ package grpc
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/tls"
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
-	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -74,82 +67,6 @@ func getStatus(deleted time.Time) string {
 		return "ACTIVE"
 	}
 	return "STOPPED"
-}
-
-// DecryptAES decrypts AES-GCM encrypted data using the provided key.
-func DecryptAES(accessKey string, encryptedData []byte) ([]byte, error) {
-	encryptedStr := string(encryptedData)
-
-	const prefix = "ENC[AES256]"
-	if !strings.HasPrefix(encryptedStr, prefix) {
-		//return nil, errors.New("invalid encryption format: missing ENC[AES256] prefix")
-		return []byte(encryptedStr), nil
-	}
-	encryptedStr = strings.TrimPrefix(encryptedStr, prefix)
-
-	dataBytes, err := base64.StdEncoding.DecodeString(encryptedStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64 data: %v", err)
-	}
-
-	keyBytes, err := hex.DecodeString(accessKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode hex key: %v", err)
-	}
-
-	if len(keyBytes) != 16 && len(keyBytes) != 24 && len(keyBytes) != 32 {
-		return nil, fmt.Errorf("invalid AES key length: must be 16, 24, or 32 bytes")
-	}
-
-	if len(dataBytes) < 28 {
-		return nil, fmt.Errorf("invalid encrypted data length")
-	}
-
-	nonce := dataBytes[:12]      // First 12 bytes = nonce
-	tag := dataBytes[12:28]      // Next 16 bytes = authentication tag
-	ciphertext := dataBytes[28:] // Remaining bytes = encrypted content
-
-	block, err := aes.NewCipher(keyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create AES cipher: %v", err)
-	}
-
-	aesGCM, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM mode: %v", err)
-	}
-
-	plaintext, err := aesGCM.Open(nil, nonce, append(ciphertext, tag...), nil)
-	if err != nil {
-		return nil, fmt.Errorf("decryption failed: %v", err)
-	}
-
-	return plaintext, nil
-}
-
-// LoadDecryptedKeyPair loads a TLS certificate and key pair from files.
-func LoadDecryptedKeyPair(serverCertPath, encryptedKeyPath, accessKey string) (tls.Certificate, error) {
-	encryptedKey, err := os.ReadFile(encryptedKeyPath)
-	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("failed to read encrypted key file: %v", err)
-	}
-
-	decryptedKey, err := DecryptAES(accessKey, encryptedKey)
-	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("failed to decrypt key: %v", err)
-	}
-
-	certPEM, err := os.ReadFile(serverCertPath)
-	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("failed to read certificate file: %v", err)
-	}
-
-	cert, err := tls.X509KeyPair(certPEM, decryptedKey)
-	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("failed to load decrypted certificate and key: %v", err)
-	}
-
-	return cert, nil
 }
 
 // NewGRPCAPI creates a new GRPCApiService
