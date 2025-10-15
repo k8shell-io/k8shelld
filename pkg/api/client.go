@@ -536,3 +536,7 @@ func (c *K8shelld) RunExec(ctx context.Context, upstream BufferedReadWriter, exe
 
 	return exitCode, nil
 }
+
+func (c *K8shelld) Close() error {
+	return c.client.Close()
+}
