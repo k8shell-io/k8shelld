@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/k8shell-io/common/pkg/gapi"
 	"github.com/k8shell-io/k8shelld/internal/system"
 )
 
@@ -39,9 +40,10 @@ const (
 
 // System represents the general system configuration
 type System struct {
-	PProf     bool   `yaml:"pprof"`
-	LogLevel  string `yaml:"logLevel" jsonschema:"enum=debug,enum=info,enum=warn,enum=error,default=info"`
-	ApiServer string `yaml:"apiServer"`
+	PProf      bool              `yaml:"pprof"`
+	LogLevel   string            `yaml:"logLevel" jsonschema:"enum=debug,enum=info,enum=warn,enum=error,default=info"`
+	ApiServer  string            `yaml:"apiServer"`
+	GrpcConfig gapi.ServerConfig `yaml:"grpc"`
 }
 
 // TerminateOrphans represents the configuration for the terminate orphans feature of process watcher

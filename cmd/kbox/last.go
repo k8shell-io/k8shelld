@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/k8shell-io/common/models"
+	"github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/client"
 	"github.com/spf13/cobra"
 )

@@ -14,12 +14,12 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"net"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/k8shell-io/common/pkg/gapi"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/log"
 	"github.com/k8shell-io/k8shelld/internal/system"
@@ -28,10 +28,6 @@ import (
 	apiClient "github.com/k8shell-io/api-server/pkg/client"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 )
 
 const cleanupInterval = 1 * time.Minute // The interval for cleaning up the stores
@@ -51,12 +47,9 @@ type StoreRecord struct {
 
 // GRPCApiService is the main service that handles the gRPC API
 type GRPCService struct {
+	grpcConfig          gapi.ServerConfig           // The gRPC server configuration
 	logger              *zerolog.Logger             // The logger
 	initScriptsDir      string                      // The directory where the init scripts are located
-	accessToken         string                      // The access token that a client needs to auhtenticate with
-	tcpPort             int                         // The TCP port that the gRPC server listens on
-	cert                tls.Certificate             // The TLS certificate and key pair
-	KeyLogFilePath      string                      // The path to the key log file for debugging
 	user                system.User                 // The workspace owner
 	procWatcher         *system.ProcessWatcher      // The process watcher
 	portForwardingRules []config.PortForwardingRule // The port forwarding rules that are allowed
@@ -160,25 +153,16 @@ func LoadDecryptedKeyPair(serverCertPath, encryptedKeyPath, accessKey string) (t
 }
 
 // NewGRPCAPI creates a new GRPCApiService
-func NewGRPCService(tcpPort int, accessKey string, user system.User,
-	serverKeyPath string, serverCertPath string, keyLogFilePath string,
+func NewGRPCService(user system.User, grpcConfig gapi.ServerConfig,
 	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
 	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client) (*GRPCService, error) {
 
 	logger := log.NewLogger("grpc")
 
-	cert, err := LoadDecryptedKeyPair(serverCertPath, serverKeyPath, accessKey)
-	if err != nil {
-		logger.Fatal().Msgf("Failed to load certificate and key: %v", err)
-	}
-
 	return &GRPCService{
 		logger:              logger,
 		initScriptsDir:      initScriptsDir,
-		accessToken:         accessKey,
-		KeyLogFilePath:      keyLogFilePath,
-		tcpPort:             tcpPort,
-		cert:                cert,
+		grpcConfig:          grpcConfig,
 		user:                user,
 		portForwardingRules: portForwardingRules,
 		procWatcher:         procWatcher,
@@ -190,100 +174,22 @@ func NewGRPCService(tcpPort int, accessKey string, user system.User,
 	}, nil
 }
 
-// tokenAuthInterceptor is a gRPC interceptor that checks the token in the metadata.
-// It is used to authenticate the client.
-func (a *GRPCService) tokenAuthInterceptor(ctx context.Context) (context.Context, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing metadata")
-	}
-
-	tokens := md["authorization"]
-	if len(tokens) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "missing token")
-	}
-	token := tokens[0]
-
-	if token != a.accessToken {
-		return nil, status.Error(codes.PermissionDenied, "invalid token")
-	}
-
-	return ctx, nil
-}
-
-// unaryAuthInterceptor returns a gRPC interceptor that performs token-based authentication.
-func (a *GRPCService) unaryAuthInterceptor() grpc.UnaryServerInterceptor {
-	return func(
-		ctx context.Context,
-		req interface{},
-		info *grpc.UnaryServerInfo,
-		handler grpc.UnaryHandler,
-	) (interface{}, error) {
-		ctx, err := a.tokenAuthInterceptor(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return handler(ctx, req)
-	}
-}
-
-// UnaryErrorLoggingInterceptor logs all gRPC errors returned by handlers.
-func (a *GRPCService) unaryErrorLoggingInterceptor() grpc.UnaryServerInterceptor {
-	return func(
-		ctx context.Context,
-		req any,
-		info *grpc.UnaryServerInfo,
-		handler grpc.UnaryHandler,
-	) (resp any, err error) {
-		resp, err = handler(ctx, req)
-		if err != nil {
-			st := status.Convert(err)
-			a.logger.Error().
-				Str("method", info.FullMethod).
-				Str("code", st.Code().String()).
-				Err(err).
-				Msg("gRPC error occurred")
-		}
-		return resp, err
-	}
-}
-
 // Serve starts the gRPC server and registers the services.
 // It also sets up the TLS configuration and the interceptor.
 func (a *GRPCService) Serve(ctx context.Context) error {
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{a.cert},
-	}
-	if a.KeyLogFilePath != "" {
-		file, err := os.OpenFile(a.KeyLogFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-		if err != nil {
-			a.logger.Warn().Msgf("Failed to open key log file: %v", err)
-		} else {
-			defer file.Close()
-			tlsConfig.KeyLogWriter = file
-		}
+
+	server, err := gapi.NewServer(&a.grpcConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create gRPC server: %v", err)
 	}
 
-	creds := credentials.NewTLS(tlsConfig)
-	server := grpc.NewServer(grpc.Creds(creds),
-		grpc.ChainUnaryInterceptor(
-			a.unaryAuthInterceptor(),
-			a.unaryErrorLoggingInterceptor(),
-		),
-	)
-
-	k8shelldpb.RegisterSystemServiceServer(server, NewSystemServiceServer(a))
-	k8shelldpb.RegisterShellServiceServer(server, NewShellServiceServer(a))
-	k8shelldpb.RegisterExecServiceServer(server, NewExecServiceServer(a))
-	k8shelldpb.RegisterPortForwardServiceServer(server, NewPortForwardServiceServer(a))
-	k8shelldpb.RegisterUnixSocketServiceServer(server, NewUnixSocketServiceServer(a))
+	k8shelldpb.RegisterSystemServiceServer(server.GrpcServer, NewSystemServiceServer(a))
+	k8shelldpb.RegisterShellServiceServer(server.GrpcServer, NewShellServiceServer(a))
+	k8shelldpb.RegisterExecServiceServer(server.GrpcServer, NewExecServiceServer(a))
+	k8shelldpb.RegisterPortForwardServiceServer(server.GrpcServer, NewPortForwardServiceServer(a))
+	k8shelldpb.RegisterUnixSocketServiceServer(server.GrpcServer, NewUnixSocketServiceServer(a))
 
 	a.logger.Info().Msgf("GRPC services server registered")
-
-	listener, err := net.Listen("tcp4", fmt.Sprintf(":%d", a.tcpPort))
-	if err != nil {
-		return fmt.Errorf("failed to listen: %v", err)
-	}
 
 	// cleanup goroutine
 	go func() {
@@ -300,20 +206,17 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 		}
 	}()
 
-	// Start gRPC server in background
 	errChan := make(chan error, 1)
 	go func() {
-		a.logger.Info().Msgf("GRPC service listening on :%d", a.tcpPort)
-		if err := server.Serve(listener); err != nil && err != grpc.ErrServerStopped {
+		if err := server.Start(); err != nil && err != grpc.ErrServerStopped {
 			errChan <- fmt.Errorf("gRPC server error: %v", err)
 		}
 	}()
 
-	// Wait for context cancel or server error
 	select {
 	case <-ctx.Done():
 		a.logger.Info().Msg("Shutting down gRPC server")
-		server.GracefulStop()
+		server.Stop()
 		return nil
 	case err := <-errChan:
 		return err

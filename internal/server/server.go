@@ -51,8 +51,8 @@ func NewServer(cfg *config.Config, keys *config.Keys, grpcApiListenPort int, ser
 	s.procWatcher = system.NewProcessWatcher(cfg.TerminateOrphans.Enabled, cfg.ReapZombies.Enabled,
 		cfg.TerminateOrphans.CheckInterval, cfg.TerminateOrphans.Exclude)
 
-	s.grpcService, err = grpc.NewGRPCService(grpcApiListenPort, keys.A1Key, cfg.User, serverKeyPath,
-		serverCertPath, keyLogFilePath, cfg.PortForwardingRules, initScriptsDir, s.procWatcher, s.apiClient)
+	s.grpcService, err = grpc.NewGRPCService(cfg.User, cfg.System.GrpcConfig, cfg.PortForwardingRules,
+		initScriptsDir, s.procWatcher, s.apiClient)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
