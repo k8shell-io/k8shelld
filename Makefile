@@ -18,7 +18,7 @@ image:
 	@echo "Downloading vendor modules..."
 	@go mod vendor -o docker/k8shelld/files/vendor
 	@echo "Building image..."
-	@version=$$(git describe --tags --match '*' | sed 's/-g.*//') && \
+	@version=$$(git describe --tags --match 'v*' | sed 's/-g.*//') && \
 	echo -n "k8shell-base/k8shelld:$$version" > docker/k8shelld/BUILD && \
 	cp -r go.mod go.sum internal pkg cmd sftp scripts docker/k8shelld/files && \
 	cd docker/k8shelld && docker build --build-arg VERSION=$$version \
