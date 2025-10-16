@@ -9,7 +9,7 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/invopop/jsonschema v0.13.0
 	github.com/k8shell-io/api-server v0.12.6
-	github.com/k8shell-io/common v0.12.39
+	github.com/k8shell-io/common v0.12.40
 	github.com/k8shell-io/k8shelld/pkg/api v0.12.1
 	github.com/pkg/sftp v1.13.9
 	github.com/rs/zerolog v1.34.0
