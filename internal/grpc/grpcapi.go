@@ -95,18 +95,22 @@ func NewGRPCService(user system.User, grpcConfig gapi.ServerConfig,
 // It also sets up the TLS configuration and the interceptor.
 func (a *GRPCService) Serve(ctx context.Context) error {
 
-	server, err := gapi.NewServer(&a.grpcConfig)
+	// create gRPC server, always stop forcibly
+	// to avoid hanging connections on existing sessions during shutdown
+	server, err := gapi.NewServer(&a.grpcConfig, true)
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC server: %v", err)
 	}
 
-	k8shelldpb.RegisterSystemServiceServer(server.GrpcServer, NewSystemServiceServer(a))
-	k8shelldpb.RegisterShellServiceServer(server.GrpcServer, NewShellServiceServer(a))
-	k8shelldpb.RegisterExecServiceServer(server.GrpcServer, NewExecServiceServer(a))
-	k8shelldpb.RegisterPortForwardServiceServer(server.GrpcServer, NewPortForwardServiceServer(a))
-	k8shelldpb.RegisterUnixSocketServiceServer(server.GrpcServer, NewUnixSocketServiceServer(a))
-
-	a.logger.Info().Msgf("GRPC services server registered")
+	server.RegisterService(func(s *grpc.Server) error {
+		k8shelldpb.RegisterSystemServiceServer(s, NewSystemServiceServer(a))
+		k8shelldpb.RegisterShellServiceServer(s, NewShellServiceServer(a))
+		k8shelldpb.RegisterExecServiceServer(s, NewExecServiceServer(a))
+		k8shelldpb.RegisterPortForwardServiceServer(s, NewPortForwardServiceServer(a))
+		k8shelldpb.RegisterUnixSocketServiceServer(s, NewUnixSocketServiceServer(a))
+		a.logger.Info().Msgf("GRPC services server registered")
+		return nil
+	})
 
 	// cleanup goroutine
 	go func() {
