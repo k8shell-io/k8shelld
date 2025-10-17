@@ -12,7 +12,7 @@ import (
 	"syscall"
 
 	"github.com/k8shell-io/k8shelld/internal/config"
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
@@ -37,7 +37,7 @@ type SystemServiceServer struct {
 func NewSystemServiceServer(grpcapi *GRPCService) *SystemServiceServer {
 	return &SystemServiceServer{
 		grpcApi:        grpcapi,
-		logger:         log.NewLogger("grpc-system"),
+		logger:         logger.NewLogger("grpc-system"),
 		initScriptsRun: false,
 	}
 }

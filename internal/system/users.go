@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 )
 
 type Group struct {
@@ -47,7 +47,7 @@ func CreateUser(user User) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	logger := log.NewLogger("user-management")
+	logger := logger.NewLogger("user-management")
 	logger.Info().Msgf("Main user: username=%s, uid=%d, gid=%d, home=%s, shell=%s, sudo=%t, groups=%v",
 		user.Username, user.Uid, user.Gid, user.HomeDir, user.Shell, user.Sudo, user.Groups)
 

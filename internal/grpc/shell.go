@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
@@ -61,7 +61,7 @@ func (sw *streamWriter) Write(data []byte) (int, error) {
 func NewShellServiceServer(grpcapi *GRPCService) *ShellServiceServer {
 	return &ShellServiceServer{
 		grpcApi: grpcapi,
-		logger:  log.NewLogger("grpc-shell"),
+		logger:  logger.NewLogger("grpc-shell"),
 	}
 }
 

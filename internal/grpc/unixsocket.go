@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
@@ -41,7 +41,7 @@ type UnixSocketServiceServer struct {
 func NewUnixSocketServiceServer(grpcapi *GRPCService) *UnixSocketServiceServer {
 	return &UnixSocketServiceServer{
 		grpcApi: grpcapi,
-		logger:  log.NewLogger("grpc-unixsocket"),
+		logger:  logger.NewLogger("grpc-unixsocket"),
 	}
 }
 

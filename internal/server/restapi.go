@@ -15,7 +15,7 @@ import (
 	"github.com/gorilla/mux"
 	commonModels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/rs/zerolog"
@@ -53,7 +53,7 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 
 // NewRESTAPI creates a new REST API service
 func NewRESTService(unixSocketPath string, user system.User, server *Server) (*RESTService, error) {
-	logger := log.NewLogger("api")
+	logger := logger.NewLogger("api")
 
 	return &RESTService{
 		unixSocketPath: unixSocketPath,
@@ -300,7 +300,7 @@ func (a *RESTService) GetLogs(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		default:
-			entries, newOffset := log.LogStore.GetLogsSince(offset, component, level)
+			entries, newOffset := logger.GetLogsSince(offset, component, level)
 
 			for _, entry := range entries {
 				b, err := json.Marshal(entry)

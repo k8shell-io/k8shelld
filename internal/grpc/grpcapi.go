@@ -14,7 +14,7 @@ import (
 
 	"github.com/k8shell-io/common/pkg/gapi"
 	"github.com/k8shell-io/k8shelld/internal/config"
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 
@@ -74,7 +74,7 @@ func NewGRPCService(user system.User, grpcConfig gapi.ServerConfig,
 	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
 	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client) (*GRPCService, error) {
 
-	logger := log.NewLogger("grpc")
+	logger := logger.NewLogger("grpc")
 
 	return &GRPCService{
 		logger:              logger,

@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/config"
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
@@ -46,7 +46,7 @@ type PortForwardData struct {
 func NewPortForwardServiceServer(grpcapi *GRPCService) *PortForwardServiceServer {
 	return &PortForwardServiceServer{
 		grpcApi: grpcapi,
-		logger:  log.NewLogger("grpc-portforward"),
+		logger:  logger.NewLogger("grpc-portforward"),
 	}
 }
 

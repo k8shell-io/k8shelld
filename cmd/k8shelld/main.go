@@ -7,7 +7,7 @@ import (
 
 	clogger "github.com/k8shell-io/common/pkg/logger"
 	"github.com/k8shell-io/k8shelld/internal/config"
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/server"
 	"github.com/k8shell-io/k8shelld/internal/system"
 )
@@ -19,9 +19,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	clogger.JsonLogger = false
+
 	// TODO: use common logger, the k8shelld logger should adopt from common
-	logger := log.NewLogger("k8shelld")
-	clogger.JsonLogger = log.JsonLogger
+	logger := logger.NewLogger("k8shelld")
 	logger.Debug().Msgf("Options: %+v", opts)
 
 	if os.Geteuid() != 0 {

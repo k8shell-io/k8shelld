@@ -13,7 +13,7 @@ import (
 	"github.com/k8shell-io/api-server/pkg/client"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/rs/zerolog"
 )
@@ -34,7 +34,7 @@ type Server struct {
 func NewServer(cfg *config.Config, restApiUnixSocketPath string, initScriptsDir string) (*Server, error) {
 
 	s := &Server{
-		logger:    log.NewLogger("k8shelld"),
+		logger:    logger.NewLogger("k8shelld"),
 		config:    cfg,
 		pprof:     cfg.System.PProf,
 		sysInfo:   nil,

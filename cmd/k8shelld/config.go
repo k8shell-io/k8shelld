@@ -13,7 +13,7 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 
 	"github.com/k8shell-io/k8shelld/internal/config"
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 )
 
@@ -136,7 +136,7 @@ func ValidateAndLoadConfig(configPath string) (*config.Config, error) {
 	}
 
 	// Set the log level
-	err = log.InitLogLevel(cfg.System.LogLevel)
+	err = logger.InitLogLevel(cfg.System.LogLevel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set log level: %v", err)
 	}

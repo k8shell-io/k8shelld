@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/rs/zerolog"
 )
 
@@ -70,7 +70,7 @@ type ProcessInfo struct {
 
 func NewProcessWatcher(terminateOrphans bool, reapZombies bool, checkInterval int, excludePatterns []string) *ProcessWatcher {
 	p := &ProcessWatcher{
-		logger:              log.NewLogger("process-watcher"),
+		logger:              logger.NewLogger("process-watcher"),
 		ignoreSIGHUPTable:   make(map[int]bool),
 		orphans:             terminateOrphans,
 		zombies:             reapZombies,

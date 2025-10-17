@@ -15,7 +15,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/google/shlex"
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -43,7 +43,7 @@ type ExecServiceServer struct {
 func NewExecServiceServer(grpcapi *GRPCService) *ExecServiceServer {
 	return &ExecServiceServer{
 		grpcApi: grpcapi,
-		logger:  log.NewLogger("grpc-exec"),
+		logger:  logger.NewLogger("grpc-exec"),
 	}
 }
 
