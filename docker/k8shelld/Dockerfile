@@ -1,4 +1,4 @@
-FROM golang:1.24.5 AS build
+FROM fitcr.ksi.in.fit.cvut.cz/system/golang:1.24.5 AS build
 
 ARG VERSION
 ARG COMMIT_ID
@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$VERSION -X main.comm
 
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /go/bin/sftp ./sftp
 
-FROM alpine:3.21.3
+FROM fitcr.ksi.in.fit.cvut.cz/system/alpine:3.21.3
 
 COPY --from=build /go/bin/k8shelld /k8shell/dist/
 COPY --from=build /go/bin/kbox /k8shell/dist/
