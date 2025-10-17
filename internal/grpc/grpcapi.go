@@ -97,7 +97,7 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 
 	// create gRPC server, always stop forcibly
 	// to avoid hanging connections on existing sessions during shutdown
-	server, err := gapi.NewServer(&a.grpcConfig, true)
+	server, err := gapi.NewServer(&a.grpcConfig, false)
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC server: %v", err)
 	}
