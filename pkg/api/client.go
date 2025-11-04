@@ -53,7 +53,7 @@ func (c *ConnCounters) Snapshot() (in, out int64) {
 	return atomic.LoadInt64(&c.inTotal), atomic.LoadInt64(&c.outTotal)
 }
 
-func NewClient(cfg gapi.ClientConfig) (*K8shelld, error) {
+func NewClient(cfg gapi.ClientConfig, counters *ConnCounters) (*K8shelld, error) {
 	gapiClient, err := gapi.NewClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gRPC client: %w", err)
@@ -62,7 +62,7 @@ func NewClient(cfg gapi.ClientConfig) (*K8shelld, error) {
 	return &K8shelld{
 		client:           gapiClient,
 		log:              logger.NewLogger("k8shelld"),
-		counters:         &ConnCounters{},
+		counters:         counters,
 		systemClient:     pb.NewSystemServiceClient(gapiClient.Conn),
 		shellClient:      pb.NewShellServiceClient(gapiClient.Conn),
 		execClient:       pb.NewExecServiceClient(gapiClient.Conn),
