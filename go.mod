@@ -9,8 +9,8 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/invopop/jsonschema v0.13.0
 	github.com/k8shell-io/api-server v0.12.6
-	github.com/k8shell-io/common v0.12.47
-	github.com/k8shell-io/k8shelld/pkg/api v0.12.1
+	github.com/k8shell-io/common v0.12.74
+	github.com/k8shell-io/k8shelld/pkg/api v0.0.0-00010101000000-000000000000
 	github.com/pkg/sftp v1.13.9
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.9.1
@@ -34,7 +34,6 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
@@ -53,3 +52,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250804133106-a7a43d27e69b // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 )
+
+replace github.com/k8shell-io/k8shelld/pkg/api => ./pkg/api
