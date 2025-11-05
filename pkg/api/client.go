@@ -207,9 +207,10 @@ func (c *K8shelld) ResizeTerminal(ctx context.Context, sessionId string, width, 
 }
 
 // RunUnixSocket creates a Unix socket connection over gRPC and bridges it with the RW channel.
-func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWriter, agentUnixID, socketPath string) error {
+func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWriter, unixSocketId,
+	socketPath string, mode string) error {
 	md := metadata.Pairs(
-		"unixsocket-id", agentUnixID,
+		"unixsocket-id", unixSocketId,
 	)
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
@@ -221,10 +222,17 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 		return fmt.Errorf("failed to create UnixSocket stream: %w", err)
 	}
 
+	modeVal, ok := pb.UnixSocketMode_value[mode]
+	if !ok {
+		return fmt.Errorf("invalid unix socket mode: %s", mode)
+	}
+	modeEnum := pb.UnixSocketMode(modeVal)
+
 	startReq := &pb.UnixSocketRequest{
 		Request: &pb.UnixSocketRequest_StartRequest{
 			StartRequest: &pb.UnixSocketStartRequest{
 				SocketPath: socketPath,
+				Mode:       modeEnum,
 			},
 		},
 	}
