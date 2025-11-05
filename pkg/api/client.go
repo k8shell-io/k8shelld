@@ -258,7 +258,7 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 			}
 
 			if size > 0 {
-				c.log.Debug().Msgf("UnixSocket: writer goroutine sees buffer size %d", size)
+				c.log.Debug().Msgf("UnixSocket %s: writer goroutine sees buffer size %d", unixSocketId, size)
 				n, rerr := upstream.Read(buf)
 				if rerr != nil {
 					if rerr == io.EOF {
@@ -284,7 +284,7 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 			} else {
 				select {
 				case <-ctx.Done():
-					c.log.Debug().Msg("UnixSocket: writer goroutine cancelled")
+					c.log.Debug().Msgf("UnixSocket %s: writer goroutine cancelled", unixSocketId)
 					return
 				case <-time.After(10 * time.Millisecond):
 					//c.log.Debug().Msg("UnixSocket: writer goroutine heartbeat")
@@ -299,7 +299,7 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 			resp, rerr := stream.Recv()
 			if rerr != nil {
 				if rerr == io.EOF {
-					c.log.Debug().Msg("UnixSocket: reader goroutine finished")
+					c.log.Debug().Msgf("UnixSocket %s: reader goroutine finished", unixSocketId)
 					errCh <- nil
 				} else {
 					errCh <- fmt.Errorf("grpc recv: %w", rerr)
@@ -316,11 +316,11 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 
 	err = <-errCh
 
-	c.log.Debug().Msg("UnixSocket: main goroutine received first result")
+	c.log.Debug().Msgf("UnixSocket %s: main goroutine received first result", unixSocketId)
 
 	cancel()
 
-	c.log.Debug().Msg("UnixSocket: main goroutine cancelled context")
+	c.log.Debug().Msgf("UnixSocket %s: main goroutine cancelled context", unixSocketId)
 
 	// Drain the second result
 	select {
@@ -328,7 +328,7 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 	default:
 	}
 
-	c.log.Debug().Msg("UnixSocket: main goroutine drained second result")
+	c.log.Debug().Msgf("UnixSocket %s: main goroutine drained second result", unixSocketId)
 
 	return err
 }
