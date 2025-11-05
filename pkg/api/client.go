@@ -314,6 +314,8 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 
 	err = <-errCh
 
+	cancel()
+
 	// drain the second result
 	select {
 	case <-errCh:
