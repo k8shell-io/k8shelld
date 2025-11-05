@@ -258,6 +258,7 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 			}
 
 			if size > 0 {
+				c.log.Debug().Msgf("UnixSocket: writer goroutine sees buffer size %d", size)
 				n, rerr := upstream.Read(buf)
 				if rerr != nil {
 					if rerr == io.EOF {
@@ -285,7 +286,7 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 				case <-ctx.Done():
 					return
 				case <-time.After(10 * time.Millisecond):
-					// Continue checking
+					c.log.Debug().Msg("UnixSocket: writer goroutine heartbeat")
 				}
 			}
 		}
