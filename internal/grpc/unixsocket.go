@@ -45,7 +45,7 @@ func NewUnixSocketServiceServer(grpcapi *GRPCService) *UnixSocketServiceServer {
 	}
 }
 
-// Get the port-forward ID from the gRPC metadata "portforward-id"
+// Get the unix socket ID from the gRPC metadata "unixsocket-id"
 func (s *UnixSocketServiceServer) GetUnixSocketID(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -60,7 +60,7 @@ func (s *UnixSocketServiceServer) GetUnixSocketID(ctx context.Context) (string, 
 	return data[0], nil
 }
 
-// Get the port-forward data from the store. It uses the port-forward ID retrieved from the metadata
+// Get the unix socket data from the store. It uses the unix socket ID retrieved from the metadata
 func (s *UnixSocketServiceServer) GetUnixSocketData(ctx context.Context) (*SessionData, error) {
 	sid, err := s.GetUnixSocketID(ctx)
 	if err != nil {
