@@ -287,7 +287,7 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 					c.log.Debug().Msg("UnixSocket: writer goroutine cancelled")
 					return
 				case <-time.After(10 * time.Millisecond):
-					c.log.Debug().Msg("UnixSocket: writer goroutine heartbeat")
+					//c.log.Debug().Msg("UnixSocket: writer goroutine heartbeat")
 				}
 			}
 		}
