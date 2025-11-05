@@ -248,27 +248,46 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 
 		buf := make([]byte, 32*1024)
 		for {
-			n, rerr := upstream.Read(buf)
-			if rerr != nil {
-				if rerr == io.EOF {
-					errCh <- nil
-				} else {
-					errCh <- fmt.Errorf("upstream read: %w", rerr)
+			size, err := upstream.ReadBufferSize()
+			if err != nil {
+				if err == io.EOF {
+					return
 				}
+				errCh <- fmt.Errorf("buffer check: %w", err)
 				return
 			}
-			if n == 0 {
-				continue
+
+			if size > 0 {
+				n, rerr := upstream.Read(buf)
+				if rerr != nil {
+					if rerr == io.EOF {
+						errCh <- nil
+					} else {
+						errCh <- fmt.Errorf("upstream read: %w", rerr)
+					}
+					return
+				}
+				if n == 0 {
+					continue
+				}
+
+				if serr := stream.Send(&pb.UnixSocketRequest{
+					Request: &pb.UnixSocketRequest_Data{
+						Data: buf[:n],
+					},
+				}); serr != nil {
+					errCh <- fmt.Errorf("grpc send: %w", serr)
+					return
+				}
+				c.counters.AddIn(n)
+			} else {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(10 * time.Millisecond):
+					// Continue checking
+				}
 			}
-			if serr := stream.Send(&pb.UnixSocketRequest{
-				Request: &pb.UnixSocketRequest_Data{
-					Data: buf[:n],
-				},
-			}); serr != nil {
-				errCh <- fmt.Errorf("grpc send: %w", serr)
-				return
-			}
-			c.counters.AddIn(n)
 		}
 	}()
 
