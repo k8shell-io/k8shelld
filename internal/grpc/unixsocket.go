@@ -84,43 +84,125 @@ func (s *UnixSocketServiceServer) UnixSocket(stream k8shelldpb.UnixSocketService
 		return status.Errorf(codes.InvalidArgument, "failed to receive request: %v", err)
 	}
 
-	shellReq, ok := req.Request.(*k8shelldpb.UnixSocketRequest_StartRequest)
+	start, ok := req.Request.(*k8shelldpb.UnixSocketRequest_StartRequest)
 	if !ok {
 		return status.Errorf(codes.InvalidArgument,
 			"invalid unix socket request, expected unix socket start request: %v", req)
 	}
 
+	switch start.StartRequest.Mode {
+	case k8shelldpb.UnixSocketMode_UNIX_SOCKET_MODE_LISTEN:
+		return s.startListenerAndBridge(uxid, start.StartRequest.SocketPath, stream)
+	case k8shelldpb.UnixSocketMode_UNIX_SOCKET_MODE_DIAL:
+		return s.dialAndBridge(uxid, start.StartRequest.SocketPath, stream)
+	default:
+		return status.Errorf(codes.InvalidArgument, "invalid unix socket mode")
+	}
+}
+
+// startListenerAndBridge starts a Unix socket listener and bridges gRPC <-> conn
+func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string,
+	stream k8shelldpb.UnixSocketService_UnixSocketServer) error {
+
 	unixsocket := &unixSocketData{
 		Id:         uxid,
-		socketPath: shellReq.StartRequest.SocketPath,
+		socketPath: socketPath,
 		Created:    time.Now(),
-		Deleted:    time.Time{},
-		BytesIn:    0,
-		BytesOut:   0,
 	}
 
-	unixsocket.listener, err = net.ListenUnix("unix", &net.UnixAddr{Name: unixsocket.socketPath, Net: "unix"})
+	if _, err := os.Lstat(unixsocket.socketPath); err == nil {
+		_ = os.Remove(unixsocket.socketPath)
+	}
+
+	l, err := net.ListenUnix("unix", &net.UnixAddr{Name: unixsocket.socketPath, Net: "unix"})
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to create Unix socket listener: %v", err)
 	}
+	unixsocket.listener = l
 
-	// // Set the ownership of the Unix socket
 	if err := os.Chown(unixsocket.socketPath, s.grpcApi.user.Gid, s.grpcApi.user.Gid); err != nil {
-		return fmt.Errorf("failed to change ownership of Unix socket: %v", err)
+		return status.Errorf(codes.Internal, "failed to chown socket: %v", err)
 	}
-
-	// // Set the permissions of the Unix socket
 	if err := os.Chmod(unixsocket.socketPath, 0700); err != nil {
-		return fmt.Errorf("failed to change permissions of Unix socket: %v", err)
+		return status.Errorf(codes.Internal, "failed to chmod socket: %v", err)
 	}
 
 	s.logger.Info().Msgf("unix-socket listener started, id=%s, path=%s", unixsocket.Id, unixsocket.socketPath)
-
 	s.grpcApi.UnixSocketStore.Store(unixsocket.Id, unixsocket)
-	s.communicate(unixsocket, stream)
-	unixsocket.Deleted = time.Now()
+	defer func() {
+		unixsocket.Deleted = time.Now()
+		_ = unixsocket.listener.Close()
+		s.logger.Info().Msgf("Unix socket stream ended, id=%s, path=%s", unixsocket.Id, unixsocket.socketPath)
+	}()
 
-	s.logger.Info().Msgf("Unix socket stream ended, id=%s, path=%s", unixsocket.Id, unixsocket.socketPath)
+	return s.communicate(unixsocket, stream)
+}
+
+// dialAndBridge dials a Unix socket and bridges gRPC <-> conn
+func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
+	stream k8shelldpb.UnixSocketService_UnixSocketServer) error {
+
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to dial unix socket %s: %v", socketPath, err)
+	}
+	defer conn.Close()
+
+	s.logger.Info().Msgf("unix-socket dial connected, id=%s, target=%s", uxid, socketPath)
+
+	errCh := make(chan error, 2)
+
+	// gRPC -> Unix
+	go func() {
+		for {
+			req, err := stream.Recv()
+			if err != nil {
+				if err == io.EOF {
+					errCh <- nil
+				} else {
+					errCh <- fmt.Errorf("recv error: %w", err)
+				}
+				return
+			}
+			data := req.GetData()
+			if len(data) == 0 {
+				continue
+			}
+			if _, werr := conn.Write(data); werr != nil {
+				errCh <- fmt.Errorf("write to unix: %w", werr)
+				return
+			}
+		}
+	}()
+
+	// Unix -> gRPC
+	go func() {
+		buf := make([]byte, 32*1024)
+		for {
+			n, rerr := conn.Read(buf)
+			if rerr != nil {
+				if rerr == io.EOF {
+					errCh <- nil
+				} else {
+					errCh <- fmt.Errorf("read from unix: %w", rerr)
+				}
+				return
+			}
+			if n == 0 {
+				continue
+			}
+			if serr := stream.Send(&k8shelldpb.UnixSocketResponse{Data: buf[:n]}); serr != nil {
+				errCh <- fmt.Errorf("send to stream: %w", serr)
+				return
+			}
+		}
+	}()
+
+	// Wait for either side to end
+	if err := <-errCh; err != nil {
+		s.logger.Error().Msgf("unix-socket dial bridge error: %v", err)
+		return status.Errorf(codes.Internal, "unix-socket dial bridge error: %v", err)
+	}
 	return nil
 }
 

@@ -21,6 +21,53 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Mode for Unix socket operation
+type UnixSocketMode int32
+
+const (
+	UnixSocketMode_UNIX_SOCKET_MODE_LISTEN UnixSocketMode = 0
+	UnixSocketMode_UNIX_SOCKET_MODE_DIAL   UnixSocketMode = 1
+)
+
+// Enum value maps for UnixSocketMode.
+var (
+	UnixSocketMode_name = map[int32]string{
+		0: "UNIX_SOCKET_MODE_LISTEN",
+		1: "UNIX_SOCKET_MODE_DIAL",
+	}
+	UnixSocketMode_value = map[string]int32{
+		"UNIX_SOCKET_MODE_LISTEN": 0,
+		"UNIX_SOCKET_MODE_DIAL":   1,
+	}
+)
+
+func (x UnixSocketMode) Enum() *UnixSocketMode {
+	p := new(UnixSocketMode)
+	*p = x
+	return p
+}
+
+func (x UnixSocketMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (UnixSocketMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_pkg_api_k8shelld_proto_enumTypes[0].Descriptor()
+}
+
+func (UnixSocketMode) Type() protoreflect.EnumType {
+	return &file_pkg_api_k8shelld_proto_enumTypes[0]
+}
+
+func (x UnixSocketMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use UnixSocketMode.Descriptor instead.
+func (UnixSocketMode) EnumDescriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{0}
+}
+
 // HandshakeRequest message
 type HandshakeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1124,7 +1171,8 @@ func (x *UnixSocketResponse) GetData() []byte {
 // UnixSocketStartRequest message
 type UnixSocketStartRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	SocketPath    string                 `protobuf:"bytes,2,opt,name=socketPath,proto3" json:"socketPath,omitempty"` // Unix socket path
+	Mode          UnixSocketMode         `protobuf:"varint,1,opt,name=mode,proto3,enum=k8shelld.UnixSocketMode" json:"mode,omitempty"`
+	SocketPath    string                 `protobuf:"bytes,2,opt,name=socketPath,proto3" json:"socketPath,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1157,6 +1205,13 @@ func (x *UnixSocketStartRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use UnixSocketStartRequest.ProtoReflect.Descriptor instead.
 func (*UnixSocketStartRequest) Descriptor() ([]byte, []int) {
 	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *UnixSocketStartRequest) GetMode() UnixSocketMode {
+	if x != nil {
+		return x.Mode
+	}
+	return UnixSocketMode_UNIX_SOCKET_MODE_LISTEN
 }
 
 func (x *UnixSocketStartRequest) GetSocketPath() string {
@@ -1236,11 +1291,15 @@ const file_pkg_api_k8shelld_proto_rawDesc = "" +
 	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
 	"\arequest\"(\n" +
 	"\x12UnixSocketResponse\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data\"8\n" +
-	"\x16UnixSocketStartRequest\x12\x1e\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"f\n" +
+	"\x16UnixSocketStartRequest\x12,\n" +
+	"\x04mode\x18\x01 \x01(\x0e2\x18.k8shelld.UnixSocketModeR\x04mode\x12\x1e\n" +
 	"\n" +
 	"socketPath\x18\x02 \x01(\tR\n" +
-	"socketPath2U\n" +
+	"socketPath*H\n" +
+	"\x0eUnixSocketMode\x12\x1b\n" +
+	"\x17UNIX_SOCKET_MODE_LISTEN\x10\x00\x12\x19\n" +
+	"\x15UNIX_SOCKET_MODE_DIAL\x10\x012U\n" +
 	"\rSystemService\x12D\n" +
 	"\tHandshake\x12\x1a.k8shelld.HandshakeRequest\x1a\x1b.k8shelld.HandshakeResponse2\xa1\x01\n" +
 	"\fShellService\x12<\n" +
@@ -1266,49 +1325,52 @@ func file_pkg_api_k8shelld_proto_rawDescGZIP() []byte {
 	return file_pkg_api_k8shelld_proto_rawDescData
 }
 
+var file_pkg_api_k8shelld_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_pkg_api_k8shelld_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_pkg_api_k8shelld_proto_goTypes = []any{
-	(*HandshakeRequest)(nil),       // 0: k8shelld.HandshakeRequest
-	(*User)(nil),                   // 1: k8shelld.User
-	(*HandshakeResponse)(nil),      // 2: k8shelld.HandshakeResponse
-	(*ShellRequest)(nil),           // 3: k8shelld.ShellRequest
-	(*ShellResponse)(nil),          // 4: k8shelld.ShellResponse
-	(*ShellStartRequest)(nil),      // 5: k8shelld.ShellStartRequest
-	(*ResizeTerminalRequest)(nil),  // 6: k8shelld.ResizeTerminalRequest
-	(*ResizeTerminalResponse)(nil), // 7: k8shelld.ResizeTerminalResponse
-	(*PortForwardRequest)(nil),     // 8: k8shelld.PortForwardRequest
-	(*Destination)(nil),            // 9: k8shelld.Destination
-	(*PortForwardResponse)(nil),    // 10: k8shelld.PortForwardResponse
-	(*ExecRequest)(nil),            // 11: k8shelld.ExecRequest
-	(*ExecResponse)(nil),           // 12: k8shelld.ExecResponse
-	(*CommandDetails)(nil),         // 13: k8shelld.CommandDetails
-	(*UnixSocketRequest)(nil),      // 14: k8shelld.UnixSocketRequest
-	(*UnixSocketResponse)(nil),     // 15: k8shelld.UnixSocketResponse
-	(*UnixSocketStartRequest)(nil), // 16: k8shelld.UnixSocketStartRequest
+	(UnixSocketMode)(0),            // 0: k8shelld.UnixSocketMode
+	(*HandshakeRequest)(nil),       // 1: k8shelld.HandshakeRequest
+	(*User)(nil),                   // 2: k8shelld.User
+	(*HandshakeResponse)(nil),      // 3: k8shelld.HandshakeResponse
+	(*ShellRequest)(nil),           // 4: k8shelld.ShellRequest
+	(*ShellResponse)(nil),          // 5: k8shelld.ShellResponse
+	(*ShellStartRequest)(nil),      // 6: k8shelld.ShellStartRequest
+	(*ResizeTerminalRequest)(nil),  // 7: k8shelld.ResizeTerminalRequest
+	(*ResizeTerminalResponse)(nil), // 8: k8shelld.ResizeTerminalResponse
+	(*PortForwardRequest)(nil),     // 9: k8shelld.PortForwardRequest
+	(*Destination)(nil),            // 10: k8shelld.Destination
+	(*PortForwardResponse)(nil),    // 11: k8shelld.PortForwardResponse
+	(*ExecRequest)(nil),            // 12: k8shelld.ExecRequest
+	(*ExecResponse)(nil),           // 13: k8shelld.ExecResponse
+	(*CommandDetails)(nil),         // 14: k8shelld.CommandDetails
+	(*UnixSocketRequest)(nil),      // 15: k8shelld.UnixSocketRequest
+	(*UnixSocketResponse)(nil),     // 16: k8shelld.UnixSocketResponse
+	(*UnixSocketStartRequest)(nil), // 17: k8shelld.UnixSocketStartRequest
 }
 var file_pkg_api_k8shelld_proto_depIdxs = []int32{
-	1,  // 0: k8shelld.HandshakeRequest.user:type_name -> k8shelld.User
-	5,  // 1: k8shelld.ShellRequest.start_request:type_name -> k8shelld.ShellStartRequest
-	9,  // 2: k8shelld.PortForwardRequest.destination:type_name -> k8shelld.Destination
-	13, // 3: k8shelld.ExecRequest.command_details:type_name -> k8shelld.CommandDetails
-	16, // 4: k8shelld.UnixSocketRequest.start_request:type_name -> k8shelld.UnixSocketStartRequest
-	0,  // 5: k8shelld.SystemService.Handshake:input_type -> k8shelld.HandshakeRequest
-	3,  // 6: k8shelld.ShellService.Shell:input_type -> k8shelld.ShellRequest
-	6,  // 7: k8shelld.ShellService.ResizeTerminal:input_type -> k8shelld.ResizeTerminalRequest
-	8,  // 8: k8shelld.PortForwardService.PortForward:input_type -> k8shelld.PortForwardRequest
-	11, // 9: k8shelld.ExecService.Exec:input_type -> k8shelld.ExecRequest
-	14, // 10: k8shelld.UnixSocketService.UnixSocket:input_type -> k8shelld.UnixSocketRequest
-	2,  // 11: k8shelld.SystemService.Handshake:output_type -> k8shelld.HandshakeResponse
-	4,  // 12: k8shelld.ShellService.Shell:output_type -> k8shelld.ShellResponse
-	7,  // 13: k8shelld.ShellService.ResizeTerminal:output_type -> k8shelld.ResizeTerminalResponse
-	10, // 14: k8shelld.PortForwardService.PortForward:output_type -> k8shelld.PortForwardResponse
-	12, // 15: k8shelld.ExecService.Exec:output_type -> k8shelld.ExecResponse
-	15, // 16: k8shelld.UnixSocketService.UnixSocket:output_type -> k8shelld.UnixSocketResponse
-	11, // [11:17] is the sub-list for method output_type
-	5,  // [5:11] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	2,  // 0: k8shelld.HandshakeRequest.user:type_name -> k8shelld.User
+	6,  // 1: k8shelld.ShellRequest.start_request:type_name -> k8shelld.ShellStartRequest
+	10, // 2: k8shelld.PortForwardRequest.destination:type_name -> k8shelld.Destination
+	14, // 3: k8shelld.ExecRequest.command_details:type_name -> k8shelld.CommandDetails
+	17, // 4: k8shelld.UnixSocketRequest.start_request:type_name -> k8shelld.UnixSocketStartRequest
+	0,  // 5: k8shelld.UnixSocketStartRequest.mode:type_name -> k8shelld.UnixSocketMode
+	1,  // 6: k8shelld.SystemService.Handshake:input_type -> k8shelld.HandshakeRequest
+	4,  // 7: k8shelld.ShellService.Shell:input_type -> k8shelld.ShellRequest
+	7,  // 8: k8shelld.ShellService.ResizeTerminal:input_type -> k8shelld.ResizeTerminalRequest
+	9,  // 9: k8shelld.PortForwardService.PortForward:input_type -> k8shelld.PortForwardRequest
+	12, // 10: k8shelld.ExecService.Exec:input_type -> k8shelld.ExecRequest
+	15, // 11: k8shelld.UnixSocketService.UnixSocket:input_type -> k8shelld.UnixSocketRequest
+	3,  // 12: k8shelld.SystemService.Handshake:output_type -> k8shelld.HandshakeResponse
+	5,  // 13: k8shelld.ShellService.Shell:output_type -> k8shelld.ShellResponse
+	8,  // 14: k8shelld.ShellService.ResizeTerminal:output_type -> k8shelld.ResizeTerminalResponse
+	11, // 15: k8shelld.PortForwardService.PortForward:output_type -> k8shelld.PortForwardResponse
+	13, // 16: k8shelld.ExecService.Exec:output_type -> k8shelld.ExecResponse
+	16, // 17: k8shelld.UnixSocketService.UnixSocket:output_type -> k8shelld.UnixSocketResponse
+	12, // [12:18] is the sub-list for method output_type
+	6,  // [6:12] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_pkg_api_k8shelld_proto_init() }
@@ -1347,13 +1409,14 @@ func file_pkg_api_k8shelld_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_api_k8shelld_proto_rawDesc), len(file_pkg_api_k8shelld_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   5,
 		},
 		GoTypes:           file_pkg_api_k8shelld_proto_goTypes,
 		DependencyIndexes: file_pkg_api_k8shelld_proto_depIdxs,
+		EnumInfos:         file_pkg_api_k8shelld_proto_enumTypes,
 		MessageInfos:      file_pkg_api_k8shelld_proto_msgTypes,
 	}.Build()
 	File_pkg_api_k8shelld_proto = out.File

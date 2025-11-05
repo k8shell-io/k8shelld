@@ -157,7 +157,14 @@ message UnixSocketResponse {
   bytes data = 1; // Data to send to the Unix socket
 }
 
+// Mode for Unix socket operation
+enum UnixSocketMode {
+  UNIX_SOCKET_MODE_LISTEN = 0;      
+  UNIX_SOCKET_MODE_DIAL = 1;        
+}
+
 // UnixSocketStartRequest message
 message UnixSocketStartRequest {
-  string socketPath = 2; // Unix socket path
+  UnixSocketMode mode = 1; 
+  string socketPath = 2;            
 }
