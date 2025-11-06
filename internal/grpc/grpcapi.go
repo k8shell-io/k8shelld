@@ -230,7 +230,7 @@ func (a *GRPCService) GetAllChannelStoreData() ([]StoreRecord, error) {
 					Status:   getStatus(v.Deleted),
 					BytesIn:  v.BytesIn,
 					BytesOut: v.BytesOut,
-					Params:   fmt.Sprintf("socket=%s", v.socketPath),
+					Params:   fmt.Sprintf("mode=%s, socket=%s", v.Mode, v.socketPath),
 				}
 				result = append(result, record)
 			}
