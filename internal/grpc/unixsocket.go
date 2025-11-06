@@ -130,7 +130,7 @@ func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string
 	defer func() {
 		unixsocket.Deleted = time.Now()
 		_ = uxListener.Close()
-		s.logger.Info().Msgf("Unix socket stream ended, id=%s, path=%s", unixsocket.Id, unixsocket.socketPath)
+		s.logger.Info().Msgf("Unix socket stream (listen mode) ended, id=%s, path=%s", unixsocket.Id, unixsocket.socketPath)
 	}()
 
 	return s.communicate(uxListener, unixsocket, stream)
@@ -144,7 +144,6 @@ func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to dial unix socket %s: %v", socketPath, err)
 	}
-	defer conn.Close()
 
 	unixsocket := &unixSocketData{
 		Id:         uxid,
@@ -155,6 +154,11 @@ func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
 
 	s.logger.Info().Msgf("unix-socket dial connected, id=%s, target=%s", uxid, socketPath)
 	s.grpcApi.UnixSocketStore.Store(unixsocket.Id, unixsocket)
+	defer func() {
+		unixsocket.Deleted = time.Now()
+		_ = conn.Close()
+		s.logger.Info().Msgf("Unix socket stream (dial mode) ended, id=%s, path=%s", unixsocket.Id, unixsocket.socketPath)
+	}()
 
 	errCh := make(chan error, 2)
 
