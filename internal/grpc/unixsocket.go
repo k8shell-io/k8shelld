@@ -182,6 +182,7 @@ func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
 				errCh <- fmt.Errorf("write to unix: %w", werr)
 				return
 			}
+			unixsocket.BytesIn += uint64(len(data))
 		}
 	}()
 
@@ -205,6 +206,7 @@ func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
 				errCh <- fmt.Errorf("send to stream: %w", serr)
 				return
 			}
+			unixsocket.BytesOut += uint64(n)
 		}
 	}()
 
