@@ -21,13 +21,11 @@ import (
 type unixSocketData struct {
 	Id         string
 	socketPath string
-	listener   *net.UnixListener
-	mu         sync.Mutex
-	conn       net.Conn
 	Created    time.Time
 	Deleted    time.Time
 	BytesIn    uint64
 	BytesOut   uint64
+	Mode       string
 }
 
 // UnixSocketServiceServer is the service that handles the shell GRPC service server
@@ -108,17 +106,17 @@ func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string
 		Id:         uxid,
 		socketPath: socketPath,
 		Created:    time.Now(),
+		Mode:       "listen",
 	}
 
 	if _, err := os.Lstat(unixsocket.socketPath); err == nil {
 		_ = os.Remove(unixsocket.socketPath)
 	}
 
-	l, err := net.ListenUnix("unix", &net.UnixAddr{Name: unixsocket.socketPath, Net: "unix"})
+	uxListener, err := net.ListenUnix("unix", &net.UnixAddr{Name: unixsocket.socketPath, Net: "unix"})
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to create Unix socket listener: %v", err)
 	}
-	unixsocket.listener = l
 
 	if err := os.Chown(unixsocket.socketPath, s.grpcApi.user.Gid, s.grpcApi.user.Gid); err != nil {
 		return status.Errorf(codes.Internal, "failed to chown socket: %v", err)
@@ -131,11 +129,11 @@ func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string
 	s.grpcApi.UnixSocketStore.Store(unixsocket.Id, unixsocket)
 	defer func() {
 		unixsocket.Deleted = time.Now()
-		_ = unixsocket.listener.Close()
+		_ = uxListener.Close()
 		s.logger.Info().Msgf("Unix socket stream ended, id=%s, path=%s", unixsocket.Id, unixsocket.socketPath)
 	}()
 
-	return s.communicate(unixsocket, stream)
+	return s.communicate(uxListener, unixsocket, stream)
 }
 
 // dialAndBridge dials a Unix socket and bridges gRPC <-> conn
@@ -148,7 +146,15 @@ func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
 	}
 	defer conn.Close()
 
+	unixsocket := &unixSocketData{
+		Id:         uxid,
+		socketPath: socketPath,
+		Created:    time.Now(),
+		Mode:       "dial",
+	}
+
 	s.logger.Info().Msgf("unix-socket dial connected, id=%s, target=%s", uxid, socketPath)
+	s.grpcApi.UnixSocketStore.Store(unixsocket.Id, unixsocket)
 
 	errCh := make(chan error, 2)
 
@@ -206,11 +212,14 @@ func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
 	return nil
 }
 
-func (s *UnixSocketServiceServer) communicate(unixsocket *unixSocketData,
+func (s *UnixSocketServiceServer) communicate(uxListener *net.UnixListener, unixsocket *unixSocketData,
 	stream k8shelldpb.UnixSocketService_UnixSocketServer) error {
 	buf := make([]byte, 1024)
 	stop := make(chan struct{})
 	defer close(stop)
+
+	mu := sync.Mutex{}
+	conn := net.Conn(nil)
 
 	// Goroutine to read from unixConn and send to gRPC stream
 	go func() {
@@ -221,7 +230,8 @@ func (s *UnixSocketServiceServer) communicate(unixsocket *unixSocketData,
 			default:
 				// Accept the connection from the client
 				s.logger.Info().Msgf("Waiting for the client connection")
-				conn, err := unixsocket.listener.Accept()
+				var err error
+				conn, err = uxListener.Accept()
 				if err != nil {
 					if err == io.EOF {
 						s.logger.Info().Msg("Unix listener closed")
@@ -234,15 +244,15 @@ func (s *UnixSocketServiceServer) communicate(unixsocket *unixSocketData,
 				s.logger.Info().Msg("Client connected")
 
 				for {
-					unixsocket.mu.Lock()
-					unixsocket.conn = conn
-					unixsocket.mu.Unlock()
+					mu.Lock()
+					c := conn
+					mu.Unlock()
 
-					if conn == nil {
+					if c == nil {
 						break
 					}
 
-					n, err := conn.Read(buf)
+					n, err := c.Read(buf)
 					if err != nil {
 						if err == io.EOF {
 							s.logger.Info().Msg("Client connection closed")
@@ -251,7 +261,6 @@ func (s *UnixSocketServiceServer) communicate(unixsocket *unixSocketData,
 						}
 						break
 					} else {
-						// Send data to the gRPC stream
 						if err := stream.Send(&k8shelldpb.UnixSocketResponse{
 							Data: buf[:n],
 						}); err != nil {
@@ -263,10 +272,10 @@ func (s *UnixSocketServiceServer) communicate(unixsocket *unixSocketData,
 				}
 
 				// Close the connection
-				unixsocket.mu.Lock()
-				unixsocket.conn.Close()
-				unixsocket.conn = nil
-				unixsocket.mu.Unlock()
+				mu.Lock()
+				conn.Close()
+				conn = nil
+				mu.Unlock()
 			}
 		}
 	}()
@@ -283,21 +292,23 @@ func (s *UnixSocketServiceServer) communicate(unixsocket *unixSocketData,
 			break
 		}
 
-		unixsocket.mu.Lock()
-		conn := unixsocket.conn
-		unixsocket.mu.Unlock()
+		mu.Lock()
+		c := conn
+		mu.Unlock()
 
-		if conn != nil {
+		if c != nil {
 			data := req.GetData()
-			if _, err := conn.Write(data); err != nil {
+			if _, err := c.Write(data); err != nil {
 				s.logger.Error().Msgf("Failed to write data to the unix socket: %v", err)
 				break
 			}
 			unixsocket.BytesIn += uint64(len(data))
+		} else {
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
 
 	s.logger.Info().Msg("Communication ended")
-	unixsocket.listener.Close()
+	uxListener.Close()
 	return nil
 }
