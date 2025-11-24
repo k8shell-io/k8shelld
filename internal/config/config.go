@@ -38,6 +38,19 @@ const (
 // - reapZombies: Configuration for the reap zombies feature.
 // - logger: Configuration for the logger.
 
+// Config represents the main configuration file structure
+type Config struct {
+	System              System           `yaml:"system"`
+	User                system.User      `yaml:"user"`
+	Env                 Env              `yaml:"env"`
+	PortForwarding      []string         `yaml:"portForwarding"`
+	TerminateOrphans    TerminateOrphans `yaml:"terminateOrphans"`
+	ReapZombies         ReapZombies      `yaml:"reapZombies"`
+	Docker              DockerConfig     `yaml:"docker"`
+	PortForwardingRules []PortForwardingRule
+	Apps                map[string]*AppSpec `yaml:"apps" json:"apps"`
+}
+
 // System represents the general system configuration
 type System struct {
 	PProf      bool              `yaml:"pprof"`
@@ -75,16 +88,16 @@ type DockerConfig struct {
 	CreateDockerSockSymlink bool `yaml:"createDockerSockSymlink"`
 }
 
-// Config represents the main configuration file structure
-type Config struct {
-	System              System           `yaml:"system"`
-	User                system.User      `yaml:"user"`
-	Env                 Env              `yaml:"env"`
-	PortForwarding      []string         `yaml:"portForwarding"`
-	TerminateOrphans    TerminateOrphans `yaml:"terminateOrphans"`
-	ReapZombies         ReapZombies      `yaml:"reapZombies"`
-	Docker              DockerConfig     `yaml:"docker"`
-	PortForwardingRules []PortForwardingRule
+// AppSpec represents the specification for an application
+type AppSpec struct {
+	Listen       int      `yaml:"listen" json:"listen"`
+	Version      string   `yaml:"version" json:"version"`
+	Deps         []string `yaml:"deps,omitempty" json:"deps,omitempty"`
+	Binary       string   `yaml:"binary" json:"binary"`
+	VersionCmd   []string `yaml:"versionCmd,omitempty" json:"versionCmd,omitempty"`
+	VersionRegex string   `yaml:"versionRegex,omitempty" json:"versionRegex,omitempty"`
+	Install      string   `yaml:"install" json:"install"`
+	Start        []string `yaml:"start" json:"start"`
 }
 
 // parsePortForwardingRule converts a rule into a PortForwardingRule struct
