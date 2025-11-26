@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/mux"
 	commonModels "github.com/k8shell-io/common/pkg/models"
+	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
@@ -26,7 +27,7 @@ const API_VERSION = "v1"
 
 type RESTService struct {
 	unixSocketPath string
-	user           system.User
+	user           config.User
 	logger         *zerolog.Logger
 	server         *Server
 }
@@ -52,7 +53,7 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 }
 
 // NewRESTAPI creates a new REST API service
-func NewRESTService(unixSocketPath string, user system.User, server *Server) (*RESTService, error) {
+func NewRESTService(unixSocketPath string, user config.User, server *Server) (*RESTService, error) {
 	logger := logger.NewLogger("api")
 
 	return &RESTService{

@@ -43,7 +43,7 @@ type GRPCService struct {
 	grpcConfig          gapi.ServerConfig           // The gRPC server configuration
 	logger              *zerolog.Logger             // The logger
 	initScriptsDir      string                      // The directory where the init scripts are located
-	user                system.User                 // The workspace owner
+	user                config.User                 // The workspace owner
 	procWatcher         *system.ProcessWatcher      // The process watcher
 	portForwardingRules []config.PortForwardingRule // The port forwarding rules that are allowed
 	ExecStore           *sync.Map                   // The store for the exec data
@@ -70,7 +70,7 @@ func getStatus(deleted time.Time) string {
 }
 
 // NewGRPCAPI creates a new GRPCApiService
-func NewGRPCService(user system.User, grpcConfig gapi.ServerConfig,
+func NewGRPCService(user config.User, grpcConfig gapi.ServerConfig,
 	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
 	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client) (*GRPCService, error) {
 

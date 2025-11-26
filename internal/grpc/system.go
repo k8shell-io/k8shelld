@@ -96,7 +96,7 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 
 // RunInitScripts runs the initialization scripts
 func (s *SystemServiceServer) RunInitScripts(ctx context.Context, scriptsDir string,
-	user system.User, envVars []string) error {
+	user config.User, envVars []string) error {
 
 	s.logger.Info().Msgf("Running init scripts, scriptsDir: %s, env: %s",
 		scriptsDir, strings.Join(envVars, ", "))
