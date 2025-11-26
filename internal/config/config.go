@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/k8shell-io/common/pkg/gapi"
-	"github.com/k8shell-io/k8shelld/internal/system"
 )
 
 // Maximum packet size for streaming data
@@ -41,13 +40,14 @@ const (
 // Config represents the main configuration file structure
 type Config struct {
 	System              System           `yaml:"system"`
-	User                system.User      `yaml:"user"`
+	User                User             `yaml:"user"`
 	Env                 Env              `yaml:"env"`
 	PortForwarding      []string         `yaml:"portForwarding"`
 	TerminateOrphans    TerminateOrphans `yaml:"terminateOrphans"`
 	ReapZombies         ReapZombies      `yaml:"reapZombies"`
 	Docker              DockerConfig     `yaml:"docker"`
 	PortForwardingRules []PortForwardingRule
+	InitScriptsDir      string              `yaml:"initScriptsDir"`
 	Apps                map[string]*AppSpec `yaml:"apps" json:"apps"`
 }
 
@@ -98,6 +98,25 @@ type AppSpec struct {
 	VersionRegex string   `yaml:"versionRegex,omitempty" json:"versionRegex,omitempty"`
 	Install      string   `yaml:"install" json:"install"`
 	Start        []string `yaml:"start" json:"start"`
+}
+
+// Group represents a group in the workspace
+type Group struct {
+	Name string `yaml:"name"`
+	Gid  int    `yaml:"gid"`
+}
+
+// User represents a user in the workspace
+type User struct {
+	Username  string   `yaml:"username"`
+	Fullname  string   `yaml:"fullname"`
+	Uid       int      `yaml:"uid"`
+	Gid       int      `yaml:"gid"`
+	Shell     string   `yaml:"shell"`
+	Sudo      bool     `yaml:"sudo"`
+	Groups    *[]Group `yaml:"groups,omitempty" json:"groups,omitempty"`
+	HomeDir   string
+	UserToken string
 }
 
 // parsePortForwardingRule converts a rule into a PortForwardingRule struct

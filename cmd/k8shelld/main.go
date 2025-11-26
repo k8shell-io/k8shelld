@@ -3,13 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 
 	clogger "github.com/k8shell-io/common/pkg/logger"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/server"
-	"github.com/k8shell-io/k8shelld/internal/system"
 )
 
 func main() {
@@ -25,49 +23,46 @@ func main() {
 	logger := logger.NewLogger("k8shelld")
 	logger.Debug().Msgf("Options: %+v", opts)
 
-	if os.Geteuid() != 0 {
-		logger.Fatal().Msg("You must be root to run k8shelld.")
+	if opts.Test {
+		logger.Info().Msg("Running in test mode")
 	}
 
-	if os.Getpid() != 1 {
-		logger.Fatal().Msg("k8shelld must run as PID 1.")
+	if !opts.Test {
+		if os.Geteuid() != 0 {
+			logger.Fatal().Msg("You must be root to run k8shelld.")
+		}
+
+		if os.Getpid() != 1 {
+			logger.Fatal().Msg("k8shelld must run as PID 1.")
+		}
 	}
 
 	logger.Info().Msgf("Starting k8shelld, version: %s", config.K8SHELLD_VERSION)
 
-	cfg, err := ValidateAndLoadConfig(opts.ConfigPath)
+	cfg, err := LoadConfig(opts.ConfigPath)
 	if err != nil {
 		logger.Fatal().Msgf("Error loading configuration: %v", err)
 	}
 	logger.Info().Msgf("Configuration loaded, file=%s", opts.ConfigPath)
 	logger.Debug().Msgf("Configuration: %+v", cfg)
 
-	err = exec.Command("kbox", "tools-init").Run()
-	if err != nil {
-		logger.Error().Msgf("Error running kbox tools-init: %v", err)
+	if opts.Port != 0 {
+		cfg.System.GrpcConfig.Port = opts.Port
+		logger.Info().Msgf("Overriding GRPC port to %d from command line", opts.Port)
 	}
 
-	if err := system.CreateUser(cfg.User); err != nil {
-		logger.Fatal().Msgf("Error creating user: %v", err)
+	if opts.CertFile != "" && opts.KeyFile != "" {
+		cfg.System.GrpcConfig.CertFile = opts.CertFile
+		cfg.System.GrpcConfig.KeyFile = opts.KeyFile
+		logger.Info().Msgf("Overriding GRPC TLS cert and key from command line")
 	}
 
-	if cfg.Docker.CreateDockerSockSymlink {
-		if _, err := os.Lstat(config.DOCKER_SOCKET_SYMLINK); err != nil {
-			if err := os.Symlink(config.DOCKER_SOCKET_PATH, config.DOCKER_SOCKET_SYMLINK); err != nil {
-				logger.Error().Msgf("Error creating docker socket symlink: %v", err)
-			} else {
-				logger.Info().Msgf("Created Docker socket symlink: %s -> %s",
-					config.DOCKER_SOCKET_SYMLINK, config.DOCKER_SOCKET_PATH)
-			}
-		} else {
-			logger.Warn().Msgf("Docker socket symlink already exists: %s", config.DOCKER_SOCKET_SYMLINK)
-		}
-	}
-
-	server, err := server.NewServer(cfg, opts.UnixSocketPath, opts.InitScriptsDir)
+	server, err := server.NewServer(cfg, opts.UnixSocketPath, opts.Test)
 	if err != nil {
 		logger.Fatal().Msgf("Error creating server: %v", err)
 	}
+
+	logger.Info().Msg("Starting k8shelld server...")
 
 	server.Serve()
 	logger.Info().Msg("Exiting k8shelld")
