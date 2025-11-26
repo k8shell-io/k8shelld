@@ -1,38 +1,53 @@
-# k8shelld configuration file
 # system settings
 system:
   # true to enable profiling
   # if enabled, pprof will be available at localhost:6060
   pprof: false
 
+  # api server
+  apiServer: http://api-server.k8shell-test:9101
+
+  # grpc server
+  grpc:
+    port: 2822
+    enableTLS: true
+    certFile: /etc/tls/k8shelld/tls.crt
+    keyFile: /etc/tls/k8shelld/tls.key
+
+    audience: k8shelld
+    allowed:
+      - namespace: "*"
+        serviceAccount: "*"
+
 # workspace user
-mainUser:
+user:
   username: bruckins
-  fullname: Bruck Ins
-  uid: 166548839
-  gid: 166548839
+  fullname: "Bruck Ins"
+  uid: 1001
+  gid: 1001
   shell: /bin/bash
-  sudo: True
+  sudo: true
 
-# docker DNS
-dockerDNS:
-  enabled: False
-  fqdn: True
-  containerId: True
-  containerName: True
-  dnsNames: True
-
+  # supplementary groups
+  groups:
+    - name: k8shell-docker
+      gid: 999
+      
 # port forwarding rules
 portForwarding:
   - localnetworks:0
 
 # reap zombie processes
 reapZombies:
-  enabled: False
+  enabled: true
 
 # terminate orphaned processes, i.e. processes that were reparented to init (pid 1)
 terminateOrphans:
-  enabled: False
+  enabled: true
   checkInterval: 5
   exclude:
   - .*JetBrains.*
+
+# docker settings
+docker:
+  createDockerSockSymlink: true
