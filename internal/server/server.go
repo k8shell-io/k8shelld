@@ -31,6 +31,7 @@ type Server struct {
 	pprof       bool
 	sysInfo     *system.SystemInfo
 	sysInfoMu   sync.Mutex
+	appManager  *system.AppManager
 }
 
 func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
@@ -66,6 +67,11 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	s.restService, err = NewRESTService(restApiUnixSocketPath, cfg.User, s)
 	if err != nil {
 		return nil, fmt.Errorf("error creating REST API: %v", err)
+	}
+
+	s.appManager, err = system.NewAppManager(cfg.Apps, "/tmp/k8shelld-apps")
+	if err != nil {
+		return nil, fmt.Errorf("error creating App Manager: %v", err)
 	}
 
 	config.UnsetEnvVars(cfg.Env)

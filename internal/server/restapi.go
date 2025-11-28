@@ -81,6 +81,9 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/logs", a.GetLogs).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/shutdown", a.Shutdown).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/validate", a.ValidateK8shelldFile).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/apps", a.GetAppsStatus).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/apps/{name}/install", a.InstallApp).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/apps/{name}/install/log", a.GetAppInstallLog).Methods(http.MethodGet)
 	a.logRoutes(router)
 	return router
 }
@@ -378,6 +381,83 @@ func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 }
 
+// GetAppsStatus returns the status of all configured apps.
+func (a *RESTService) GetAppsStatus(w http.ResponseWriter, r *http.Request) {
+	a.logger.Debug().Msg("Fetching apps status")
+
+	if a.server == nil || a.server.appManager == nil {
+		http.Error(w, "App manager not available", http.StatusInternalServerError)
+		return
+	}
+
+	statuses, err := a.server.appManager.ListAppStatus(r.Context())
+	if err != nil {
+		a.logger.Error().Msgf("Failed to list app status: %v", err)
+		http.Error(w, "Failed to list app status", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(statuses); err != nil {
+		a.logger.Error().Msgf("Failed to encode app status response: %v", err)
+	}
+}
+
+// InstallApp installs the specified app (asynchronously).
+func (a *RESTService) InstallApp(w http.ResponseWriter, r *http.Request) {
+	if a.server == nil || a.server.appManager == nil {
+		http.Error(w, "App manager not available", http.StatusInternalServerError)
+		return
+	}
+
+	vars := mux.Vars(r)
+	name := vars["name"]
+	if name == "" {
+		http.Error(w, "Missing app name", http.StatusBadRequest)
+		return
+	}
+
+	force := r.URL.Query().Get("force") == "true"
+	a.logger.Info().Msgf("Installing app %s (force=%v)", name, force)
+
+	if err := a.server.appManager.InstallAsync(r.Context(), name, force); err != nil {
+		a.logger.Error().Msgf("Failed to start install for app %s: %v", name, err)
+		http.Error(w, fmt.Sprintf("Failed to start install: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// GetAppInstallLog returns the latest install log for a given app.
+func (a *RESTService) GetAppInstallLog(w http.ResponseWriter, r *http.Request) {
+	if a.server == nil || a.server.appManager == nil {
+		http.Error(w, "App manager not available", http.StatusInternalServerError)
+		return
+	}
+
+	vars := mux.Vars(r)
+	name := vars["name"]
+	if name == "" {
+		http.Error(w, "Missing app name", http.StatusBadRequest)
+		return
+	}
+
+	logText, err := a.server.appManager.GetLastInstallLog(name)
+	if err != nil {
+		a.logger.Error().Msgf("Failed to get install log for app %s: %v", name, err)
+		http.Error(w, fmt.Sprintf("Failed to get install log: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if logText == "" {
+		http.Error(w, "No install log found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(logText))
+}
+
 func (a *RESTService) Serve(ctx context.Context) {
 	router := a.initializeRouter()
 	if a.unixSocketPath != "" {
@@ -403,13 +483,15 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 			continue
 		}
 
-		err = os.Chown(a.unixSocketPath, a.user.Uid, a.user.Gid)
-		if err != nil {
-			a.logger.Error().Msgf("Error changing ownership of Unix socket: %v", err)
-			unixListener.Close()
-			os.Remove(a.unixSocketPath)
-			time.Sleep(5 * time.Second)
-			continue
+		if !a.server.testMode {
+			err = os.Chown(a.unixSocketPath, a.user.Uid, a.user.Gid)
+			if err != nil {
+				a.logger.Error().Msgf("Error changing ownership of Unix socket: %v", err)
+				unixListener.Close()
+				os.Remove(a.unixSocketPath)
+				time.Sleep(5 * time.Second)
+				continue
+			}
 		}
 
 		a.logger.Info().Msgf("Unix socket server started at %s", a.unixSocketPath)

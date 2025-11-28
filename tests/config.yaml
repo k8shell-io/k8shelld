@@ -51,3 +51,30 @@ terminateOrphans:
 # docker settings
 docker:
   createDockerSockSymlink: true
+
+apps:
+  vscode:
+    listen: 8080
+    version: "4.106.2"
+    deps: ["curl", "sh"]
+    binary: "/usr/bin/code-server"
+    versionCmd: ["/usr/bin/code-server", "--version"]
+    versionRegex: "^([0-9]+\\.[0-9]+\\.[0-9]+)"  
+    install: |
+      #!/usr/bin/env sh
+      curl -fsSL https://code-server.dev/install.sh | sh
+    start: ["/usr/bin/code-server", "--auth=none", "--bind-addr=127.0.0.1:8080"]
+    
+  jupyter:
+    listen: 8888
+    version: "1.0.0"
+    deps: ["python3"]
+    binary: "/opt/apps/jupyter/bin/jupyter-lab"
+    versionCmd: ["/opt/apps/jupyter/bin/jupyter-lab", "--version"]
+    versionRegex: "^([0-9]+\\.[0-9]+\\.[0-9]+)"
+    install: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      python3 -m venv /opt/apps/jupyter
+      /opt/apps/jupyter/bin/pip install jupyterlab==1.0.0
+    start: ["/opt/apps/jupyter/bin/jupyter-lab", "--ip=0.0.0.0", "--port=8888", "--no-browser"]

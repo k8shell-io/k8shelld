@@ -47,8 +47,8 @@ type Config struct {
 	ReapZombies         ReapZombies      `yaml:"reapZombies"`
 	Docker              DockerConfig     `yaml:"docker"`
 	PortForwardingRules []PortForwardingRule
-	InitScriptsDir      string              `yaml:"initScriptsDir"`
-	Apps                map[string]*AppSpec `yaml:"apps" json:"apps"`
+	InitScriptsDir      string `yaml:"initScriptsDir"`
+	Apps                *Apps  `yaml:"apps" json:"apps"`
 }
 
 // System represents the general system configuration
@@ -88,8 +88,12 @@ type DockerConfig struct {
 	CreateDockerSockSymlink bool `yaml:"createDockerSockSymlink"`
 }
 
+// Apps represents a map of application specifications
+type Apps map[string]*AppSpec
+
 // AppSpec represents the specification for an application
 type AppSpec struct {
+	Name         string
 	Listen       int      `yaml:"listen" json:"listen"`
 	Version      string   `yaml:"version" json:"version"`
 	Deps         []string `yaml:"deps,omitempty" json:"deps,omitempty"`
