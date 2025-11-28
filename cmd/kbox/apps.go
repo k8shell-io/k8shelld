@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"io"
+	"net/http"
+	"os"
 	"strings"
 
 	"github.com/k8shell-io/k8shelld/internal/client"
@@ -140,8 +142,13 @@ var AppsLogCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		name := args[0]
+		follow, _ := cmd.Flags().GetBool("follow")
 
 		url := fmt.Sprintf("/apps/%s/install/log", name)
+		if follow {
+			url += "?follow=true"
+		}
+
 		resp, err := client.MakeRequest("GET", url, nil, nil)
 		if err != nil {
 			fmt.Printf("Failed to get install log for app %q: %v\n", name, err)
@@ -149,14 +156,21 @@ var AppsLogCmd = &cobra.Command{
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != 200 {
+		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			if resp.StatusCode == 404 {
+			if resp.StatusCode == http.StatusNotFound {
 				fmt.Printf("No install log found for app %q\n", name)
 				return
 			}
 			fmt.Printf("Failed to get install log for %q: %s (%s)\n",
 				name, resp.Status, strings.TrimSpace(string(body)))
+			return
+		}
+
+		if follow {
+			if _, err := io.Copy(os.Stdout, resp.Body); err != nil {
+				fmt.Printf("Error while streaming log: %v\n", err)
+			}
 			return
 		}
 
@@ -176,6 +190,9 @@ func init() {
 	AppsCmd.Flags().Bool("json", false, "Display output in JSON format")
 	AppsCmd.Flags().Bool("no-ansi", false, "Disable ANSI color output")
 	AppsInstallCmd.Flags().BoolP("force", "f", false, "Reinstall the app if already installed")
+
+	// add follow flag to log subcommand
+	AppsLogCmd.Flags().BoolP("follow", "f", false, "Follow log output (stream while install is running)")
 
 	AppsCmd.AddCommand(AppsInstallCmd)
 	AppsCmd.AddCommand(AppsLogCmd)

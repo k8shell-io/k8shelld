@@ -300,6 +300,30 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 	return res, nil
 }
 
+// IsInstalling reports whether an install is currently running for the app.
+func (m *AppManager) IsInstalling(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.installing[name]
+}
+
+// GetLastInstallLog returns the contents of the most recent install log.
+// If no log exists, it returns empty string and no error.
+func (m *AppManager) GetLastInstallLog(name string) (string, error) {
+	path, err := m.GetLastInstallLogPath(name)
+	if err != nil {
+		return "", err
+	}
+	if path == "" {
+		return "", nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read install log: %w", err)
+	}
+	return string(data), nil
+}
+
 // GetLastInstallLogPath returns the path of the most recent install log for the app.
 // If no install log exists, it returns an empty string and no error.
 func (m *AppManager) GetLastInstallLogPath(name string) (string, error) {
@@ -340,23 +364,6 @@ func (m *AppManager) GetLastInstallLogPath(name string) (string, error) {
 		return "", nil
 	}
 	return filepath.Join(appStateDir, latestName), nil
-}
-
-// GetLastInstallLog returns the contents of the most recent install log.
-// If no log exists, it returns empty string and no error.
-func (m *AppManager) GetLastInstallLog(name string) (string, error) {
-	path, err := m.GetLastInstallLogPath(name)
-	if err != nil {
-		return "", err
-	}
-	if path == "" {
-		return "", nil
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("read install log: %w", err)
-	}
-	return string(data), nil
 }
 
 // *** helpers

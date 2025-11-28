@@ -1,15 +1,18 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -112,13 +115,10 @@ func (a *RESTService) logRoutes(router *mux.Router) {
 
 // Middleware to log requests and responses
 func (a *RESTService) loggingMiddleware(next http.Handler) http.Handler {
-	skipPaths := map[string]bool{
-		// we need to skip logs as otherwise http.Flusher will not work
-		"/api/v1/logs": true,
-	}
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if skipPaths[r.URL.Path] {
+		if r.URL.Path == "/api/v1/logs" ||
+			strings.HasPrefix(r.URL.Path, "/api/v1/apps/") &&
+				strings.HasSuffix(r.URL.Path, "/install/log") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -429,7 +429,7 @@ func (a *RESTService) InstallApp(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// GetAppInstallLog returns the latest install log for a given app.
+// GetAppInstallLog returns (and can stream) the latest install log for a given app.
 func (a *RESTService) GetAppInstallLog(w http.ResponseWriter, r *http.Request) {
 	if a.server == nil || a.server.appManager == nil {
 		http.Error(w, "App manager not available", http.StatusInternalServerError)
@@ -443,19 +443,84 @@ func (a *RESTService) GetAppInstallLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logText, err := a.server.appManager.GetLastInstallLog(name)
+	follow := r.URL.Query().Get("follow") == "true"
+
+	logPath, err := a.server.appManager.GetLastInstallLogPath(name)
 	if err != nil {
-		a.logger.Error().Msgf("Failed to get install log for app %s: %v", name, err)
+		a.logger.Error().Msgf("Failed to get install log path for app %s: %v", name, err)
 		http.Error(w, fmt.Sprintf("Failed to get install log: %v", err), http.StatusInternalServerError)
 		return
 	}
-	if logText == "" {
+	if logPath == "" {
 		http.Error(w, "No install log found", http.StatusNotFound)
 		return
 	}
 
+	if !follow {
+		logText, err := os.ReadFile(logPath)
+		if err != nil {
+			a.logger.Error().Msgf("Failed to read install log for app %s: %v", name, err)
+			http.Error(w, fmt.Sprintf("Failed to read install log: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write(logText)
+		return
+	}
+
+	if !a.server.appManager.IsInstalling(name) {
+		logText, err := os.ReadFile(logPath)
+		if err != nil {
+			a.logger.Error().Msgf("Failed to read install log for app %s: %v", name, err)
+			http.Error(w, fmt.Sprintf("Failed to read install log: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write(logText)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte(logText))
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to open log file: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	reader := bufio.NewReader(f)
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+			line, err := reader.ReadString('\n')
+			if len(line) > 0 {
+				_, _ = w.Write([]byte(line))
+				flusher.Flush()
+			}
+			if err != nil {
+				if err == io.EOF {
+					if !a.server.appManager.IsInstalling(name) {
+						return
+					}
+					time.Sleep(200 * time.Millisecond)
+					continue
+				}
+				return
+			}
+		}
+	}
 }
 
 func (a *RESTService) Serve(ctx context.Context) {
