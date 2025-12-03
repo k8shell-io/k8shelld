@@ -135,6 +135,11 @@ func (m *AppManager) InstallAsync(ctx context.Context, name string, force bool) 
 		}
 	}
 
+	if _, ok := m.supervisors[name]; ok {
+		m.mu.Unlock()
+		return fmt.Errorf("cannot install %s while it is running", name)
+	}
+
 	m.installing[name] = true
 	m.mu.Unlock()
 
