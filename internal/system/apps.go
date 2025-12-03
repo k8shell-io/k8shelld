@@ -248,6 +248,8 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 	var res []models.AppStatus
 
 	for name, app := range *m.apps {
+		installing := m.installing[name]
+
 		installed, version, err := m.isInstalled(ctx, app)
 		if err != nil {
 			m.logger.Warn().Msgf("detectInstalled(%s) failed: %v", name, err)
@@ -261,6 +263,12 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 			Version:    version,
 			ListenPort: app.Listen,
 			PID:        0,
+		}
+
+		if installing {
+			status.Status = "INSTALLING"
+			res = append(res, status)
+			continue
 		}
 
 		if !installed {

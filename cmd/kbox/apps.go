@@ -189,9 +189,9 @@ func init() {
 		"Comma separated list of fields to sort by, prefix with '-' for descending order")
 	AppsCmd.Flags().Bool("json", false, "Display output in JSON format")
 	AppsCmd.Flags().Bool("no-ansi", false, "Disable ANSI color output")
-	AppsInstallCmd.Flags().BoolP("force", "f", false, "Reinstall the app if already installed")
 
-	// add follow flag to log subcommand
+	AppsInstallCmd.Flags().BoolP("force", "", false, "Reinstall the app if already installed")
+
 	AppsLogCmd.Flags().BoolP("follow", "f", false, "Follow log output (stream while install is running)")
 
 	AppsCmd.AddCommand(AppsInstallCmd)
