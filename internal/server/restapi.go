@@ -73,7 +73,6 @@ func (a *RESTService) initializeRouter() *mux.Router {
 
 	router.Use(a.loggingMiddleware)
 
-	// Add token middleware
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 
 	// Define API endpoints
@@ -87,6 +86,9 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/apps", a.GetAppsStatus).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/apps/{name}/install", a.InstallApp).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/apps/{name}/install/log", a.GetAppInstallLog).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/apps/{name}/start", a.StartApp).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/apps/{name}/stop", a.StopApp).Methods(http.MethodPost)
+
 	a.logRoutes(router)
 	return router
 }
@@ -587,4 +589,54 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 			continue
 		}
 	}
+}
+
+// StartApp starts supervising and running the specified app.
+func (a *RESTService) StartApp(w http.ResponseWriter, r *http.Request) {
+	if a.server == nil || a.server.appManager == nil {
+		http.Error(w, "App manager not available", http.StatusInternalServerError)
+		return
+	}
+
+	vars := mux.Vars(r)
+	name := vars["name"]
+	if name == "" {
+		http.Error(w, "Missing app name", http.StatusBadRequest)
+		return
+	}
+
+	a.logger.Info().Msgf("Starting app %s", name)
+
+	if err := a.server.appManager.EnsureRunning(r.Context(), name); err != nil {
+		a.logger.Error().Msgf("Failed to start app %s: %v", name, err)
+		http.Error(w, fmt.Sprintf("Failed to start app: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// StopApp stops supervising and (if running) stops the specified app.
+func (a *RESTService) StopApp(w http.ResponseWriter, r *http.Request) {
+	if a.server == nil || a.server.appManager == nil {
+		http.Error(w, "App manager not available", http.StatusInternalServerError)
+		return
+	}
+
+	vars := mux.Vars(r)
+	name := vars["name"]
+	if name == "" {
+		http.Error(w, "Missing app name", http.StatusBadRequest)
+		return
+	}
+
+	a.logger.Info().Msgf("Stopping app %s", name)
+
+	if err := a.server.appManager.Stop(r.Context(), name); err != nil {
+		a.logger.Error().Msgf("Failed to stop app %s: %v", name, err)
+		http.Error(w, fmt.Sprintf("Failed to stop app: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

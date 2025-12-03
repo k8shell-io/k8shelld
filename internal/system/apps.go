@@ -1,7 +1,6 @@
 package system
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"net"
@@ -9,9 +8,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/config"
@@ -26,17 +25,28 @@ type AppState struct {
 	LastInstalledAt  time.Time `json:"last_installed_at"`
 }
 
+// supervisorState holds the state for a supervisor
+type supervisorState struct {
+	stopCh       chan struct{}
+	restartCount int
+	pid          int
+}
+
 // AppManager manages the lifecycle of applications defined in the configuration
 type AppManager struct {
 	apps       *config.Apps
+	user       config.User
 	stateDir   string
 	logger     *zerolog.Logger
 	mu         sync.Mutex
 	installing map[string]bool
+	testMode   bool
+
+	supervisors map[string]*supervisorState
 }
 
 // NewAppManager creates a new AppManager instance
-func NewAppManager(apps *config.Apps, stateDir string) (*AppManager, error) {
+func NewAppManager(apps *config.Apps, user config.User, stateDir string, testMode bool) (*AppManager, error) {
 	log := logger.NewLogger("app-manager")
 
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
@@ -44,10 +54,13 @@ func NewAppManager(apps *config.Apps, stateDir string) (*AppManager, error) {
 	}
 
 	return &AppManager{
-		apps:       apps,
-		stateDir:   stateDir,
-		logger:     log,
-		installing: make(map[string]bool),
+		apps:        apps,
+		user:        user,
+		stateDir:    stateDir,
+		logger:      log,
+		testMode:    testMode,
+		installing:  make(map[string]bool),
+		supervisors: make(map[string]*supervisorState),
 	}, nil
 }
 
@@ -165,8 +178,6 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		return fmt.Errorf("write install script: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, "/bin/sh", scriptPath)
-
 	outPath := filepath.Join(appStateDir, fmt.Sprintf("install-%s.out", time.Now().Format("20060102-150405")))
 	outFile, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
@@ -174,7 +185,27 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 	}
 	defer outFile.Close()
 
-	m.logger.Debug().Msgf("running install script for %s, output=%s", name, outPath)
+	m.logger.Debug().Msgf("running install script for %s, output=%s, as_root=%v", name, outPath, app.InstallAsRoot)
+
+	cmd := exec.CommandContext(ctx, "/bin/sh", scriptPath)
+	if app.InstallAsRoot && !m.testMode {
+		cmd.Env = os.Environ()
+		cmd.Dir = "/root"
+	} else {
+		cmd.Env = CreateEnvVars([]string{}, m.user.HomeDir)
+		cmd.Dir = m.user.HomeDir
+
+		if !m.testMode {
+			cmd.SysProcAttr = &syscall.SysProcAttr{
+				Setsid: true,
+				Credential: &syscall.Credential{
+					Uid:    uint32(m.user.Uid),
+					Gid:    uint32(m.user.Gid),
+					Groups: GetSupplementalGroups(m.user.Username),
+				},
+			}
+		}
+	}
 
 	cmd.Stdout = outFile
 	cmd.Stderr = outFile
@@ -189,55 +220,54 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 	return nil
 }
 
-func (m *AppManager) EnsureRunning(ctx context.Context, name string, app *config.AppSpec) error {
-	if app.Listen != 0 {
-		addr := fmt.Sprintf("127.0.0.1:%d", app.Listen)
-		conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
-		if err == nil {
-			_ = conn.Close()
-			return nil
-		}
+// EnsureRunning starts a supervisor for the given app if not already running.
+// The supervisor will keep the app running according to its RestartPolicy.
+func (m *AppManager) EnsureRunning(ctx context.Context, name string) error {
+	app, ok := (*m.apps)[name]
+	if !ok {
+		return fmt.Errorf("app %s not found", name)
 	}
 
-	if len(app.Start) == 0 {
-		return fmt.Errorf("no start command for %s", name)
+	m.mu.Lock()
+	if _, ok := m.supervisors[name]; ok {
+		m.mu.Unlock()
+		return nil
 	}
 
-	m.logger.Debug().Msgf("starting app %s", name)
-	cmd := exec.CommandContext(ctx, app.Start[0], app.Start[1:]...)
-
-	logPath := filepath.Join(m.stateDir, fmt.Sprintf("%s.log", name))
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return fmt.Errorf("open log file for %s: %w", name, err)
+	st := &supervisorState{
+		stopCh: make(chan struct{}),
 	}
+	m.supervisors[name] = st
+	m.mu.Unlock()
 
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-
-	if err := cmd.Start(); err != nil {
-		_ = logFile.Close()
-		return fmt.Errorf("start %s: %w", name, err)
-	}
-
-	_ = logFile.Close()
+	go m.superviseApp(name, app, st)
 
 	return nil
 }
 
-func (m *AppManager) Stop(ctx context.Context, name string, app *config.AppSpec) error {
-	if app.Listen == 0 {
+// Stop asks the supervisor to stop managing the app and kills the process if running.
+func (m *AppManager) Stop(ctx context.Context, name string) error {
+	_, ok := (*m.apps)[name]
+	if !ok {
+		return fmt.Errorf("app %s not found", name)
+	}
+
+	m.mu.Lock()
+	st, ok := m.supervisors[name]
+	m.mu.Unlock()
+
+	if !ok {
 		return nil
 	}
-	addr := fmt.Sprintf("127.0.0.1:%d", app.Listen)
-	conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
-	if err != nil {
+
+	close(st.stopCh)
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(2 * time.Second):
 		return nil
 	}
-	_ = conn.Close()
-	// TODO: signal the PID
-	m.logger.Printf("app %s appears to be running on %s but stop logic is not implemented", name, addr)
-	return nil
 }
 
 // ListAppStatus returns app status including port, PID and running time, without internal state.
@@ -250,20 +280,29 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 	for name, app := range *m.apps {
 		installing := m.installing[name]
 
+		status := models.AppStatus{
+			Name:     name,
+			Status:   "-",
+			Version:  "",
+			Port:     app.Listen,
+			PID:      0,
+			Age:      "",
+			Restarts: 0,
+		}
+
+		var sup *supervisorState
+		if s, ok := m.supervisors[name]; ok {
+			sup = s
+			status.Restarts = s.restartCount
+		}
+
 		installed, version, err := m.isInstalled(ctx, app)
 		if err != nil {
 			m.logger.Warn().Msgf("detectInstalled(%s) failed: %v", name, err)
 			installed = false
 			version = ""
 		}
-
-		status := models.AppStatus{
-			Name:       name,
-			Status:     "-",
-			Version:    version,
-			ListenPort: app.Listen,
-			PID:        0,
-		}
+		status.Version = version
 
 		if installing {
 			status.Status = "INSTALLING"
@@ -277,29 +316,17 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 			continue
 		}
 
-		if app.Listen == 0 {
-			status.Status = "INSTALLED"
-			res = append(res, status)
-			continue
-		}
-
-		pid, err := getPIDListeningOnPort(app.Listen)
-		if err != nil {
-			m.logger.Warn().Msgf("getPIDListeningOnPort(%d) failed for app %s: %v", app.Listen, name, err)
-		}
-
-		if pid == 0 {
+		if sup == nil || sup.pid == 0 {
 			status.Status = "STOPPED"
 			res = append(res, status)
 			continue
 		}
 
-		// We have a listener and a PID
-		status.PID = pid
+		status.PID = sup.pid
 		status.Status = "RUNNING"
 
-		if dur, err := getProcessRunningTime(pid); err == nil {
-			status.RunningTime = dur.Truncate(time.Second).String()
+		if dur, err := GetProcessRunningTime(sup.pid); err == nil {
+			status.Age = dur.Truncate(time.Second).String()
 		}
 
 		res = append(res, status)
@@ -374,137 +401,166 @@ func (m *AppManager) GetLastInstallLogPath(name string) (string, error) {
 	return filepath.Join(appStateDir, latestName), nil
 }
 
-// *** helpers
+func (m *AppManager) superviseApp(name string, app *config.AppSpec, st *supervisorState) {
+	log := m.logger.With().Str("app", name).Logger()
 
-// getProcessRunningTime returns how long the given PID has been running as a time.Duration.
-func getProcessRunningTime(pid int) (time.Duration, error) {
-	// Read /proc/uptime to get system uptime in seconds
-	upBytes, err := os.ReadFile("/proc/uptime")
-	if err != nil {
-		return 0, err
+	policy := strings.ToLower(app.RestartPolicy)
+	if policy == "" {
+		policy = "never"
 	}
-	var uptimeSeconds float64
-	if _, err := fmt.Sscanf(string(upBytes), "%f", &uptimeSeconds); err != nil {
-		return 0, err
+	maxBackoff := app.MaxRestartBackoff
+	if maxBackoff <= 0 {
+		maxBackoff = 5 * time.Minute
 	}
 
-	// Read /proc/<pid>/stat
-	statPath := filepath.Join("/proc", strconv.Itoa(pid), "stat")
-	data, err := os.ReadFile(statPath)
-	if err != nil {
-		return 0, err
-	}
-	// Field 22 is starttime (clock ticks since boot)
-	// But field 2 (comm) may contain spaces in parentheses, so we need to handle that.
-	parts := strings.Fields(string(data))
-	if len(parts) < 22 {
-		return 0, fmt.Errorf("unexpected /proc/%d/stat format", pid)
-	}
-	// starttime is at index 21 (0-based)
-	startTicksStr := parts[21]
-	startTicks, err := strconv.ParseUint(startTicksStr, 10, 64)
-	if err != nil {
-		return 0, err
-	}
+	backoff := 1 * time.Second
 
-	// Get clock ticks per second
-	ticks := float64(os.Getpagesize()) // WRONG, we’ll use sysconf via build tag? (simplify)
-	_ = ticks
-	// Simpler: assume 100Hz (most Linux configs). For better accuracy, use runtime or sysconf,
-	// but this is usually good enough.
-	const hz = 100.0
+	for {
+		select {
+		case <-st.stopCh:
+			log.Info().Msg("supervisor stopped")
+			m.mu.Lock()
+			delete(m.supervisors, name)
+			m.mu.Unlock()
+			return
+		default:
+		}
 
-	startSeconds := float64(startTicks) / hz
-	// process running time = uptime - (uptime - startSeconds) => uptime - (startAtBoot)
-	running := uptimeSeconds - startSeconds
-	if running < 0 {
-		running = 0
+		// Optional: you can keep or remove this TCP check; it’s no longer needed for PID
+		if app.Listen != 0 {
+			addr := fmt.Sprintf("127.0.0.1:%d", app.Listen)
+			if conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond); err == nil {
+				_ = conn.Close()
+				log.Debug().Msg("app already running, supervisor sleeping")
+				time.Sleep(5 * time.Second)
+				continue
+			}
+		}
+
+		if len(app.Start) == 0 {
+			log.Error().Msg("no start command configured")
+			return
+		}
+
+		log.Debug().Msgf("starting app with command: %v", app.Start)
+
+		cmd := exec.Command(app.Start[0], app.Start[1:]...)
+		cmd.Env = CreateEnvVars([]string{}, m.user.HomeDir)
+		cmd.Dir = m.user.HomeDir
+
+		log.Debug().Msgf("env: %v", cmd.Env)
+
+		if !m.testMode {
+			cmd.SysProcAttr = &syscall.SysProcAttr{
+				Setsid: true,
+				Credential: &syscall.Credential{
+					Uid:    uint32(m.user.Uid),
+					Gid:    uint32(m.user.Gid),
+					Groups: GetSupplementalGroups(m.user.Username),
+				},
+			}
+		}
+
+		logPath := filepath.Join(m.stateDir, fmt.Sprintf("%s.log", name))
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			log.Error().Err(err).Msg("open log file failed")
+			return
+		}
+
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+
+		log.Info().Msg("starting app process")
+		startTime := time.Now()
+		if err := cmd.Start(); err != nil {
+			_ = logFile.Close()
+			log.Error().Err(err).Msg("failed to start app")
+			if !m.shouldRestart(policy, false) {
+				return
+			}
+			time.Sleep(backoff)
+			backoff = nextBackoff(backoff, maxBackoff)
+			continue
+		}
+		_ = logFile.Close()
+
+		m.mu.Lock()
+		if cur, ok := m.supervisors[name]; ok {
+			cur.pid = cmd.Process.Pid
+		}
+		m.mu.Unlock()
+
+		doneCh := make(chan error, 1)
+		go func() {
+			doneCh <- cmd.Wait()
+		}()
+
+		select {
+		case <-st.stopCh:
+			log.Info().Msg("stop requested, killing app process")
+			_ = cmd.Process.Kill()
+			<-doneCh
+			m.mu.Lock()
+			delete(m.supervisors, name)
+			m.mu.Unlock()
+			return
+
+		case err := <-doneCh:
+			m.mu.Lock()
+			if cur, ok := m.supervisors[name]; ok {
+				cur.pid = 0
+			}
+			m.mu.Unlock()
+
+			uptime := time.Since(startTime)
+			if err != nil {
+				log.Warn().Err(err).Dur("uptime", uptime).Msg("app exited with error")
+				if !m.shouldRestart(policy, true) {
+					return
+				}
+				log.Debug().Msgf("app will be restarted after failure, backoff=%v", backoff)
+			} else {
+				log.Info().Dur("uptime", uptime).Msg("app exited normally")
+				if !m.shouldRestart(policy, false) {
+					return
+				}
+				log.Debug().Msgf("app will be restarted after normal exit, backoff=%v", backoff)
+			}
+
+			m.mu.Lock()
+			if cur, ok := m.supervisors[name]; ok {
+				cur.restartCount++
+			}
+			m.mu.Unlock()
+
+			time.Sleep(backoff)
+			backoff = nextBackoff(backoff, maxBackoff)
+		}
 	}
-	return time.Duration(running * float64(time.Second)), nil
 }
 
-// getPIDListeningOnPort tries to find a PID that is listening on the given TCP port.
-// Linux-only implementation, returns 0 if not found or on error.
-func getPIDListeningOnPort(port int) (int, error) {
-	// Build a map inode -> pid
-	inodeToPID := make(map[string]int)
-
-	procEntries, err := os.ReadDir("/proc")
-	if err != nil {
-		return 0, err
+// shouldRestart decides based on restart policy and exit condition.
+func (m *AppManager) shouldRestart(policy string, failed bool) bool {
+	switch policy {
+	case "always":
+		return true
+	case "on-failure":
+		return failed
+	case "never":
+		fallthrough
+	default:
+		return false
 	}
+}
 
-	for _, e := range procEntries {
-		if !e.IsDir() {
-			continue
-		}
-		pid, err := strconv.Atoi(e.Name())
-		if err != nil {
-			continue
-		}
-		fdDir := filepath.Join("/proc", e.Name(), "fd")
-		fds, err := os.ReadDir(fdDir)
-		if err != nil {
-			continue
-		}
-		for _, fd := range fds {
-			link, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
-			if err != nil {
-				continue
-			}
-			// Looking for "socket:[12345]"
-			if strings.HasPrefix(link, "socket:[") && strings.HasSuffix(link, "]") {
-				inode := link[len("socket:[") : len(link)-1]
-				inodeToPID[inode] = pid
-			}
-		}
+// *** helpers
+
+// nextBackoff calculates exponential backoff with cap.
+func nextBackoff(current, max time.Duration) time.Duration {
+	next := current * 2
+	if next > max {
+		return max
 	}
-
-	// Now parse /proc/net/tcp and /proc/net/tcp6 looking for LISTEN on that port.
-	portHex := fmt.Sprintf("%04X", port)
-
-	checkFile := func(path string) (int, error) {
-		f, err := os.Open(path)
-		if err != nil {
-			return 0, nil
-		}
-		defer f.Close()
-
-		sc := bufio.NewScanner(f)
-		// Skip header
-		if !sc.Scan() {
-			return 0, nil
-		}
-		for sc.Scan() {
-			line := strings.TrimSpace(sc.Text())
-			fields := strings.Fields(line)
-			if len(fields) < 10 {
-				continue
-			}
-			localAddress := fields[1] // "0100007F:1F90"
-			state := fields[3]        // "0A" for LISTEN
-			inode := fields[9]
-
-			parts := strings.Split(localAddress, ":")
-			if len(parts) != 2 {
-				continue
-			}
-			portPart := parts[1]
-			if strings.EqualFold(portPart, portHex) && state == "0A" {
-				if pid, ok := inodeToPID[inode]; ok {
-					return pid, nil
-				}
-			}
-		}
-		return 0, nil
-	}
-
-	if pid, err := checkFile("/proc/net/tcp"); err == nil && pid != 0 {
-		return pid, nil
-	}
-	if pid, err := checkFile("/proc/net/tcp6"); err == nil && pid != 0 {
-		return pid, nil
-	}
-
-	return 0, nil
+	return next
 }

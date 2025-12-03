@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/k8shell-io/common/pkg/gapi"
 )
@@ -93,15 +94,18 @@ type Apps map[string]*AppSpec
 
 // AppSpec represents the specification for an application
 type AppSpec struct {
-	Name         string
-	Listen       int      `yaml:"listen" json:"listen"`
-	Version      string   `yaml:"version" json:"version"`
-	Deps         []string `yaml:"deps,omitempty" json:"deps,omitempty"`
-	Binary       string   `yaml:"binary" json:"binary"`
-	VersionCmd   []string `yaml:"versionCmd,omitempty" json:"versionCmd,omitempty"`
-	VersionRegex string   `yaml:"versionRegex,omitempty" json:"versionRegex,omitempty"`
-	Install      string   `yaml:"install" json:"install"`
-	Start        []string `yaml:"start" json:"start"`
+	Name              string        `yaml:"name"`
+	Version           string        `yaml:"version"`
+	Deps              []string      `yaml:"deps,omitempty"`
+	Binary            string        `yaml:"binary"`
+	VersionCmd        []string      `yaml:"versionCmd,omitempty"`
+	VersionRegex      string        `yaml:"versionRegex,omitempty"`
+	Install           string        `yaml:"install"`
+	Start             []string      `yaml:"start"`
+	Listen            int           `yaml:"listen"`
+	RestartPolicy     string        `yaml:"restartPolicy"`
+	MaxRestartBackoff time.Duration `yaml:"maxRestartBackoff"`
+	InstallAsRoot     bool          `yaml:"installAsRoot"`
 }
 
 // Group represents a group in the workspace
