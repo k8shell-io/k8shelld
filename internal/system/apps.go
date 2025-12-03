@@ -316,8 +316,28 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 			continue
 		}
 
-		if sup == nil || sup.pid == 0 {
+		if sup == nil {
+			pid, err := GetPIDListeningOnPort(app.Listen)
+			if err != nil {
+				m.logger.Warn().Msgf("Could not get PID for app %s, port %d: %v", name, app.Listen, err)
+				status.Status = "STOPPED"
+				res = append(res, status)
+				continue
+			}
+
+			if pid != 0 {
+				status.Status = "INVALID"
+				res = append(res, status)
+				continue
+			}
+
 			status.Status = "STOPPED"
+			res = append(res, status)
+			continue
+		}
+
+		if sup.pid == 0 {
+			status.Status = "PENDING"
 			res = append(res, status)
 			continue
 		}
@@ -426,14 +446,17 @@ func (m *AppManager) superviseApp(name string, app *config.AppSpec, st *supervis
 		default:
 		}
 
-		// Optional: you can keep or remove this TCP check; it’s no longer needed for PID
 		if app.Listen != 0 {
 			addr := fmt.Sprintf("127.0.0.1:%d", app.Listen)
 			if conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond); err == nil {
 				_ = conn.Close()
-				log.Debug().Msg("app already running, supervisor sleeping")
-				time.Sleep(5 * time.Second)
-				continue
+
+				log.Error().Msgf("port %d already in use by another process", app.Listen)
+
+				m.mu.Lock()
+				delete(m.supervisors, name)
+				m.mu.Unlock()
+				return
 			}
 		}
 
