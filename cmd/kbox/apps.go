@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"strings"
 
@@ -13,7 +12,6 @@ import (
 )
 
 func appsRowColorFunc(row map[string]interface{}) string {
-	// Dim non‑running / invalid apps
 	if status, ok := row["status"].(string); ok && status != "RUNNING" {
 		return "\033[2m"
 	}
@@ -128,18 +126,17 @@ var AppsInstallCmd = &cobra.Command{
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			fmt.Printf("Install failed for %q: %s (%s)\n", name, resp.Status, string(body))
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("Install failed for %s: %v\n", name, err)
 			return
 		}
-
-		fmt.Printf("App %q installation started.\n", name)
+		fmt.Printf("App %s installation started.\n", name)
 	},
 }
 
-var AppsLogCmd = &cobra.Command{
-	Use:   "log <app-name>",
+var AppsLogsCmd = &cobra.Command{
+	Use:   "logs <app-name>",
 	Short: "Show latest logs",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -151,26 +148,21 @@ var AppsLogCmd = &cobra.Command{
 			logType = "install"
 		}
 
-		url := fmt.Sprintf("/apps/%s/log?logType=%s", name, logType)
+		url := fmt.Sprintf("/apps/%s/logs?logType=%s", name, logType)
 		if follow {
 			url += "&follow=true"
 		}
 
 		resp, err := client.MakeRequest("GET", url, nil, nil)
 		if err != nil {
-			fmt.Printf("Failed to get %s log for app %q: %v\n", logType, name, err)
+			fmt.Printf("Failed to get %s logs for app %s: %v\n", logType, name, err)
 			return
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			if resp.StatusCode == http.StatusNotFound {
-				fmt.Printf("No %s log found for app %q\n", logType, name)
-				return
-			}
-			fmt.Printf("Failed to get %s log for %q: %s (%s)\n",
-				logType, name, resp.Status, strings.TrimSpace(string(body)))
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("Failed to get %s logs for app %s: %v\n", logType, name, err)
 			return
 		}
 
@@ -183,7 +175,7 @@ var AppsLogCmd = &cobra.Command{
 
 		body, _ := io.ReadAll(resp.Body)
 		if len(body) == 0 {
-			fmt.Printf("No %s log found for app %q\n", logType, name)
+			fmt.Printf("No %s log available for app %s.\n", logType, name)
 			return
 		}
 
@@ -207,13 +199,13 @@ var AppsRunCmd = &cobra.Command{
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			fmt.Printf("Start failed for %q: %s (%s)\n", name, resp.Status, string(body))
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("Start failed for %s: %v\n", name, err)
 			return
 		}
 
-		fmt.Printf("App %q started (supervised by k8shelld).\n", name)
+		fmt.Printf("App %s started.\n", name)
 	},
 }
 
@@ -234,13 +226,14 @@ var AppsStopCmd = &cobra.Command{
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			fmt.Printf("Stop failed for %q: %s (%s)\n", name, resp.Status, string(body))
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("Stop failed for %s: %v\n", name, err)
 			return
 		}
 
-		fmt.Printf("App %q stopped.\n", name)
+		fmt.Printf("App %s stopped.\n", name)
+
 	},
 }
 
@@ -251,12 +244,12 @@ func init() {
 	AppsLsCmd.Flags().Bool("no-ansi", false, "Disable ANSI color output")
 
 	AppsInstallCmd.Flags().BoolP("force", "", false, "Reinstall the app if already installed")
-	AppsLogCmd.Flags().BoolP("follow", "f", false, "Follow log output")
-	AppsLogCmd.Flags().BoolP("install", "i", false, "Show install log")
+	AppsLogsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
+	AppsLogsCmd.Flags().BoolP("install", "i", false, "Show install log")
 
 	AppsCmd.AddCommand(AppsLsCmd)
 	AppsCmd.AddCommand(AppsInstallCmd)
-	AppsCmd.AddCommand(AppsLogCmd)
+	AppsCmd.AddCommand(AppsLogsCmd)
 	AppsCmd.AddCommand(AppsRunCmd)
 	AppsCmd.AddCommand(AppsStopCmd)
 }
