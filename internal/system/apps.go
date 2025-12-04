@@ -37,19 +37,21 @@ type supervisorState struct {
 
 // AppManager manages the lifecycle of applications defined in the configuration
 type AppManager struct {
-	apps       *config.Apps
-	user       config.User
-	stateDir   string
-	logger     *zerolog.Logger
-	mu         sync.Mutex
-	installing map[string]bool
-	testMode   bool
+	apps        *config.Apps
+	user        config.User
+	stateDir    string
+	logger      *zerolog.Logger
+	mu          sync.Mutex
+	installing  map[string]bool
+	testMode    bool
+	procWatcher *ProcessWatcher
 
 	supervisors map[string]*supervisorState
 }
 
 // NewAppManager creates a new AppManager instance
-func NewAppManager(apps *config.Apps, user config.User, stateDir string, testMode bool) (*AppManager, error) {
+func NewAppManager(apps *config.Apps, user config.User, procWatcher *ProcessWatcher, stateDir string,
+	testMode bool) (*AppManager, error) {
 	log := logger.NewLogger("app-manager")
 
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
@@ -59,6 +61,7 @@ func NewAppManager(apps *config.Apps, user config.User, stateDir string, testMod
 	return &AppManager{
 		apps:        apps,
 		user:        user,
+		procWatcher: procWatcher,
 		stateDir:    stateDir,
 		logger:      log,
 		testMode:    testMode,
@@ -220,6 +223,10 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start install script: %w", err)
+	}
+
+	if !m.testMode {
+		m.procWatcher.AddPIDIgnoreTerminate(cmd.Process.Pid)
 	}
 
 	if err := cmd.Wait(); err != nil {
@@ -550,6 +557,10 @@ func (m *AppManager) superviseApp(name string, app *config.AppSpec, st *supervis
 			time.Sleep(backoff)
 			backoff = nextBackoff(backoff, maxBackoff)
 			continue
+		}
+
+		if !m.testMode {
+			m.procWatcher.AddPIDIgnoreTerminate(cmd.Process.Pid)
 		}
 
 		m.mu.Lock()
