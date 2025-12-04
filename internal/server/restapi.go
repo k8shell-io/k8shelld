@@ -85,7 +85,7 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/validate", a.ValidateK8shelldFile).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/apps", a.GetAppsStatus).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/apps/{name}/install", a.InstallApp).Methods(http.MethodPost)
-	apiRouter.HandleFunc("/apps/{name}/install/log", a.GetAppInstallLog).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/apps/{name}/log", a.GetAppLog).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/apps/{name}/start", a.StartApp).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/apps/{name}/stop", a.StopApp).Methods(http.MethodPost)
 
@@ -120,7 +120,7 @@ func (a *RESTService) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/logs" ||
 			strings.HasPrefix(r.URL.Path, "/api/v1/apps/") &&
-				strings.HasSuffix(r.URL.Path, "/install/log") {
+				strings.HasSuffix(r.URL.Path, "/log") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -431,10 +431,20 @@ func (a *RESTService) InstallApp(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// GetAppInstallLog returns (and can stream) the latest install log for a given app.
-func (a *RESTService) GetAppInstallLog(w http.ResponseWriter, r *http.Request) {
+// GetAppLog returns (and can stream) the latest log for a given app.
+func (a *RESTService) GetAppLog(w http.ResponseWriter, r *http.Request) {
 	if a.server == nil || a.server.appManager == nil {
 		http.Error(w, "App manager not available", http.StatusInternalServerError)
+		return
+	}
+
+	logType := r.URL.Query().Get("logType")
+	if logType == "" {
+		logType = "app"
+	}
+
+	if logType != "app" && logType != "install" {
+		http.Error(w, "Invalid 'logType' parameter, must be 'app' or 'install'", http.StatusBadRequest)
 		return
 	}
 
@@ -446,23 +456,22 @@ func (a *RESTService) GetAppInstallLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	follow := r.URL.Query().Get("follow") == "true"
-
-	logPath, err := a.server.appManager.GetLastInstallLogPath(name)
+	logPath, err := a.server.appManager.GetLastLogPath(name, logType)
 	if err != nil {
-		a.logger.Error().Msgf("Failed to get install log path for app %s: %v", name, err)
-		http.Error(w, fmt.Sprintf("Failed to get install log: %v", err), http.StatusInternalServerError)
+		a.logger.Error().Msgf("Failed to get %s log path for app %s: %v", logType, name, err)
+		http.Error(w, fmt.Sprintf("Failed to get %s log: %v", logType, err), http.StatusInternalServerError)
 		return
 	}
 	if logPath == "" {
-		http.Error(w, "No install log found", http.StatusNotFound)
+		http.Error(w, "No "+logType+" log found", http.StatusNotFound)
 		return
 	}
 
 	if !follow {
 		logText, err := os.ReadFile(logPath)
 		if err != nil {
-			a.logger.Error().Msgf("Failed to read install log for app %s: %v", name, err)
-			http.Error(w, fmt.Sprintf("Failed to read install log: %v", err), http.StatusInternalServerError)
+			a.logger.Error().Msgf("Failed to read %s log for app %s: %v", logType, name, err)
+			http.Error(w, fmt.Sprintf("Failed to read %s log: %v", logType, err), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -470,11 +479,11 @@ func (a *RESTService) GetAppInstallLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !a.server.appManager.IsInstalling(name) {
+	if logType == "install" && !a.server.appManager.IsInstalling(name) || logType == "app" && !a.server.appManager.IsRunning(name) {
 		logText, err := os.ReadFile(logPath)
 		if err != nil {
-			a.logger.Error().Msgf("Failed to read install log for app %s: %v", name, err)
-			http.Error(w, fmt.Sprintf("Failed to read install log: %v", err), http.StatusInternalServerError)
+			a.logger.Error().Msgf("Failed to read %s log for app %s: %v", logType, name, err)
+			http.Error(w, fmt.Sprintf("Failed to read %s log: %v", logType, err), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -513,7 +522,8 @@ func (a *RESTService) GetAppInstallLog(w http.ResponseWriter, r *http.Request) {
 			}
 			if err != nil {
 				if err == io.EOF {
-					if !a.server.appManager.IsInstalling(name) {
+					if logType == "install" && !a.server.appManager.IsInstalling(name) ||
+						logType == "app" && !a.server.appManager.IsRunning(name) {
 						return
 					}
 					time.Sleep(200 * time.Millisecond)

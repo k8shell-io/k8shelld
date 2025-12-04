@@ -56,17 +56,13 @@ var appsTableFields = []table.FieldDefinition{
 
 var AppsCmd = &cobra.Command{
 	Use:   "apps",
-	Short: "Display apps managed by k8shelld",
-	Long: `Display apps managed by k8shelld and their status.
+	Short: "Manage k8shelld apps",
+	Long:  `Manage k8shelld apps.`,
+}
 
-Fields:
-- name: App name
-- status: INSTALLED, INSTALLING, RUNNING, STOPPED
-- version: Detected version (if any)
-- port: TCP port the app is expected to listen on (0 if none)
-- pid: PID of detected running process (0 if not found)
-- age: How long the process has been running (e.g. "3m12s")
-- restarts: Number of times the app has been restarted by k8shelld`,
+var AppsLsCmd = &cobra.Command{
+	Use:   "ls",
+	Short: "List apps and their status",
 	Run: func(cmd *cobra.Command, args []string) {
 		url := "/apps"
 		resp, err := client.MakeRequest("GET", url, nil, nil)
@@ -144,20 +140,25 @@ var AppsInstallCmd = &cobra.Command{
 
 var AppsLogCmd = &cobra.Command{
 	Use:   "log <app-name>",
-	Short: "Show latest install log for an app",
+	Short: "Show latest logs",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		name := args[0]
+		install, _ := cmd.Flags().GetBool("install")
 		follow, _ := cmd.Flags().GetBool("follow")
+		logType := "app"
+		if install {
+			logType = "install"
+		}
 
-		url := fmt.Sprintf("/apps/%s/install/log", name)
+		url := fmt.Sprintf("/apps/%s/log?logType=%s", name, logType)
 		if follow {
-			url += "?follow=true"
+			url += "&follow=true"
 		}
 
 		resp, err := client.MakeRequest("GET", url, nil, nil)
 		if err != nil {
-			fmt.Printf("Failed to get install log for app %q: %v\n", name, err)
+			fmt.Printf("Failed to get %s log for app %q: %v\n", logType, name, err)
 			return
 		}
 		defer resp.Body.Close()
@@ -165,24 +166,24 @@ var AppsLogCmd = &cobra.Command{
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode == http.StatusNotFound {
-				fmt.Printf("No install log found for app %q\n", name)
+				fmt.Printf("No %s log found for app %q\n", logType, name)
 				return
 			}
-			fmt.Printf("Failed to get install log for %q: %s (%s)\n",
-				name, resp.Status, strings.TrimSpace(string(body)))
+			fmt.Printf("Failed to get %s log for %q: %s (%s)\n",
+				logType, name, resp.Status, strings.TrimSpace(string(body)))
 			return
 		}
 
 		if follow {
 			if _, err := io.Copy(os.Stdout, resp.Body); err != nil {
-				fmt.Printf("Error while streaming log: %v\n", err)
+				fmt.Printf("Error while streaming %s log: %v\n", logType, err)
 			}
 			return
 		}
 
 		body, _ := io.ReadAll(resp.Body)
 		if len(body) == 0 {
-			fmt.Printf("No install log found for app %q\n", name)
+			fmt.Printf("No %s log found for app %q\n", logType, name)
 			return
 		}
 
@@ -190,7 +191,6 @@ var AppsLogCmd = &cobra.Command{
 	},
 }
 
-// NEW: run app (start supervising / running)
 var AppsRunCmd = &cobra.Command{
 	Use:   "run <app-name>",
 	Short: "Start and supervise an app",
@@ -245,14 +245,16 @@ var AppsStopCmd = &cobra.Command{
 }
 
 func init() {
-	AppsCmd.Flags().String("sort", "name",
+	AppsLsCmd.Flags().String("sort", "name",
 		"Comma separated list of fields to sort by, prefix with '-' for descending order")
-	AppsCmd.Flags().Bool("json", false, "Display output in JSON format")
-	AppsCmd.Flags().Bool("no-ansi", false, "Disable ANSI color output")
+	AppsLsCmd.Flags().Bool("json", false, "Display output in JSON format")
+	AppsLsCmd.Flags().Bool("no-ansi", false, "Disable ANSI color output")
 
 	AppsInstallCmd.Flags().BoolP("force", "", false, "Reinstall the app if already installed")
-	AppsLogCmd.Flags().BoolP("follow", "f", false, "Follow log output (stream while install is running)")
+	AppsLogCmd.Flags().BoolP("follow", "f", false, "Follow log output")
+	AppsLogCmd.Flags().BoolP("install", "i", false, "Show install log")
 
+	AppsCmd.AddCommand(AppsLsCmd)
 	AppsCmd.AddCommand(AppsInstallCmd)
 	AppsCmd.AddCommand(AppsLogCmd)
 	AppsCmd.AddCommand(AppsRunCmd)

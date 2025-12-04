@@ -17,6 +17,7 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // AppState represents the persistent state of an application
@@ -183,14 +184,14 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		return fmt.Errorf("write install script: %w", err)
 	}
 
-	outPath := filepath.Join(appStateDir, fmt.Sprintf("install-%s.out", time.Now().Format("20060102-150405")))
-	outFile, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	logFile, logPath, err := m.OpenLogFile(name, "install")
 	if err != nil {
-		return fmt.Errorf("open install out log: %w", err)
+		log.Error().Err(err).Msg("failed to open install log file")
+		return fmt.Errorf("open install log file: %w", err)
 	}
-	defer outFile.Close()
+	defer logFile.Close()
 
-	m.logger.Debug().Msgf("running install script for %s, output=%s, as_root=%v", name, outPath, app.InstallAsRoot)
+	m.logger.Debug().Msgf("running install script for %s, output=%s, as_root=%v", name, logPath, app.InstallAsRoot)
 
 	cmd := exec.CommandContext(ctx, "/bin/sh", scriptPath)
 	if app.InstallAsRoot && !m.testMode {
@@ -212,8 +213,8 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		}
 	}
 
-	cmd.Stdout = outFile
-	cmd.Stderr = outFile
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start install script: %w", err)
@@ -367,10 +368,41 @@ func (m *AppManager) IsInstalling(name string) bool {
 	return m.installing[name]
 }
 
-// GetLastInstallLog returns the contents of the most recent install log.
+// IsRunning reports whether the app is currently supervised and has a running PID.
+func (m *AppManager) IsRunning(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	s, ok := m.supervisors[name]
+	if !ok {
+		return false
+	}
+	return s.pid != 0
+}
+
+// GetLogFilePath returns a new log file path for the app of the given type.
+func (m *AppManager) OpenLogFile(name string, logType string) (*os.File, string, error) {
+	appStateDir := filepath.Join(m.stateDir, name)
+	if err := os.MkdirAll(appStateDir, 0o755); err != nil {
+		return nil, "", err
+	}
+
+	timestamp := time.Now()
+	logPath := filepath.Join(appStateDir,
+		fmt.Sprintf("%s-%s-%s.out", name, logType, timestamp.Format("20060102-150405")))
+
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return logFile, logPath, nil
+}
+
+// GetLastlLog returns the contents of the most recent log of the given type for the app.
 // If no log exists, it returns empty string and no error.
-func (m *AppManager) GetLastInstallLog(name string) (string, error) {
-	path, err := m.GetLastInstallLogPath(name)
+func (m *AppManager) GetLastLog(name string, logType string) (string, error) {
+	path, err := m.GetLastLogPath(name, logType)
 	if err != nil {
 		return "", err
 	}
@@ -379,14 +411,18 @@ func (m *AppManager) GetLastInstallLog(name string) (string, error) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("read install log: %w", err)
+		return "", fmt.Errorf("read %s log: %w", logType, err)
 	}
 	return string(data), nil
 }
 
-// GetLastInstallLogPath returns the path of the most recent install log for the app.
-// If no install log exists, it returns an empty string and no error.
-func (m *AppManager) GetLastInstallLogPath(name string) (string, error) {
+// GetLastLogPath returns the path of the most recent log for the app of the given type.
+// If no log exists, it returns an empty string and no error.
+func (m *AppManager) GetLastLogPath(name string, logType string) (string, error) {
+	if logType != "install" && logType != "app" {
+		return "", fmt.Errorf("invalid log type: %s", logType)
+	}
+
 	appStateDir := filepath.Join(m.stateDir, name)
 
 	entries, err := os.ReadDir(appStateDir)
@@ -394,7 +430,7 @@ func (m *AppManager) GetLastInstallLogPath(name string) (string, error) {
 		if os.IsNotExist(err) {
 			return "", nil
 		}
-		return "", fmt.Errorf("read app state dir: %w", err)
+		return "", fmt.Errorf("read %s state dir: %w", logType, err)
 	}
 
 	var latestName string
@@ -405,11 +441,11 @@ func (m *AppManager) GetLastInstallLogPath(name string) (string, error) {
 			continue
 		}
 		n := e.Name()
-		if !strings.HasPrefix(n, "install-") || !strings.HasSuffix(n, ".out") {
+		if !strings.HasPrefix(n, fmt.Sprintf("%s-%s-", name, logType)) || !strings.HasSuffix(n, ".out") {
 			continue
 		}
 
-		ts := strings.TrimSuffix(strings.TrimPrefix(n, "install-"), ".out")
+		ts := strings.TrimSuffix(strings.TrimPrefix(n, fmt.Sprintf("%s-%s-", name, logType)), ".out")
 		t, err := time.Parse("20060102-150405", ts)
 		if err != nil {
 			continue
@@ -426,6 +462,7 @@ func (m *AppManager) GetLastInstallLogPath(name string) (string, error) {
 	return filepath.Join(appStateDir, latestName), nil
 }
 
+// superviseApp runs the supervisor loop for the app.
 func (m *AppManager) superviseApp(name string, app *config.AppSpec, st *supervisorState) {
 	log := m.logger.With().Str("app", name).Logger()
 
@@ -491,12 +528,12 @@ func (m *AppManager) superviseApp(name string, app *config.AppSpec, st *supervis
 			}
 		}
 
-		logPath := filepath.Join(m.stateDir, fmt.Sprintf("%s.log", name))
-		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		logFile, _, err := m.OpenLogFile(name, "app")
 		if err != nil {
-			log.Error().Err(err).Msg("open log file failed")
+			log.Error().Err(err).Msg("failed to open app log file")
 			return
 		}
+		defer logFile.Close()
 
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
@@ -504,7 +541,6 @@ func (m *AppManager) superviseApp(name string, app *config.AppSpec, st *supervis
 		log.Info().Msg("starting app process")
 		startTime := time.Now()
 		if err := cmd.Start(); err != nil {
-			_ = logFile.Close()
 			log.Error().Err(err).Msg("failed to start app")
 			if !m.shouldRestart(policy, false) {
 				return
@@ -513,7 +549,6 @@ func (m *AppManager) superviseApp(name string, app *config.AppSpec, st *supervis
 			backoff = nextBackoff(backoff, maxBackoff)
 			continue
 		}
-		_ = logFile.Close()
 
 		m.mu.Lock()
 		if cur, ok := m.supervisors[name]; ok {
