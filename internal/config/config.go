@@ -95,8 +95,6 @@ type Apps map[string]*AppSpec
 // AppSpec represents the specification for an application
 type AppSpec struct {
 	Name              string        `yaml:"name"`
-	Version           string        `yaml:"version"`
-	Deps              []string      `yaml:"deps,omitempty"`
 	Binary            string        `yaml:"binary"`
 	VersionCmd        []string      `yaml:"versionCmd,omitempty"`
 	VersionRegex      string        `yaml:"versionRegex,omitempty"`

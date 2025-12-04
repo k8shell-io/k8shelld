@@ -64,16 +64,6 @@ func NewAppManager(apps *config.Apps, user config.User, stateDir string, testMod
 	}, nil
 }
 
-// checkDeps verifies that all dependencies for the app are present in the system.
-func (m *AppManager) checkDeps(app *config.AppSpec) error {
-	for _, dep := range app.Deps {
-		if _, err := exec.LookPath(dep); err != nil {
-			return fmt.Errorf("missing dependency %q: %w", dep, err)
-		}
-	}
-	return nil
-}
-
 // detectInstalled checks if the app is installed and returns its current version.
 func (m *AppManager) isInstalled(ctx context.Context, app *config.AppSpec) (bool, string, error) {
 	if app.Binary == "" {
