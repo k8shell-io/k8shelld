@@ -20,6 +20,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const APPS_DIR = "/var/log/k8shelld/apps"
+
 // AppState represents the persistent state of an application
 type AppState struct {
 	InstalledVersion string    `json:"installed_version"`

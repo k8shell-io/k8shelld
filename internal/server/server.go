@@ -69,7 +69,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		return nil, fmt.Errorf("error creating REST API: %v", err)
 	}
 
-	s.appManager, err = system.NewAppManager(cfg.Apps, cfg.User, "/tmp/k8shelld-apps", s.testMode)
+	s.appManager, err = system.NewAppManager(cfg.Apps, cfg.User, system.APPS_DIR, s.testMode)
 	if err != nil {
 		return nil, fmt.Errorf("error creating App Manager: %v", err)
 	}
