@@ -66,10 +66,15 @@ func NewAppManager(apps *config.Apps, user config.User, stateDir string, testMod
 
 // detectInstalled checks if the app is installed and returns its current version.
 func (m *AppManager) isInstalled(ctx context.Context, app *config.AppSpec) (bool, string, error) {
-	if app.Binary == "" {
+
+	env := CreateEnvVars([]string{}, m.user.HomeDir)
+	binaryPath := expandEnv(app.Binary, env)
+
+	if binaryPath == "" {
 		return false, "", fmt.Errorf("app binary not specified")
 	}
-	if _, err := os.Stat(app.Binary); err != nil {
+
+	if _, err := os.Stat(binaryPath); err != nil {
 		if os.IsNotExist(err) {
 			return false, "", nil
 		}
@@ -77,7 +82,10 @@ func (m *AppManager) isInstalled(ctx context.Context, app *config.AppSpec) (bool
 	}
 
 	if len(app.VersionCmd) > 0 {
-		cmd := exec.CommandContext(ctx, app.VersionCmd[0], app.VersionCmd[1:]...)
+		env := CreateEnvVars([]string{}, m.user.HomeDir)
+		versionCmd := expandEnvSlice(app.VersionCmd, env)
+
+		cmd := exec.CommandContext(ctx, versionCmd[0], versionCmd[1:]...)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return true, "", fmt.Errorf("version command failed: %w (output=%s)", err, string(out))
@@ -163,13 +171,15 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		return fmt.Errorf("no install script provided for %s", app.Name)
 	}
 
+	env := CreateEnvVars([]string{}, m.user.HomeDir)
+	installScript := expandEnv(app.Install, env)
 	appStateDir := filepath.Join(m.stateDir, name)
 	if err := os.MkdirAll(appStateDir, 0o755); err != nil {
 		return fmt.Errorf("create app state dir: %w", err)
 	}
 
 	scriptPath := filepath.Join(appStateDir, "install.sh")
-	if err := os.WriteFile(scriptPath, []byte(app.Install), 0o755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(installScript), 0o755); err != nil {
 		return fmt.Errorf("write install script: %w", err)
 	}
 
@@ -460,10 +470,12 @@ func (m *AppManager) superviseApp(name string, app *config.AppSpec, st *supervis
 			return
 		}
 
-		log.Debug().Msgf("starting app with command: %v", app.Start)
+		env := CreateEnvVars([]string{}, m.user.HomeDir)
+		startCmd := expandEnvSlice(app.Start, env)
+		log.Debug().Msgf("starting app with command: %v", startCmd)
 
-		cmd := exec.Command(app.Start[0], app.Start[1:]...)
-		cmd.Env = CreateEnvVars([]string{}, m.user.HomeDir)
+		cmd := exec.Command(startCmd[0], startCmd[1:]...)
+		cmd.Env = env
 		cmd.Dir = m.user.HomeDir
 
 		log.Debug().Msgf("env: %v", cmd.Env)
@@ -581,4 +593,38 @@ func nextBackoff(current, max time.Duration) time.Duration {
 		return max
 	}
 	return next
+}
+
+// expandEnvWith expands ${VAR} and ${VAR:default} using a provided env slice.
+func expandEnv(s string, env []string) string {
+	lookup := func(key string) string {
+		for _, e := range env {
+			if !strings.HasPrefix(e, key+"=") {
+				continue
+			}
+			return strings.TrimPrefix(e, key+"=")
+		}
+		return ""
+	}
+
+	return os.Expand(s, func(key string) string {
+		parts := strings.SplitN(key, ":", 2)
+		name := parts[0]
+		val := lookup(name)
+		if val != "" {
+			return val
+		}
+		if len(parts) == 2 {
+			return parts[1]
+		}
+		return ""
+	})
+}
+
+func expandEnvSlice(in []string, env []string) []string {
+	out := make([]string, len(in))
+	for i, v := range in {
+		out[i] = expandEnv(v, env)
+	}
+	return out
 }

@@ -59,18 +59,16 @@ apps:
     versionCmd: ["/usr/bin/code-server", "--version"]
     versionRegex: "^([0-9]+\\.[0-9]+\\.[0-9]+)"  
     install: |
-      #!/usr/bin/env sh
       curl -fsSL https://code-server.dev/install.sh | sh
     start: ["/usr/bin/code-server", "--auth=none", "--bind-addr=127.0.0.1:8080", "."]
     restartPolicy: always
     
   jupyter:
     listen: 8888
-    binary: "/home/bruckins/.local/bin/jupyter-lab"
-    versionCmd: ["/home/bruckins/.local/bin/jupyter-lab", "--version"]
+    binary: "${HOME}/.local/bin/jupyter-lab"
+    versionCmd: ["${HOME}/.local/bin/jupyter-lab", "--version"]
     versionRegex: "^([0-9]+\\.[0-9]+\\.[0-9]+)"
     install: |
-      #!/usr/bin/env bash
       pip install jupyter
-    start: ["/home/bruckins/.local/bin/jupyter-lab", "--ip=0.0.0.0", "--port=8888", "--no-browser"]
+    start: ["${HOME}/.local/bin/jupyter-lab", "--ip=0.0.0.0", "--port=8888", "--no-browser"]
     restartPolicy: always
