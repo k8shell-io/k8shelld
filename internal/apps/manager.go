@@ -424,10 +424,9 @@ func (m *AppManager) Start(ctx context.Context, name string) error {
 		return fmt.Errorf("app %s is currently installing", name)
 	}
 
-	m.mu.Lock()
-	if _, ok := m.supervisors[name]; ok {
-		m.mu.Unlock()
-		return nil
+	_, ok = m.GetSupervisor(name)
+	if ok {
+		return fmt.Errorf("app %s is already running", name)
 	}
 
 	s := m.newSupervisor(app)
@@ -443,23 +442,17 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 		return fmt.Errorf("app %s not found", name)
 	}
 
-	m.mu.Lock()
-	st, ok := m.supervisors[name]
-	m.mu.Unlock()
-
+	sup, ok := m.GetSupervisor(name)
 	if !ok {
 		return fmt.Errorf("app %s is not running", name)
 	}
 
-	close(st.stopCh)
+	close(sup.stopCh)
 	timeout := time.After(APP_STOP_TIMEOUT)
 
 	for {
-		m.mu.Lock()
-		_, stillRunning := m.supervisors[name]
-		m.mu.Unlock()
-
-		if !stillRunning {
+		_, ok := m.GetSupervisor(name)
+		if !ok {
 			return nil
 		}
 
