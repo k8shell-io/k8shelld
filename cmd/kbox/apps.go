@@ -128,7 +128,7 @@ var AppsInstallCmd = &cobra.Command{
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {
-			fmt.Printf("Install failed for %s: %v\n", name, err)
+			fmt.Printf("%v\n", err)
 			return
 		}
 		fmt.Printf("App %s installation started.\n", name)
@@ -162,7 +162,7 @@ var AppsLogsCmd = &cobra.Command{
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {
-			fmt.Printf("Failed to get %s logs for app %s: %v\n", logType, name, err)
+			fmt.Printf("%v\n", err)
 			return
 		}
 
@@ -201,7 +201,7 @@ var AppsRunCmd = &cobra.Command{
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {
-			fmt.Printf("Start failed for %s: %v\n", name, err)
+			fmt.Printf("%v\n", err)
 			return
 		}
 
@@ -228,7 +228,7 @@ var AppsStopCmd = &cobra.Command{
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {
-			fmt.Printf("Stop failed for %s: %v\n", name, err)
+			fmt.Printf("%v\n", err)
 			return
 		}
 
