@@ -85,7 +85,7 @@ func (m *AppManager) ensureAppStateDir(name string) (string, error) {
 }
 
 // isAppInstalled checks if the app is installed by verifying the binary exists.
-func (m *AppManager) isAppInstalled(ctx context.Context, name string) (bool, error) {
+func (m *AppManager) isAppInstalled(name string) (bool, error) {
 	app, ok := (*m.apps)[name]
 	if !ok {
 		return false, fmt.Errorf("app %s not found", name)
@@ -175,21 +175,21 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 	}
 
 	out := b.Bytes()
-
-	re, err := regexp.Compile(app.VersionRegex)
+	version, err := m.parseVersion(app.VersionRegex, string(out))
 	if err != nil {
-		return "", fmt.Errorf("invalid versionRegex: %w", err)
-	}
-	matches := re.FindStringSubmatch(string(out))
-	if len(matches) >= 2 {
-		return matches[1], nil
+		return "", err
 	}
 
-	return strings.TrimSpace(string(out)), nil
+	return version, nil
 }
 
 // appVersionFromFile reads the installed version of the app from the version file.
 func (m *AppManager) appVersionFromFile(name string) (string, error) {
+	app, ok := (*m.apps)[name]
+	if !ok {
+		return "", fmt.Errorf("app %s not found", name)
+	}
+
 	appStateDir, err := m.ensureAppStateDir(name)
 	if err != nil {
 		return "", err
@@ -199,7 +199,13 @@ func (m *AppManager) appVersionFromFile(name string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read version file: %w", err)
 	}
-	return strings.TrimSpace(string(data)), nil
+
+	version, err := m.parseVersion(app.VersionRegex, string(data))
+	if err != nil {
+		return "", fmt.Errorf("parse version from file: %w", err)
+	}
+
+	return version, nil
 }
 
 // writeAppVersionToFile writes the installed version of the app to the version file.
@@ -216,7 +222,7 @@ func (m *AppManager) writeAppVersionToFile(name, version string) error {
 }
 
 func (m *AppManager) ensureAppVersion(name string) (string, error) {
-	installed, err := m.isAppInstalled(context.Background(), name)
+	installed, err := m.isAppInstalled(name)
 	if err != nil {
 		return "", fmt.Errorf("cannot check if %s is installed: %w", name, err)
 	}
@@ -240,6 +246,18 @@ func (m *AppManager) ensureAppVersion(name string) (string, error) {
 	return version, nil
 }
 
+func (m *AppManager) parseVersion(versionRegex, str string) (string, error) {
+	re, err := regexp.Compile(versionRegex)
+	if err != nil {
+		return "", fmt.Errorf("invalid versionRegex: %w", err)
+	}
+	matches := re.FindStringSubmatch(str)
+	if len(matches) >= 2 {
+		return matches[1], nil
+	}
+	return "", fmt.Errorf("cannot parse version from string using regex %s: %s", versionRegex, str)
+}
+
 // InstallAsync starts installation in the background.
 // If an install for this app is already running, it returns an error.
 func (m *AppManager) InstallAsync(ctx context.Context, name string, force bool) error {
@@ -255,7 +273,7 @@ func (m *AppManager) InstallAsync(ctx context.Context, name string, force bool) 
 	}
 
 	if !force {
-		installed, err := m.isAppInstalled(ctx, name)
+		installed, err := m.isAppInstalled(name)
 		if err != nil {
 			m.mu.Unlock()
 			return fmt.Errorf("cannot check if %s is installed: %w", name, err)
@@ -360,10 +378,11 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		return fmt.Errorf("install script failed: %w", err)
 	}
 
+	time.Sleep(1 * time.Second)
 	appVersion, err := m.appVersion(ctx, name)
 	if err != nil {
-		m.logger.Warn().Msgf("could not determine app version before install: %v", err)
-		appVersion = "ERROR"
+		m.logger.Warn().Msgf("could not determine app version after install: %v", err)
+		appVersion = "INVALID"
 	}
 
 	err = m.writeAppVersionToFile(name, appVersion)
@@ -382,7 +401,7 @@ func (m *AppManager) EnsureRunning(ctx context.Context, name string) error {
 		return fmt.Errorf("app %s not found", name)
 	}
 
-	isInstalled, err := m.isAppInstalled(ctx, name)
+	isInstalled, err := m.isAppInstalled(name)
 	if err != nil {
 		return fmt.Errorf("cannot check if %s is installed: %w", name, err)
 	}
@@ -459,7 +478,7 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 		}
 
 		version := "N/A"
-		installed, err := m.isAppInstalled(ctx, name)
+		installed, err := m.isAppInstalled(name)
 		if err != nil {
 			m.logger.Warn().Msgf("could not check if app %s is installed: %v", name, err)
 			installed = false
