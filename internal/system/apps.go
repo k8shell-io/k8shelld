@@ -95,13 +95,17 @@ func (m *AppManager) isInstalled(ctx context.Context, app *config.AppSpec) (bool
 		if app.InstallAsRoot && !m.testMode {
 			cmd.Env = os.Environ()
 			cmd.Dir = "/root"
+			cmd.SysProcAttr = &syscall.SysProcAttr{
+				Setsid:    true,
+				Pdeathsig: 0,
+			}
 		} else {
 			cmd.Env = CreateEnvVars([]string{}, m.user.HomeDir)
 			cmd.Dir = m.user.HomeDir
-
 			if !m.testMode {
 				cmd.SysProcAttr = &syscall.SysProcAttr{
-					Setsid: true,
+					Setsid:    true,
+					Pdeathsig: 0,
 					Credential: &syscall.Credential{
 						Uid:    uint32(m.user.Uid),
 						Gid:    uint32(m.user.Gid),
