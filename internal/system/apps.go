@@ -24,7 +24,7 @@ import (
 const (
 	APPS_DIR            = "/usr/local/k8shell/apps"
 	VERSION_CMD_TIMEOUT = 10 * time.Second
-	APP_STOP_TIMEOUT    = 10 * time.Second
+	APP_STOP_TIMEOUT    = 5 * time.Second
 )
 
 // AppState represents the persistent state of an application
