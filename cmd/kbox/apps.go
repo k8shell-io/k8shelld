@@ -25,7 +25,7 @@ var appsTableFields = []table.FieldDefinition{
 	},
 	{
 		Name:  "status",
-		Width: 9,
+		Width: 10,
 	},
 	{
 		Name:  "version",
@@ -33,12 +33,12 @@ var appsTableFields = []table.FieldDefinition{
 	},
 	{
 		Name:  "port",
-		Width: 7,
+		Width: 5,
 		Type:  table.Int,
 	},
 	{
 		Name:  "pid",
-		Width: 7,
+		Width: 5,
 		Type:  table.Int,
 	},
 	{
