@@ -107,7 +107,7 @@ func (m *AppManager) isAppInstalled(ctx context.Context, name string) (bool, err
 }
 
 // appVersion retrieves the installed version of the app by running the version command.
-func (m *AppManager) appVersion(ctx context.Context, name string, timeout time.Duration) (string, error) {
+func (m *AppManager) appVersion(ctx context.Context, name string) (string, error) {
 	app, ok := (*m.apps)[name]
 	if !ok {
 		return "", fmt.Errorf("app %s not found", name)
@@ -156,6 +156,7 @@ func (m *AppManager) appVersion(ctx context.Context, name string, timeout time.D
 		m.procWatcher.AddPIDIgnoreTerminate(cmd.Process.Pid)
 	}
 
+	timeout := VERSION_CMD_TIMEOUT
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()
@@ -211,6 +212,31 @@ func (m *AppManager) writeAppVersionToFile(name, version string) error {
 		return fmt.Errorf("write version file: %w", err)
 	}
 	return nil
+}
+
+func (m *AppManager) ensureAppVersion(name string) (string, error) {
+	installed, err := m.isAppInstalled(context.Background(), name)
+	if err != nil {
+		return "", fmt.Errorf("cannot check if %s is installed: %w", name, err)
+	}
+	if !installed {
+		return "", fmt.Errorf("app %s is not installed", name)
+	}
+
+	version, err := m.appVersionFromFile(name)
+	if err != nil {
+		m.logger.Warn().Msgf("could not read version file for app %s: %v", name, err)
+		ctx := context.Background()
+		version, err = m.appVersion(ctx, name)
+		if err != nil {
+			return "", fmt.Errorf("cannot determine version for %s: %w", name, err)
+		}
+		err = m.writeAppVersionToFile(name, version)
+		if err != nil {
+			m.logger.Warn().Msgf("could not write version file for app %s: %v", name, err)
+		}
+	}
+	return version, nil
 }
 
 // InstallAsync starts installation in the background.
@@ -333,7 +359,7 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		return fmt.Errorf("install script failed: %w", err)
 	}
 
-	appVersion, err := m.appVersion(ctx, name, VERSION_CMD_TIMEOUT)
+	appVersion, err := m.appVersion(ctx, name)
 	if err != nil {
 		m.logger.Warn().Msgf("could not determine app version before install: %v", err)
 		appVersion = "ERROR"
@@ -640,6 +666,12 @@ func (m *AppManager) superviseApp(name string, app *config.AppSpec, st *supervis
 			log.Error().Msg("no start command configured")
 			return
 		}
+
+		appVersion, err := m.ensureAppVersion(name)
+		if err != nil {
+			log.Warn().Msgf("could not determine app version before start: %v", err)
+		}
+		log.Debug().Msgf("starting app version %s", appVersion)
 
 		env := CreateEnvVars([]string{}, m.user.HomeDir)
 		startCmd := expandEnvSlice(app.Start, env)
