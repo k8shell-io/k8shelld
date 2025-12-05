@@ -615,7 +615,7 @@ func (a *RESTService) StartApp(w http.ResponseWriter, r *http.Request) {
 
 	a.logger.Info().Msgf("Starting app %s", name)
 
-	if err := a.server.appManager.EnsureRunning(r.Context(), name); err != nil {
+	if err := a.server.appManager.Start(r.Context(), name); err != nil {
 		a.logger.Error().Msgf("Failed to start app %s: %v", name, err)
 		http.Error(w, fmt.Sprintf("Failed to start app: %v", err), http.StatusBadRequest)
 		return

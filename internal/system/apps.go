@@ -395,7 +395,7 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 
 // EnsureRunning starts a supervisor for the given app if not already running.
 // The supervisor will keep the app running according to its RestartPolicy.
-func (m *AppManager) EnsureRunning(ctx context.Context, name string) error {
+func (m *AppManager) Start(ctx context.Context, name string) error {
 	app, ok := (*m.apps)[name]
 	if !ok {
 		return fmt.Errorf("app %s not found", name)
