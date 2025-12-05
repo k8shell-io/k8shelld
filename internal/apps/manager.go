@@ -49,6 +49,11 @@ func NewAppManager(apps *config.Apps, user config.User, procWatcher *system.Proc
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
 
+	// The app struct does not have the Name field set from the config
+	for name, app := range *apps {
+		app.Name = name
+	}
+
 	return &AppManager{
 		apps:        apps,
 		user:        user,
