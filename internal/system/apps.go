@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	APPS_DIR            = "/var/log/k8shelld/apps"
+	APPS_DIR            = "/usr/local/k8shell/apps"
 	VERSION_CMD_TIMEOUT = 10 * time.Second
 	APP_STOP_TIMEOUT    = 10 * time.Second
 )
@@ -55,11 +55,11 @@ type AppManager struct {
 }
 
 // NewAppManager creates a new AppManager instance
-func NewAppManager(apps *config.Apps, user config.User, procWatcher *ProcessWatcher, stateDir string,
+func NewAppManager(apps *config.Apps, user config.User, procWatcher *ProcessWatcher,
 	testMode bool) (*AppManager, error) {
 	log := logger.NewLogger("app-manager")
 
-	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+	if err := os.MkdirAll(APPS_DIR, 0o755); err != nil {
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
 
@@ -67,7 +67,7 @@ func NewAppManager(apps *config.Apps, user config.User, procWatcher *ProcessWatc
 		apps:        apps,
 		user:        user,
 		procWatcher: procWatcher,
-		stateDir:    stateDir,
+		stateDir:    APPS_DIR,
 		logger:      log,
 		testMode:    testMode,
 		installing:  make(map[string]bool),
