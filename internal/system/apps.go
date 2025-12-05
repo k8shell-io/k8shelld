@@ -1,6 +1,7 @@
 package system
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -20,7 +21,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const APPS_DIR = "/var/log/k8shelld/apps"
+const (
+	APPS_DIR            = "/var/log/k8shelld/apps"
+	VERSION_CMD_TIMEOUT = 10 * time.Second
+)
 
 // AppState represents the persistent state of an application
 type AppState struct {
@@ -70,76 +74,149 @@ func NewAppManager(apps *config.Apps, user config.User, procWatcher *ProcessWatc
 	}, nil
 }
 
-// detectInstalled checks if the app is installed and returns its current version.
-func (m *AppManager) isInstalled(ctx context.Context, app *config.AppSpec) (bool, string, error) {
+// ensureStateDir ensures the state directory for the app exists.
+func (m *AppManager) ensureAppStateDir(name string) (string, error) {
+	stateDir := filepath.Join(m.stateDir, name)
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return "", fmt.Errorf("create state dir for %s: %w", name, err)
+	}
+	return stateDir, nil
+}
+
+// isAppInstalled checks if the app is installed by verifying the binary exists.
+func (m *AppManager) isAppInstalled(ctx context.Context, name string) (bool, error) {
+	app, ok := (*m.apps)[name]
+	if !ok {
+		return false, fmt.Errorf("app %s not found", name)
+	}
 
 	env := CreateEnvVars([]string{}, m.user.HomeDir)
 	binaryPath := expandEnv(app.Binary, env)
-
 	if binaryPath == "" {
-		return false, "", fmt.Errorf("app binary not specified")
+		return false, fmt.Errorf("app binary not specified")
 	}
 
 	if _, err := os.Stat(binaryPath); err != nil {
 		if os.IsNotExist(err) {
-			return false, "", nil
+			return false, nil
 		}
-		return false, "", err
+		return false, fmt.Errorf("stat binary: %w", err)
 	}
 
-	if len(app.VersionCmd) > 0 {
-		env := CreateEnvVars([]string{}, m.user.HomeDir)
-		versionCmd := expandEnvSlice(app.VersionCmd, env)
+	return true, nil
+}
 
-		cmd := exec.CommandContext(ctx, versionCmd[0], versionCmd[1:]...)
-		if app.InstallAsRoot && !m.testMode {
-			cmd.Env = os.Environ()
-			cmd.Dir = "/root"
+// appVersion retrieves the installed version of the app by running the version command.
+func (m *AppManager) appVersion(ctx context.Context, name string, timeout time.Duration) (string, error) {
+	app, ok := (*m.apps)[name]
+	if !ok {
+		return "", fmt.Errorf("app %s not found", name)
+	}
+
+	if len(app.VersionCmd) == 0 || app.VersionRegex == "" {
+		return "", fmt.Errorf("version command or version regex not configured for app %s", name)
+	}
+
+	env := CreateEnvVars([]string{}, m.user.HomeDir)
+	versionCmd := expandEnvSlice(app.VersionCmd, env)
+
+	cmd := exec.CommandContext(ctx, versionCmd[0], versionCmd[1:]...)
+	if app.InstallAsRoot && !m.testMode {
+		cmd.Env = os.Environ()
+		cmd.Dir = "/root"
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Setsid:    true,
+			Pdeathsig: 0,
+		}
+	} else {
+		cmd.Env = CreateEnvVars([]string{}, m.user.HomeDir)
+		cmd.Dir = m.user.HomeDir
+		if !m.testMode {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setsid:    true,
 				Pdeathsig: 0,
-			}
-		} else {
-			cmd.Env = CreateEnvVars([]string{}, m.user.HomeDir)
-			cmd.Dir = m.user.HomeDir
-			if !m.testMode {
-				cmd.SysProcAttr = &syscall.SysProcAttr{
-					Setsid:    true,
-					Pdeathsig: 0,
-					Credential: &syscall.Credential{
-						Uid:    uint32(m.user.Uid),
-						Gid:    uint32(m.user.Gid),
-						Groups: GetSupplementalGroups(m.user.Username),
-					},
-				}
+				Credential: &syscall.Credential{
+					Uid:    uint32(m.user.Uid),
+					Gid:    uint32(m.user.Gid),
+					Groups: GetSupplementalGroups(m.user.Username),
+				},
 			}
 		}
-
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return true, "", fmt.Errorf("version command failed: %w (output=%s)", err, string(out))
-		}
-		if app.VersionRegex != "" {
-			re, err := regexp.Compile(app.VersionRegex)
-			if err != nil {
-				return true, "", fmt.Errorf("invalid versionRegex: %w", err)
-			}
-			matches := re.FindStringSubmatch(string(out))
-			if len(matches) >= 2 {
-				return true, matches[1], nil
-			}
-		}
-		// fallback: use whole trimmed output as version
-		return true, strings.TrimSpace(string(out)), nil
 	}
 
-	return true, "", nil
+	var b bytes.Buffer
+	cmd.Stdout = &b
+	cmd.Stderr = &b
+
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("start version command: %w", err)
+	}
+
+	if !m.testMode {
+		m.procWatcher.AddPIDIgnoreTerminate(cmd.Process.Pid)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			return "", fmt.Errorf("version command failed: %w", err)
+		}
+	case <-time.After(timeout):
+		_ = cmd.Process.Kill()
+		<-done
+		return "", fmt.Errorf("version command timed out after %s", timeout)
+	}
+
+	out := b.Bytes()
+
+	re, err := regexp.Compile(app.VersionRegex)
+	if err != nil {
+		return "", fmt.Errorf("invalid versionRegex: %w", err)
+	}
+	matches := re.FindStringSubmatch(string(out))
+	if len(matches) >= 2 {
+		return matches[1], nil
+	}
+
+	return strings.TrimSpace(string(out)), nil
+}
+
+// appVersionFromFile reads the installed version of the app from the version file.
+func (m *AppManager) appVersionFromFile(name string) (string, error) {
+	appStateDir, err := m.ensureAppStateDir(name)
+	if err != nil {
+		return "", err
+	}
+	versionFilePath := filepath.Join(appStateDir, fmt.Sprintf("%s-version.txt", name))
+	data, err := os.ReadFile(versionFilePath)
+	if err != nil {
+		return "", fmt.Errorf("read version file: %w", err)
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+// writeAppVersionToFile writes the installed version of the app to the version file.
+func (m *AppManager) writeAppVersionToFile(name, version string) error {
+	appStateDir, err := m.ensureAppStateDir(name)
+	if err != nil {
+		return err
+	}
+	versionFilePath := filepath.Join(appStateDir, fmt.Sprintf("%s-version.txt", name))
+	if err := os.WriteFile(versionFilePath, []byte(version), 0o644); err != nil {
+		return fmt.Errorf("write version file: %w", err)
+	}
+	return nil
 }
 
 // InstallAsync starts installation in the background.
 // If an install for this app is already running, it returns an error.
 func (m *AppManager) InstallAsync(ctx context.Context, name string, force bool) error {
-	app, ok := (*m.apps)[name]
+	_, ok := (*m.apps)[name]
 	if !ok {
 		return fmt.Errorf("app %s not found", name)
 	}
@@ -151,7 +228,7 @@ func (m *AppManager) InstallAsync(ctx context.Context, name string, force bool) 
 	}
 
 	if !force {
-		installed, _, err := m.isInstalled(ctx, app)
+		installed, err := m.isAppInstalled(ctx, name)
 		if err != nil {
 			m.mu.Unlock()
 			return fmt.Errorf("cannot check if %s is installed: %w", name, err)
@@ -202,14 +279,25 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 
 	env := CreateEnvVars([]string{}, m.user.HomeDir)
 	installScript := expandEnv(app.Install, env)
-	appStateDir := filepath.Join(m.stateDir, name)
-	if err := os.MkdirAll(appStateDir, 0o755); err != nil {
-		return fmt.Errorf("create app state dir: %w", err)
+	appStateDir, err := m.ensureAppStateDir(name)
+	if err != nil {
+		return err
 	}
 
-	scriptPath := filepath.Join(appStateDir, "install.sh")
+	scriptPath := filepath.Join(appStateDir, fmt.Sprintf("%s-install.sh", name))
 	if err := os.WriteFile(scriptPath, []byte(installScript), 0o755); err != nil {
 		return fmt.Errorf("write install script: %w", err)
+	}
+
+	appVersion, err := m.appVersion(ctx, name, VERSION_CMD_TIMEOUT)
+	if err != nil {
+		m.logger.Warn().Msgf("could not determine app version before install: %v", err)
+		appVersion = "unknown"
+	}
+
+	err = m.writeAppVersionToFile(name, appVersion)
+	if err != nil {
+		m.logger.Warn().Msgf("could not write app version before install: %v", err)
 	}
 
 	logFile, logPath, err := m.OpenLogFile(name, "install")
@@ -334,12 +422,22 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 			status.Restarts = s.restartCount
 		}
 
-		installed, version, err := m.isInstalled(ctx, app)
+		version := "N/A"
+		installed, err := m.isAppInstalled(ctx, name)
 		if err != nil {
-			m.logger.Warn().Msgf("detectInstalled(%s) failed: %v", name, err)
+			m.logger.Warn().Msgf("could not check if app %s is installed: %v", name, err)
 			installed = false
-			version = ""
 		}
+
+		if installed {
+			v, err := m.appVersionFromFile(name)
+			if err != nil {
+				m.logger.Warn().Msgf("could not read version file for app %s: %v", name, err)
+				v = "unknown"
+			}
+			version = v
+		}
+
 		status.Version = version
 
 		if installing {
@@ -414,8 +512,8 @@ func (m *AppManager) IsRunning(name string) bool {
 
 // GetLogFilePath returns a new log file path for the app of the given type.
 func (m *AppManager) OpenLogFile(name string, logType string) (*os.File, string, error) {
-	appStateDir := filepath.Join(m.stateDir, name)
-	if err := os.MkdirAll(appStateDir, 0o755); err != nil {
+	appStateDir, err := m.ensureAppStateDir(name)
+	if err != nil {
 		return nil, "", err
 	}
 
@@ -455,7 +553,10 @@ func (m *AppManager) GetLastLogPath(name string, logType string) (string, error)
 		return "", fmt.Errorf("invalid log type: %s", logType)
 	}
 
-	appStateDir := filepath.Join(m.stateDir, name)
+	appStateDir, err := m.ensureAppStateDir(name)
+	if err != nil {
+		return "", err
+	}
 
 	entries, err := os.ReadDir(appStateDir)
 	if err != nil {
