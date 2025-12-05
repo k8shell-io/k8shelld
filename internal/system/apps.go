@@ -289,17 +289,6 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		return fmt.Errorf("write install script: %w", err)
 	}
 
-	appVersion, err := m.appVersion(ctx, name, VERSION_CMD_TIMEOUT)
-	if err != nil {
-		m.logger.Warn().Msgf("could not determine app version before install: %v", err)
-		appVersion = "unknown"
-	}
-
-	err = m.writeAppVersionToFile(name, appVersion)
-	if err != nil {
-		m.logger.Warn().Msgf("could not write app version before install: %v", err)
-	}
-
 	logFile, logPath, err := m.OpenLogFile(name, "install")
 	if err != nil {
 		log.Error().Err(err).Msg("failed to open install log file")
@@ -343,6 +332,18 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("install script failed: %w", err)
 	}
+
+	appVersion, err := m.appVersion(ctx, name, VERSION_CMD_TIMEOUT)
+	if err != nil {
+		m.logger.Warn().Msgf("could not determine app version before install: %v", err)
+		appVersion = "unknown"
+	}
+
+	err = m.writeAppVersionToFile(name, appVersion)
+	if err != nil {
+		m.logger.Warn().Msgf("could not write app version before install: %v", err)
+	}
+
 	return nil
 }
 
