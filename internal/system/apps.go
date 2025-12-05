@@ -24,6 +24,7 @@ import (
 const (
 	APPS_DIR            = "/var/log/k8shelld/apps"
 	VERSION_CMD_TIMEOUT = 10 * time.Second
+	APP_STOP_TIMEOUT    = 10 * time.Second
 )
 
 // AppState represents the persistent state of an application
@@ -381,6 +382,14 @@ func (m *AppManager) EnsureRunning(ctx context.Context, name string) error {
 		return fmt.Errorf("app %s not found", name)
 	}
 
+	isInstalled, err := m.isAppInstalled(ctx, name)
+	if err != nil {
+		return fmt.Errorf("cannot check if %s is installed: %w", name, err)
+	}
+	if !isInstalled {
+		return fmt.Errorf("app %s is not installed", name)
+	}
+
 	m.mu.Lock()
 	if _, ok := m.supervisors[name]; ok {
 		m.mu.Unlock()
@@ -410,7 +419,7 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 	m.mu.Unlock()
 
 	if !ok {
-		return nil
+		return fmt.Errorf("app %s is not running", name)
 	}
 
 	close(st.stopCh)
@@ -418,8 +427,8 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(2 * time.Second):
-		return nil
+	case <-time.After(APP_STOP_TIMEOUT):
+		return fmt.Errorf("timeout waiting for app %s to stop", name)
 	}
 }
 
