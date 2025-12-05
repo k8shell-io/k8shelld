@@ -92,6 +92,25 @@ func (m *AppManager) isInstalled(ctx context.Context, app *config.AppSpec) (bool
 		versionCmd := expandEnvSlice(app.VersionCmd, env)
 
 		cmd := exec.CommandContext(ctx, versionCmd[0], versionCmd[1:]...)
+		if app.InstallAsRoot && !m.testMode {
+			cmd.Env = os.Environ()
+			cmd.Dir = "/root"
+		} else {
+			cmd.Env = CreateEnvVars([]string{}, m.user.HomeDir)
+			cmd.Dir = m.user.HomeDir
+
+			if !m.testMode {
+				cmd.SysProcAttr = &syscall.SysProcAttr{
+					Setsid: true,
+					Credential: &syscall.Credential{
+						Uid:    uint32(m.user.Uid),
+						Gid:    uint32(m.user.Gid),
+						Groups: GetSupplementalGroups(m.user.Username),
+					},
+				}
+			}
+		}
+
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return true, "", fmt.Errorf("version command failed: %w (output=%s)", err, string(out))
