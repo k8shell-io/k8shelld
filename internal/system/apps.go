@@ -409,6 +409,11 @@ func (m *AppManager) EnsureRunning(ctx context.Context, name string) error {
 		return fmt.Errorf("app %s is not installed", name)
 	}
 
+	installing := m.installing[name]
+	if installing {
+		return fmt.Errorf("app %s is currently installing", name)
+	}
+
 	m.mu.Lock()
 	if _, ok := m.supervisors[name]; ok {
 		m.mu.Unlock()
