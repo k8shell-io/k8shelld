@@ -1,10 +1,9 @@
-package system
+package apps
 
 import (
 	"bytes"
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
+	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -27,19 +27,6 @@ const (
 	APP_STOP_TIMEOUT    = 5 * time.Second
 )
 
-// AppState represents the persistent state of an application
-type AppState struct {
-	InstalledVersion string    `json:"installed_version"`
-	LastInstalledAt  time.Time `json:"last_installed_at"`
-}
-
-// supervisorState holds the state for a supervisor
-type supervisorState struct {
-	stopCh       chan struct{}
-	restartCount int
-	pid          int
-}
-
 // AppManager manages the lifecycle of applications defined in the configuration
 type AppManager struct {
 	apps        *config.Apps
@@ -49,13 +36,12 @@ type AppManager struct {
 	mu          sync.Mutex
 	installing  map[string]bool
 	testMode    bool
-	procWatcher *ProcessWatcher
-
-	supervisors map[string]*supervisorState
+	procWatcher *system.ProcessWatcher
+	supervisors map[string]*AppSupervisor
 }
 
 // NewAppManager creates a new AppManager instance
-func NewAppManager(apps *config.Apps, user config.User, procWatcher *ProcessWatcher,
+func NewAppManager(apps *config.Apps, user config.User, procWatcher *system.ProcessWatcher,
 	testMode bool) (*AppManager, error) {
 	log := logger.NewLogger("app-manager")
 
@@ -71,8 +57,32 @@ func NewAppManager(apps *config.Apps, user config.User, procWatcher *ProcessWatc
 		logger:      log,
 		testMode:    testMode,
 		installing:  make(map[string]bool),
-		supervisors: make(map[string]*supervisorState),
+		supervisors: make(map[string]*AppSupervisor),
 	}, nil
+}
+
+// newSupervisor creates a new AppSupervisor for the given app and adds it to the manager.
+func (m *AppManager) newSupervisor(app *config.AppSpec) *AppSupervisor {
+	s := NewAppSupervisor(m, app)
+	m.mu.Lock()
+	m.supervisors[app.Name] = s
+	m.mu.Unlock()
+	return s
+}
+
+// deleteSupervisor removes the supervisor for the given app from the manager.
+func (m *AppManager) deleteSupervisor(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.supervisors, name)
+}
+
+// GetSupervisor returns the supervisor for the given app, if it exists.
+func (m *AppManager) GetSupervisor(name string) (*AppSupervisor, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.supervisors[name]
+	return s, ok
 }
 
 // ensureStateDir ensures the state directory for the app exists.
@@ -91,7 +101,7 @@ func (m *AppManager) isAppInstalled(name string) (bool, error) {
 		return false, fmt.Errorf("app %s not found", name)
 	}
 
-	env := CreateEnvVars([]string{}, m.user.HomeDir)
+	env := system.CreateEnvVars([]string{}, m.user.HomeDir)
 	binaryPath := expandEnv(app.Binary, env)
 	if binaryPath == "" {
 		return false, fmt.Errorf("app binary not specified")
@@ -118,7 +128,7 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 		return "", fmt.Errorf("version command or version regex not configured for app %s", name)
 	}
 
-	env := CreateEnvVars([]string{}, m.user.HomeDir)
+	env := system.CreateEnvVars([]string{}, m.user.HomeDir)
 	versionCmd := expandEnvSlice(app.VersionCmd, env)
 
 	cmd := exec.CommandContext(ctx, versionCmd[0], versionCmd[1:]...)
@@ -130,7 +140,7 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 			Pdeathsig: 0,
 		}
 	} else {
-		cmd.Env = CreateEnvVars([]string{}, m.user.HomeDir)
+		cmd.Env = system.CreateEnvVars([]string{}, m.user.HomeDir)
 		cmd.Dir = m.user.HomeDir
 		if !m.testMode {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -139,7 +149,7 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 				Credential: &syscall.Credential{
 					Uid:    uint32(m.user.Uid),
 					Gid:    uint32(m.user.Gid),
-					Groups: GetSupplementalGroups(m.user.Username),
+					Groups: system.GetSupplementalGroups(m.user.Username),
 				},
 			}
 		}
@@ -322,7 +332,7 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		return fmt.Errorf("no install script provided for %s", app.Name)
 	}
 
-	env := CreateEnvVars([]string{}, m.user.HomeDir)
+	env := system.CreateEnvVars([]string{}, m.user.HomeDir)
 	installScript := expandEnv(app.Install, env)
 	appStateDir, err := m.ensureAppStateDir(name)
 	if err != nil {
@@ -348,7 +358,7 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		cmd.Env = os.Environ()
 		cmd.Dir = "/root"
 	} else {
-		cmd.Env = CreateEnvVars([]string{}, m.user.HomeDir)
+		cmd.Env = system.CreateEnvVars([]string{}, m.user.HomeDir)
 		cmd.Dir = m.user.HomeDir
 
 		if !m.testMode {
@@ -357,7 +367,7 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 				Credential: &syscall.Credential{
 					Uid:    uint32(m.user.Uid),
 					Gid:    uint32(m.user.Gid),
-					Groups: GetSupplementalGroups(m.user.Username),
+					Groups: system.GetSupplementalGroups(m.user.Username),
 				},
 			}
 		}
@@ -420,13 +430,8 @@ func (m *AppManager) Start(ctx context.Context, name string) error {
 		return nil
 	}
 
-	st := &supervisorState{
-		stopCh: make(chan struct{}),
-	}
-	m.supervisors[name] = st
-	m.mu.Unlock()
-
-	go m.superviseApp(name, app, st)
+	s := m.newSupervisor(app)
+	go s.supervise()
 
 	return nil
 }
@@ -487,10 +492,9 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 			Restarts: 0,
 		}
 
-		var sup *supervisorState
-		if s, ok := m.supervisors[name]; ok {
-			sup = s
-			status.Restarts = s.restartCount
+		sup, ok := m.GetSupervisor(name)
+		if ok {
+			status.Restarts = sup.restartCount
 		}
 
 		version := "N/A"
@@ -524,7 +528,7 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 		}
 
 		if sup == nil {
-			pid, err := GetPIDListeningOnPort(app.Listen)
+			pid, err := system.GetPIDListeningOnPort(app.Listen)
 			if err != nil {
 				m.logger.Warn().Msgf("Could not get PID for app %s, port %d: %v", name, app.Listen, err)
 				status.Status = "STOPPED"
@@ -552,7 +556,7 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 		status.PID = sup.pid
 		status.Status = "RUNNING"
 
-		if dur, err := GetProcessRunningTime(sup.pid); err == nil {
+		if dur, err := system.GetProcessRunningTime(sup.pid); err == nil {
 			status.Age = dur.Truncate(time.Second).String()
 		}
 
@@ -664,159 +668,6 @@ func (m *AppManager) GetLastLogPath(name string, logType string) (string, error)
 		return "", nil
 	}
 	return filepath.Join(appStateDir, latestName), nil
-}
-
-// superviseApp runs the supervisor loop for the app.
-func (m *AppManager) superviseApp(name string, app *config.AppSpec, st *supervisorState) {
-	log := m.logger.With().Str("app", name).Logger()
-
-	policy := strings.ToLower(app.RestartPolicy)
-	if policy == "" {
-		policy = "never"
-	}
-	maxBackoff := app.MaxRestartBackoff
-	if maxBackoff <= 0 {
-		maxBackoff = 5 * time.Minute
-	}
-
-	backoff := 1 * time.Second
-
-	for {
-		select {
-		case <-st.stopCh:
-			log.Info().Msg("supervisor stopped")
-			m.mu.Lock()
-			delete(m.supervisors, name)
-			m.mu.Unlock()
-			return
-		default:
-		}
-
-		if app.Listen != 0 {
-			addr := fmt.Sprintf("127.0.0.1:%d", app.Listen)
-			if conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond); err == nil {
-				_ = conn.Close()
-
-				log.Error().Msgf("port %d already in use by another process", app.Listen)
-
-				m.mu.Lock()
-				delete(m.supervisors, name)
-				m.mu.Unlock()
-				return
-			}
-		}
-
-		if len(app.Start) == 0 {
-			log.Error().Msg("no start command configured")
-			return
-		}
-
-		appVersion, err := m.ensureAppVersion(name)
-		if err != nil {
-			log.Warn().Msgf("could not determine app version before start: %v", err)
-		}
-		log.Debug().Msgf("starting app version %s", appVersion)
-
-		env := CreateEnvVars([]string{}, m.user.HomeDir)
-		startCmd := expandEnvSlice(app.Start, env)
-		log.Debug().Msgf("starting app with command: %v", startCmd)
-
-		cmd := exec.Command(startCmd[0], startCmd[1:]...)
-		cmd.Env = env
-		cmd.Dir = m.user.HomeDir
-
-		log.Debug().Msgf("env: %v", cmd.Env)
-
-		if !m.testMode {
-			cmd.SysProcAttr = &syscall.SysProcAttr{
-				Setsid: true,
-				Credential: &syscall.Credential{
-					Uid:    uint32(m.user.Uid),
-					Gid:    uint32(m.user.Gid),
-					Groups: GetSupplementalGroups(m.user.Username),
-				},
-			}
-		}
-
-		logFile, _, err := m.OpenLogFile(name, "app")
-		if err != nil {
-			log.Error().Err(err).Msg("failed to open app log file")
-			return
-		}
-		defer logFile.Close()
-
-		cmd.Stdout = logFile
-		cmd.Stderr = logFile
-
-		log.Info().Msg("starting app process")
-		startTime := time.Now()
-		if err := cmd.Start(); err != nil {
-			log.Error().Err(err).Msg("failed to start app")
-			if !m.shouldRestart(policy, false) {
-				return
-			}
-			time.Sleep(backoff)
-			backoff = nextBackoff(backoff, maxBackoff)
-			continue
-		}
-
-		if !m.testMode {
-			m.procWatcher.AddPIDIgnoreTerminate(cmd.Process.Pid)
-		}
-
-		m.mu.Lock()
-		if cur, ok := m.supervisors[name]; ok {
-			cur.pid = cmd.Process.Pid
-		}
-		m.mu.Unlock()
-
-		doneCh := make(chan error, 1)
-		go func() {
-			doneCh <- cmd.Wait()
-		}()
-
-		select {
-		case <-st.stopCh:
-			log.Info().Msg("stop requested, killing app process")
-			_ = cmd.Process.Kill()
-			<-doneCh
-			m.mu.Lock()
-			delete(m.supervisors, name)
-			m.mu.Unlock()
-			return
-
-		case err := <-doneCh:
-			m.mu.Lock()
-			if cur, ok := m.supervisors[name]; ok {
-				cur.pid = 0
-			}
-			m.mu.Unlock()
-
-			uptime := time.Since(startTime)
-			if err != nil {
-				log.Warn().Err(err).Dur("uptime", uptime).Msg("app exited with error")
-				if !m.shouldRestart(policy, true) {
-					return
-				}
-				log.Debug().Msgf("app will be restarted after failure, backoff=%v", backoff)
-			} else {
-				log.Info().Dur("uptime", uptime).Msg("app exited normally")
-				if !m.shouldRestart(policy, false) {
-					return
-				}
-				log.Debug().Msgf("app will be restarted after normal exit, backoff=%v", backoff)
-			}
-
-			m.mu.Lock()
-			if cur, ok := m.supervisors[name]; ok {
-				cur.restartCount++
-			}
-			m.mu.Unlock()
-
-			time.Sleep(backoff)
-			backoff = nextBackoff(backoff, maxBackoff)
-		}
-	}
 }
 
 // shouldRestart decides based on restart policy and exit condition.

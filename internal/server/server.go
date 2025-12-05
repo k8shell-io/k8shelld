@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/api-server/pkg/client"
+	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
@@ -31,7 +32,7 @@ type Server struct {
 	pprof       bool
 	sysInfo     *system.SystemInfo
 	sysInfoMu   sync.Mutex
-	appManager  *system.AppManager
+	appManager  *apps.AppManager
 }
 
 func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
@@ -69,7 +70,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		return nil, fmt.Errorf("error creating REST API: %v", err)
 	}
 
-	s.appManager, err = system.NewAppManager(cfg.Apps, cfg.User, s.procWatcher, s.testMode)
+	s.appManager, err = apps.NewAppManager(cfg.Apps, cfg.User, s.procWatcher, s.testMode)
 	if err != nil {
 		return nil, fmt.Errorf("error creating App Manager: %v", err)
 	}
