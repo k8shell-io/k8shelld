@@ -447,12 +447,23 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 	}
 
 	close(st.stopCh)
+	timeout := time.After(APP_STOP_TIMEOUT)
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(APP_STOP_TIMEOUT):
-		return fmt.Errorf("timeout waiting for app %s to stop", name)
+	for {
+		m.mu.Lock()
+		_, stillRunning := m.supervisors[name]
+		m.mu.Unlock()
+
+		if !stillRunning {
+			return nil
+		}
+
+		select {
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for app %s to stop", name)
+		default:
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
 }
 
