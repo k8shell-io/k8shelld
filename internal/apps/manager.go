@@ -492,7 +492,7 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 			Restarts: 0,
 		}
 
-		sup, ok := m.GetSupervisor(name)
+		sup, ok := m.supervisors[name]
 		if ok {
 			status.Restarts = sup.restartCount
 		}
