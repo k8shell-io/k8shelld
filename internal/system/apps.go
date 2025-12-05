@@ -336,7 +336,7 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 	appVersion, err := m.appVersion(ctx, name, VERSION_CMD_TIMEOUT)
 	if err != nil {
 		m.logger.Warn().Msgf("could not determine app version before install: %v", err)
-		appVersion = "unknown"
+		appVersion = "ERROR"
 	}
 
 	err = m.writeAppVersionToFile(name, appVersion)
@@ -434,7 +434,7 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 			v, err := m.appVersionFromFile(name)
 			if err != nil {
 				m.logger.Warn().Msgf("could not read version file for app %s: %v", name, err)
-				v = "unknown"
+				v = "UNKNOWN"
 			}
 			version = v
 		}
