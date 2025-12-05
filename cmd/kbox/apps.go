@@ -62,8 +62,7 @@ var AppsLsCmd = &cobra.Command{
 	Use:   "ls",
 	Short: "List apps and their status",
 	Run: func(cmd *cobra.Command, args []string) {
-		url := "/apps"
-		resp, err := client.MakeRequest("GET", url, nil, nil)
+		resp, err := client.MakeRequest("GET", "/apps", nil, nil)
 		if err != nil {
 			fmt.Printf("Failed to get apps status: %v\n", err)
 			return
@@ -183,8 +182,8 @@ var AppsLogsCmd = &cobra.Command{
 	},
 }
 
-var AppsRunCmd = &cobra.Command{
-	Use:   "run <app-name>",
+var AppsStartCmd = &cobra.Command{
+	Use:   "start <app-name>",
 	Short: "Start and supervise an app",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -250,6 +249,6 @@ func init() {
 	AppsCmd.AddCommand(AppsLsCmd)
 	AppsCmd.AddCommand(AppsInstallCmd)
 	AppsCmd.AddCommand(AppsLogsCmd)
-	AppsCmd.AddCommand(AppsRunCmd)
+	AppsCmd.AddCommand(AppsStartCmd)
 	AppsCmd.AddCommand(AppsStopCmd)
 }
