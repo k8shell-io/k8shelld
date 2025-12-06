@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/gorilla/mux"
 	commonModels "github.com/k8shell-io/common/pkg/models"
+	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
@@ -392,8 +394,12 @@ func (a *RESTService) GetAppsStatus(w http.ResponseWriter, r *http.Request) {
 
 	statuses, err := a.server.appManager.ListAppStatus(r.Context())
 	if err != nil {
-		a.logger.Error().Msgf("Failed to list app status: %v", err)
-		http.Error(w, "Failed to list app status", http.StatusInternalServerError)
+		if errors.Is(err, apps.ErrNoAppsConfigured) {
+			http.Error(w, "No apps configured", http.StatusNotFound)
+		} else {
+			a.logger.Error().Msgf("Failed to list app status: %v", err)
+			http.Error(w, "Failed to list app status", http.StatusInternalServerError)
+		}
 		return
 	}
 

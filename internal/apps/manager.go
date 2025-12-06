@@ -27,6 +27,9 @@ const (
 	APP_STOP_TIMEOUT    = 5 * time.Second
 )
 
+var ErrAppNotFound = fmt.Errorf("app not found")
+var ErrNoAppsConfigured = fmt.Errorf("no apps configured")
+
 // AppManager manages the lifecycle of applications defined in the configuration
 type AppManager struct {
 	apps        *config.Apps
@@ -103,11 +106,11 @@ func (m *AppManager) ensureAppStateDir(name string) (string, error) {
 
 func (m *AppManager) GetApp(name string) (*config.AppSpec, error) {
 	if m.apps == nil {
-		return nil, fmt.Errorf("no apps configured")
+		return nil, ErrNoAppsConfigured
 	}
 	app, ok := (*m.apps)[name]
 	if !ok {
-		return nil, fmt.Errorf("app %s not found", name)
+		return nil, fmt.Errorf("app %s %w", name, ErrAppNotFound)
 	}
 	return app, nil
 }
@@ -486,7 +489,7 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 // ListAppStatus returns app status including port, PID and running time, without internal state.
 func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, error) {
 	if m.apps == nil {
-		return nil, fmt.Errorf("no apps configured")
+		return nil, ErrNoAppsConfigured
 	}
 
 	m.mu.Lock()
