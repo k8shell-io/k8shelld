@@ -297,6 +297,10 @@ func (m *AppManager) InstallAsync(ctx context.Context, name string, force bool) 
 		return err
 	}
 
+	if _, ok := m.supervisors[name]; ok {
+		return fmt.Errorf("cannot install %s while it is running", name)
+	}
+
 	m.mu.Lock()
 	if m.installing[name] {
 		m.mu.Unlock()
@@ -314,24 +318,11 @@ func (m *AppManager) InstallAsync(ctx context.Context, name string, force bool) 
 			return fmt.Errorf("app %s is already installed", name)
 		}
 	}
-
-	if _, ok := m.supervisors[name]; ok {
-		m.mu.Unlock()
-		return fmt.Errorf("cannot install %s while it is running", name)
-	}
-
-	m.installing[name] = true
 	m.mu.Unlock()
 
 	asyncCtx := context.Background()
 
 	go func() {
-		defer func() {
-			m.mu.Lock()
-			delete(m.installing, name)
-			m.mu.Unlock()
-		}()
-
 		if err := m.runInstall(asyncCtx, name); err != nil {
 			m.logger.Error().Msgf("install of %s failed: %v", name, err)
 		} else {
@@ -352,6 +343,16 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 	if app.Install == "" {
 		return fmt.Errorf("no install script provided for %s", app.Name)
 	}
+
+	m.mu.Lock()
+	m.installing[name] = true
+	m.mu.Unlock()
+
+	defer func() {
+		m.mu.Lock()
+		delete(m.installing, name)
+		m.mu.Unlock()
+	}()
 
 	env := system.CreateEnvVars([]string{}, m.user.HomeDir)
 	installScript := expandEnv(app.Install, env)
