@@ -746,3 +746,33 @@ func expandEnvSlice(in []string, env []string) []string {
 	}
 	return out
 }
+
+// EnsureInstalledAndRunning installs the app if needed and then ensures it is running.
+func (m *AppManager) InstallAndStart(ctx context.Context, name string) error {
+	_, err := m.GetApp(name)
+	if err != nil {
+		return err
+	}
+
+	installed, err := m.isAppInstalled(name)
+	if err != nil {
+		return fmt.Errorf("failed to check if app %s is installed: %w", name, err)
+	}
+
+	if !installed {
+		m.logger.Info().Msgf("App %s not installed, installing...", name)
+		if err := m.runInstall(ctx, name); err != nil {
+			return fmt.Errorf("failed to install app %s: %w", name, err)
+		}
+	}
+
+	if err := m.Start(ctx, name); err != nil {
+		return fmt.Errorf("failed to start app %s: %w", name, err)
+	}
+
+	return nil
+}
+
+func (m *AppManager) Apps() *config.Apps {
+	return m.apps
+}

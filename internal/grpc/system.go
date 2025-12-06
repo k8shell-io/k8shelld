@@ -79,7 +79,32 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 	}
 
 	if !s.initScriptsRun {
-		err := s.RunInitScripts(ctx, s.grpcApi.initScriptsDir, s.grpcApi.user, req.EnvVars)
+		err := s.RunInitScripts(ctx, s.grpcApi.initScriptsDir, s.grpcApi.user, req.EnvVars, func() {
+			s.logger.Info().Msg("Init scripts finished, running auto-start apps")
+
+			appMgr := s.grpcApi.appManager
+			if appMgr == nil {
+				s.logger.Warn().Msg("apps are not enabled, skipping auto-start")
+				return
+			}
+
+			if appMgr.Apps() == nil || len(*appMgr.Apps()) == 0 {
+				s.logger.Info().Msg("No apps configured, skipping auto-start")
+				return
+			}
+
+			bg := context.Background()
+			for name, app := range *appMgr.Apps() {
+				if !app.AutoStart {
+					continue
+				}
+				s.logger.Info().Msgf("Auto-starting app %s", name)
+				if err := appMgr.InstallAndStart(bg, name); err != nil {
+					s.logger.Error().Msgf("Failed to autostart app %s: %v", name, err)
+				}
+			}
+		})
+
 		if err != nil {
 			s.logger.Error().Msgf("Failed to run init scripts: %v", err)
 		}
@@ -95,8 +120,13 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 }
 
 // RunInitScripts runs the initialization scripts
-func (s *SystemServiceServer) RunInitScripts(ctx context.Context, scriptsDir string,
-	user config.User, envVars []string) error {
+func (s *SystemServiceServer) RunInitScripts(
+	ctx context.Context,
+	scriptsDir string,
+	user config.User,
+	envVars []string,
+	onComplete func(),
+) error {
 
 	s.logger.Info().Msgf("Running init scripts, scriptsDir: %s, env: %s",
 		scriptsDir, strings.Join(envVars, ", "))
@@ -105,7 +135,7 @@ func (s *SystemServiceServer) RunInitScripts(ctx context.Context, scriptsDir str
 	}
 
 	flagDir := fmt.Sprintf(flagDirTemplate, user.HomeDir)
-	if err := os.MkdirAll(flagDir, 0755); err != nil {
+	if err := os.MkdirAll(flagDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create flag directory: %s", flagDir)
 	}
 
@@ -124,6 +154,9 @@ func (s *SystemServiceServer) RunInitScripts(ctx context.Context, scriptsDir str
 			}
 		}
 		s.logger.Info().Msg("All init scripts completed.")
+		if onComplete != nil {
+			onComplete()
+		}
 	}()
 
 	return nil

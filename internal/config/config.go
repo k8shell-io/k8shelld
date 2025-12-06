@@ -49,6 +49,7 @@ type Config struct {
 	Docker              DockerConfig     `yaml:"docker"`
 	PortForwardingRules []PortForwardingRule
 	InitScriptsDir      string `yaml:"initScriptsDir"`
+	EnableApps          bool   `yaml:"enableApps"`
 	Apps                *Apps  `yaml:"apps" json:"apps"`
 }
 
@@ -104,6 +105,7 @@ type AppSpec struct {
 	RestartPolicy     string        `yaml:"restartPolicy"`
 	MaxRestartBackoff time.Duration `yaml:"maxRestartBackoff"`
 	InstallAsRoot     bool          `yaml:"installAsRoot"`
+	AutoStart         bool          `yaml:"autoStart"`
 }
 
 // Group represents a group in the workspace

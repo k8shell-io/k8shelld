@@ -59,8 +59,15 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		s.procWatcher = system.NewProcessWatcher(false, false, 0, nil)
 	}
 
+	if cfg.EnableApps {
+		s.appManager, err = apps.NewAppManager(cfg.Apps, cfg.User, s.procWatcher, s.testMode)
+		if err != nil {
+			return nil, fmt.Errorf("error creating App Manager: %v", err)
+		}
+	}
+
 	s.grpcService, err = grpc.NewGRPCService(cfg.User, cfg.System.GrpcConfig, cfg.PortForwardingRules,
-		cfg.InitScriptsDir, s.procWatcher, s.apiClient)
+		cfg.InitScriptsDir, s.procWatcher, s.apiClient, s.appManager)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
@@ -68,11 +75,6 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	s.restService, err = NewRESTService(restApiUnixSocketPath, cfg.User, s)
 	if err != nil {
 		return nil, fmt.Errorf("error creating REST API: %v", err)
-	}
-
-	s.appManager, err = apps.NewAppManager(cfg.Apps, cfg.User, s.procWatcher, s.testMode)
-	if err != nil {
-		return nil, fmt.Errorf("error creating App Manager: %v", err)
 	}
 
 	config.UnsetEnvVars(cfg.Env)

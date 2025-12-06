@@ -388,7 +388,7 @@ func (a *RESTService) GetAppsStatus(w http.ResponseWriter, r *http.Request) {
 	a.logger.Debug().Msg("Fetching apps status")
 
 	if a.server == nil || a.server.appManager == nil {
-		http.Error(w, "App manager not available", http.StatusInternalServerError)
+		http.Error(w, "App manager not available", http.StatusBadRequest)
 		return
 	}
 
@@ -412,7 +412,7 @@ func (a *RESTService) GetAppsStatus(w http.ResponseWriter, r *http.Request) {
 // InstallApp installs the specified app (asynchronously).
 func (a *RESTService) InstallApp(w http.ResponseWriter, r *http.Request) {
 	if a.server == nil || a.server.appManager == nil {
-		http.Error(w, "App manager not available", http.StatusInternalServerError)
+		http.Error(w, "App manager not available", http.StatusBadRequest)
 		return
 	}
 
@@ -438,7 +438,7 @@ func (a *RESTService) InstallApp(w http.ResponseWriter, r *http.Request) {
 // GetAppLogs returns (and can stream) the latest logs for a given app.
 func (a *RESTService) GetAppLogs(w http.ResponseWriter, r *http.Request) {
 	if a.server == nil || a.server.appManager == nil {
-		http.Error(w, "App manager not available", http.StatusInternalServerError)
+		http.Error(w, "App manager not available", http.StatusBadRequest)
 		return
 	}
 
@@ -608,7 +608,7 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 // StartApp starts supervising and running the specified app.
 func (a *RESTService) StartApp(w http.ResponseWriter, r *http.Request) {
 	if a.server == nil || a.server.appManager == nil {
-		http.Error(w, "App manager not available", http.StatusInternalServerError)
+		http.Error(w, "App manager not available", http.StatusBadRequest)
 		return
 	}
 
@@ -633,7 +633,7 @@ func (a *RESTService) StartApp(w http.ResponseWriter, r *http.Request) {
 // StopApp stops supervising and (if running) stops the specified app.
 func (a *RESTService) StopApp(w http.ResponseWriter, r *http.Request) {
 	if a.server == nil || a.server.appManager == nil {
-		http.Error(w, "App manager not available", http.StatusInternalServerError)
+		http.Error(w, "App manager not available", http.StatusBadRequest)
 		return
 	}
 

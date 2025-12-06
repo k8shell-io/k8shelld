@@ -52,9 +52,9 @@ func main() {
 	}
 
 	if opts.CertFile != "" && opts.KeyFile != "" {
+		logger.Info().Msgf("Overriding GRPC TLS cert and key from command line")
 		cfg.System.GrpcConfig.CertFile = opts.CertFile
 		cfg.System.GrpcConfig.KeyFile = opts.KeyFile
-		logger.Info().Msgf("Overriding GRPC TLS cert and key from command line")
 	}
 
 	server, err := server.NewServer(cfg, opts.UnixSocketPath, opts.Test)

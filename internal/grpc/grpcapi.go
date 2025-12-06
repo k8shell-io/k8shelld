@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/common/pkg/gapi"
+	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
@@ -51,6 +52,7 @@ type GRPCService struct {
 	SessionStore        *sync.Map                   // The store for the session data
 	UnixSocketStore     *sync.Map                   // The store for the unix socket data
 	apiClient           *apiClient.Client           // The API client to communicate with the API server
+	appManager          *apps.AppManager            // The app manager
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -72,7 +74,8 @@ func getStatus(deleted time.Time) string {
 // NewGRPCAPI creates a new GRPCApiService
 func NewGRPCService(user config.User, grpcConfig gapi.ServerConfig,
 	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
-	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client) (*GRPCService, error) {
+	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
+	appManager *apps.AppManager) (*GRPCService, error) {
 
 	logger := logger.NewLogger("grpc")
 
@@ -88,6 +91,7 @@ func NewGRPCService(user config.User, grpcConfig gapi.ServerConfig,
 		SessionStore:        &sync.Map{},
 		UnixSocketStore:     &sync.Map{},
 		apiClient:           apiClient,
+		appManager:          appManager,
 	}, nil
 }
 
