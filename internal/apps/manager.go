@@ -49,9 +49,11 @@ func NewAppManager(apps *config.Apps, user config.User, procWatcher *system.Proc
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
 
-	// The app struct does not have the Name field set from the config
-	for name, app := range *apps {
-		app.Name = name
+	if apps != nil {
+		// The app struct does not have the Name field set from the config
+		for name, app := range *apps {
+			app.Name = name
+		}
 	}
 
 	return &AppManager{
@@ -99,11 +101,22 @@ func (m *AppManager) ensureAppStateDir(name string) (string, error) {
 	return stateDir, nil
 }
 
-// isAppInstalled checks if the app is installed by verifying the binary exists.
-func (m *AppManager) isAppInstalled(name string) (bool, error) {
+func (m *AppManager) GetApp(name string) (*config.AppSpec, error) {
+	if m.apps == nil {
+		return nil, fmt.Errorf("no apps configured")
+	}
 	app, ok := (*m.apps)[name]
 	if !ok {
-		return false, fmt.Errorf("app %s not found", name)
+		return nil, fmt.Errorf("app %s not found", name)
+	}
+	return app, nil
+}
+
+// isAppInstalled checks if the app is installed by verifying the binary exists.
+func (m *AppManager) isAppInstalled(name string) (bool, error) {
+	app, err := m.GetApp(name)
+	if err != nil {
+		return false, err
 	}
 
 	env := system.CreateEnvVars([]string{}, m.user.HomeDir)
@@ -124,9 +137,9 @@ func (m *AppManager) isAppInstalled(name string) (bool, error) {
 
 // appVersion retrieves the installed version of the app by running the version command.
 func (m *AppManager) appVersion(ctx context.Context, name string) (string, error) {
-	app, ok := (*m.apps)[name]
-	if !ok {
-		return "", fmt.Errorf("app %s not found", name)
+	app, err := m.GetApp(name)
+	if err != nil {
+		return "", err
 	}
 
 	if len(app.VersionCmd) == 0 || app.VersionRegex == "" {
@@ -200,9 +213,9 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 
 // appVersionFromFile reads the installed version of the app from the version file.
 func (m *AppManager) appVersionFromFile(name string) (string, error) {
-	app, ok := (*m.apps)[name]
-	if !ok {
-		return "", fmt.Errorf("app %s not found", name)
+	app, err := m.GetApp(name)
+	if err != nil {
+		return "", err
 	}
 
 	appStateDir, err := m.ensureAppStateDir(name)
@@ -276,9 +289,9 @@ func (m *AppManager) parseVersion(versionRegex, str string) (string, error) {
 // InstallAsync starts installation in the background.
 // If an install for this app is already running, it returns an error.
 func (m *AppManager) InstallAsync(ctx context.Context, name string, force bool) error {
-	_, ok := (*m.apps)[name]
-	if !ok {
-		return fmt.Errorf("app %s not found", name)
+	_, err := m.GetApp(name)
+	if err != nil {
+		return err
 	}
 
 	m.mu.Lock()
@@ -328,9 +341,9 @@ func (m *AppManager) InstallAsync(ctx context.Context, name string, force bool) 
 
 // runInstall executes the installation script for the app (synchronous).
 func (m *AppManager) runInstall(ctx context.Context, name string) error {
-	app, ok := (*m.apps)[name]
-	if !ok {
-		return fmt.Errorf("app %s not found", name)
+	app, err := m.GetApp(name)
+	if err != nil {
+		return err
 	}
 
 	if app.Install == "" {
@@ -411,9 +424,9 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 // EnsureRunning starts a supervisor for the given app if not already running.
 // The supervisor will keep the app running according to its RestartPolicy.
 func (m *AppManager) Start(ctx context.Context, name string) error {
-	app, ok := (*m.apps)[name]
-	if !ok {
-		return fmt.Errorf("app %s not found", name)
+	app, err := m.GetApp(name)
+	if err != nil {
+		return err
 	}
 
 	isInstalled, err := m.isAppInstalled(name)
@@ -429,7 +442,7 @@ func (m *AppManager) Start(ctx context.Context, name string) error {
 		return fmt.Errorf("app %s is currently installing", name)
 	}
 
-	_, ok = m.GetSupervisor(name)
+	_, ok := m.GetSupervisor(name)
 	if ok {
 		return fmt.Errorf("app %s is already running", name)
 	}
@@ -442,9 +455,9 @@ func (m *AppManager) Start(ctx context.Context, name string) error {
 
 // Stop asks the supervisor to stop managing the app and kills the process if running.
 func (m *AppManager) Stop(ctx context.Context, name string) error {
-	_, ok := (*m.apps)[name]
-	if !ok {
-		return fmt.Errorf("app %s not found", name)
+	_, err := m.GetApp(name)
+	if err != nil {
+		return err
 	}
 
 	sup, ok := m.GetSupervisor(name)
@@ -472,6 +485,10 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 
 // ListAppStatus returns app status including port, PID and running time, without internal state.
 func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, error) {
+	if m.apps == nil {
+		return nil, fmt.Errorf("no apps configured")
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
