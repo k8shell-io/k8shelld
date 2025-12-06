@@ -69,6 +69,12 @@ var AppsLsCmd = &cobra.Command{
 		}
 		defer resp.Body.Close()
 
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("%v\n", err)
+			return
+		}
+
 		bodyBytes, _ := io.ReadAll(resp.Body)
 
 		var t *table.Table
