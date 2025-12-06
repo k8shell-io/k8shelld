@@ -21,14 +21,3 @@ type K8shellFileValidationResponse struct {
 	Filename string   `json:"filename"`
 	Errors   []string `json:"errors,omitempty"`
 }
-
-// AppStatus represents the current status of an application
-type AppStatus struct {
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	Version  string `json:"version"`
-	Port     int    `json:"port"`
-	PID      int    `json:"pid"`
-	Age      string `json:"age"`
-	Restarts int    `json:"restarts"`
-}

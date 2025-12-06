@@ -15,8 +15,8 @@ import (
 
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
-	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
+	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -488,7 +488,7 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 }
 
 // ListAppStatus returns app status including port, PID and running time, without internal state.
-func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, error) {
+func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error) {
 	if m.apps == nil {
 		return nil, ErrNoAppsConfigured
 	}
@@ -496,12 +496,12 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]models.AppStatus, err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var res []models.AppStatus
+	var res []api.AppStatus
 
 	for name, app := range *m.apps {
 		installing := m.installing[name]
 
-		status := models.AppStatus{
+		status := api.AppStatus{
 			Name:     name,
 			Status:   "-",
 			Version:  "",

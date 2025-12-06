@@ -554,3 +554,311 @@ var UnixSocketService_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "pkg/api/k8shelld.proto",
 }
+
+const (
+	AppService_ListApps_FullMethodName      = "/k8shelld.AppService/ListApps"
+	AppService_InstallApp_FullMethodName    = "/k8shelld.AppService/InstallApp"
+	AppService_StartApp_FullMethodName      = "/k8shelld.AppService/StartApp"
+	AppService_StopApp_FullMethodName       = "/k8shelld.AppService/StopApp"
+	AppService_GetLogs_FullMethodName       = "/k8shelld.AppService/GetLogs"
+	AppService_GetLogsStream_FullMethodName = "/k8shelld.AppService/GetLogsStream"
+)
+
+// AppServiceClient is the client API for AppService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type AppServiceClient interface {
+	// List all apps and their status
+	ListApps(ctx context.Context, in *ListAppsRequest, opts ...grpc.CallOption) (*ListAppsResponse, error)
+	// Install an app (optionally force reinstall)
+	InstallApp(ctx context.Context, in *InstallAppRequest, opts ...grpc.CallOption) (*InstallAppResponse, error)
+	// Start an app
+	StartApp(ctx context.Context, in *StartAppRequest, opts ...grpc.CallOption) (*StartAppResponse, error)
+	// Stop an app
+	StopApp(ctx context.Context, in *StopAppRequest, opts ...grpc.CallOption) (*StopAppResponse, error)
+	// unary: return whole log as a single string
+	GetLogs(ctx context.Context, in *GetLogsRequest, opts ...grpc.CallOption) (*GetLogsResponse, error)
+	// streaming: tail logs line by line
+	GetLogsStream(ctx context.Context, in *GetLogsStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetLogsStreamResponse], error)
+}
+
+type appServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewAppServiceClient(cc grpc.ClientConnInterface) AppServiceClient {
+	return &appServiceClient{cc}
+}
+
+func (c *appServiceClient) ListApps(ctx context.Context, in *ListAppsRequest, opts ...grpc.CallOption) (*ListAppsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAppsResponse)
+	err := c.cc.Invoke(ctx, AppService_ListApps_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *appServiceClient) InstallApp(ctx context.Context, in *InstallAppRequest, opts ...grpc.CallOption) (*InstallAppResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InstallAppResponse)
+	err := c.cc.Invoke(ctx, AppService_InstallApp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *appServiceClient) StartApp(ctx context.Context, in *StartAppRequest, opts ...grpc.CallOption) (*StartAppResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartAppResponse)
+	err := c.cc.Invoke(ctx, AppService_StartApp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *appServiceClient) StopApp(ctx context.Context, in *StopAppRequest, opts ...grpc.CallOption) (*StopAppResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StopAppResponse)
+	err := c.cc.Invoke(ctx, AppService_StopApp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *appServiceClient) GetLogs(ctx context.Context, in *GetLogsRequest, opts ...grpc.CallOption) (*GetLogsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetLogsResponse)
+	err := c.cc.Invoke(ctx, AppService_GetLogs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *appServiceClient) GetLogsStream(ctx context.Context, in *GetLogsStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetLogsStreamResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AppService_ServiceDesc.Streams[0], AppService_GetLogsStream_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[GetLogsStreamRequest, GetLogsStreamResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AppService_GetLogsStreamClient = grpc.ServerStreamingClient[GetLogsStreamResponse]
+
+// AppServiceServer is the server API for AppService service.
+// All implementations must embed UnimplementedAppServiceServer
+// for forward compatibility.
+type AppServiceServer interface {
+	// List all apps and their status
+	ListApps(context.Context, *ListAppsRequest) (*ListAppsResponse, error)
+	// Install an app (optionally force reinstall)
+	InstallApp(context.Context, *InstallAppRequest) (*InstallAppResponse, error)
+	// Start an app
+	StartApp(context.Context, *StartAppRequest) (*StartAppResponse, error)
+	// Stop an app
+	StopApp(context.Context, *StopAppRequest) (*StopAppResponse, error)
+	// unary: return whole log as a single string
+	GetLogs(context.Context, *GetLogsRequest) (*GetLogsResponse, error)
+	// streaming: tail logs line by line
+	GetLogsStream(*GetLogsStreamRequest, grpc.ServerStreamingServer[GetLogsStreamResponse]) error
+	mustEmbedUnimplementedAppServiceServer()
+}
+
+// UnimplementedAppServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedAppServiceServer struct{}
+
+func (UnimplementedAppServiceServer) ListApps(context.Context, *ListAppsRequest) (*ListAppsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListApps not implemented")
+}
+func (UnimplementedAppServiceServer) InstallApp(context.Context, *InstallAppRequest) (*InstallAppResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InstallApp not implemented")
+}
+func (UnimplementedAppServiceServer) StartApp(context.Context, *StartAppRequest) (*StartAppResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartApp not implemented")
+}
+func (UnimplementedAppServiceServer) StopApp(context.Context, *StopAppRequest) (*StopAppResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StopApp not implemented")
+}
+func (UnimplementedAppServiceServer) GetLogs(context.Context, *GetLogsRequest) (*GetLogsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetLogs not implemented")
+}
+func (UnimplementedAppServiceServer) GetLogsStream(*GetLogsStreamRequest, grpc.ServerStreamingServer[GetLogsStreamResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method GetLogsStream not implemented")
+}
+func (UnimplementedAppServiceServer) mustEmbedUnimplementedAppServiceServer() {}
+func (UnimplementedAppServiceServer) testEmbeddedByValue()                    {}
+
+// UnsafeAppServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to AppServiceServer will
+// result in compilation errors.
+type UnsafeAppServiceServer interface {
+	mustEmbedUnimplementedAppServiceServer()
+}
+
+func RegisterAppServiceServer(s grpc.ServiceRegistrar, srv AppServiceServer) {
+	// If the following call pancis, it indicates UnimplementedAppServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&AppService_ServiceDesc, srv)
+}
+
+func _AppService_ListApps_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAppsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppServiceServer).ListApps(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppService_ListApps_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppServiceServer).ListApps(ctx, req.(*ListAppsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AppService_InstallApp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstallAppRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppServiceServer).InstallApp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppService_InstallApp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppServiceServer).InstallApp(ctx, req.(*InstallAppRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AppService_StartApp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartAppRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppServiceServer).StartApp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppService_StartApp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppServiceServer).StartApp(ctx, req.(*StartAppRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AppService_StopApp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopAppRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppServiceServer).StopApp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppService_StopApp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppServiceServer).StopApp(ctx, req.(*StopAppRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AppService_GetLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetLogsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppServiceServer).GetLogs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppService_GetLogs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppServiceServer).GetLogs(ctx, req.(*GetLogsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AppService_GetLogsStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(GetLogsStreamRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AppServiceServer).GetLogsStream(m, &grpc.GenericServerStream[GetLogsStreamRequest, GetLogsStreamResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AppService_GetLogsStreamServer = grpc.ServerStreamingServer[GetLogsStreamResponse]
+
+// AppService_ServiceDesc is the grpc.ServiceDesc for AppService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var AppService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "k8shelld.AppService",
+	HandlerType: (*AppServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListApps",
+			Handler:    _AppService_ListApps_Handler,
+		},
+		{
+			MethodName: "InstallApp",
+			Handler:    _AppService_InstallApp_Handler,
+		},
+		{
+			MethodName: "StartApp",
+			Handler:    _AppService_StartApp_Handler,
+		},
+		{
+			MethodName: "StopApp",
+			Handler:    _AppService_StopApp_Handler,
+		},
+		{
+			MethodName: "GetLogs",
+			Handler:    _AppService_GetLogs_Handler,
+		},
+	},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "GetLogsStream",
+			Handler:       _AppService_GetLogsStream_Handler,
+			ServerStreams: true,
+		},
+	},
+	Metadata: "pkg/api/k8shelld.proto",
+}

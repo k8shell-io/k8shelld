@@ -112,6 +112,7 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 		k8shelldpb.RegisterExecServiceServer(s, NewExecServiceServer(a))
 		k8shelldpb.RegisterPortForwardServiceServer(s, NewPortForwardServiceServer(a))
 		k8shelldpb.RegisterUnixSocketServiceServer(s, NewUnixSocketServiceServer(a))
+		k8shelldpb.RegisterAppServiceServer(s, NewAppServiceServer(a.appManager))
 		a.logger.Info().Msgf("GRPC services server registered")
 		return nil
 	})
