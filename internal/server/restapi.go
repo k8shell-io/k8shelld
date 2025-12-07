@@ -182,7 +182,8 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.logger.Debug().Msgf("Fetching %s credentials for address: %s", credsType, address)
+	a.logger.Debug().Msgf("Fetching %s credentials for address %s and user %s", credsType,
+		address, a.user.Username)
 
 	creds, err := a.server.apiClient.GetUserCredentials(r.Context(), a.user.Username)
 	if err != nil {
