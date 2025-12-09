@@ -593,14 +593,14 @@ func (c *K8shelld) Close() error {
 // *** k8shelldApps client
 
 // k8shelldApps is a client for interacting with the k8shelld service
-type k8shelldApps struct {
+type K8shelldApps struct {
 	gapiClient *gapi.Client
 	app        pb.AppServiceClient
 }
 
 // NewK8shelldApps creates a new K8shelldApps to interact with the k8shelld service
 func NewK8shelldApps(ctx context.Context, cfg gapi.ClientConfig,
-	status *models.WorkspaceStatus) (*k8shelldApps, error) {
+	status *models.WorkspaceStatus) (*K8shelldApps, error) {
 
 	cfg.Address = fmt.Sprintf("%s:%d", status.PodIP, status.Port)
 	cfg.ServerName = status.Host
@@ -609,19 +609,19 @@ func NewK8shelldApps(ctx context.Context, cfg gapi.ClientConfig,
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gRPC client: %w", err)
 	}
-	return &k8shelldApps{
+	return &K8shelldApps{
 		gapiClient: gapiClient,
 		app:        pb.NewAppServiceClient(gapiClient.Conn),
 	}, nil
 }
 
-// Close closes the k8shelldApps's gRPC connection
-func (wc *k8shelldApps) Close() error {
+// Close closes the K8shelldApps's gRPC connection
+func (wc *K8shelldApps) Close() error {
 	return wc.gapiClient.Close()
 }
 
 // ListApps retrieves the list of applications from the k8shelld service
-func (wc *k8shelldApps) ListApps(ctx context.Context) ([]*AppStatus, error) {
+func (wc *K8shelldApps) ListApps(ctx context.Context) ([]*AppStatus, error) {
 	resp, err := wc.app.ListApps(ctx, &pb.ListAppsRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("list apps: %w", err)
@@ -634,7 +634,7 @@ func (wc *k8shelldApps) ListApps(ctx context.Context) ([]*AppStatus, error) {
 }
 
 // StartApp starts an application in the k8shelld service
-func (wc *k8shelldApps) StartApp(ctx context.Context, appName string) error {
+func (wc *K8shelldApps) StartApp(ctx context.Context, appName string) error {
 	_, err := wc.app.StartApp(ctx, &pb.StartAppRequest{Name: appName})
 	if err != nil {
 		return fmt.Errorf("start app: %w", err)
@@ -643,7 +643,7 @@ func (wc *k8shelldApps) StartApp(ctx context.Context, appName string) error {
 }
 
 // StopApp stops an application in the k8shelld service
-func (wc *k8shelldApps) StopApp(ctx context.Context, appName string) error {
+func (wc *K8shelldApps) StopApp(ctx context.Context, appName string) error {
 	_, err := wc.app.StopApp(ctx, &pb.StopAppRequest{Name: appName})
 	if err != nil {
 		return fmt.Errorf("stop app: %w", err)
