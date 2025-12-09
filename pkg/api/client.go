@@ -624,7 +624,7 @@ func (wc *K8shelldApps) Close() error {
 func (wc *K8shelldApps) ListApps(ctx context.Context) ([]*AppStatus, error) {
 	resp, err := wc.app.ListApps(ctx, &pb.ListAppsRequest{})
 	if err != nil {
-		return nil, fmt.Errorf("list apps: %w", err)
+		return nil, err
 	}
 	var apps []*AppStatus
 	for _, appProto := range resp.Apps {
@@ -636,17 +636,11 @@ func (wc *K8shelldApps) ListApps(ctx context.Context) ([]*AppStatus, error) {
 // StartApp starts an application in the k8shelld service
 func (wc *K8shelldApps) StartApp(ctx context.Context, appName string) error {
 	_, err := wc.app.StartApp(ctx, &pb.StartAppRequest{Name: appName})
-	if err != nil {
-		return fmt.Errorf("start app: %w", err)
-	}
-	return nil
+	return err
 }
 
 // StopApp stops an application in the k8shelld service
 func (wc *K8shelldApps) StopApp(ctx context.Context, appName string) error {
 	_, err := wc.app.StopApp(ctx, &pb.StopAppRequest{Name: appName})
-	if err != nil {
-		return fmt.Errorf("stop app: %w", err)
-	}
-	return nil
+	return err
 }
