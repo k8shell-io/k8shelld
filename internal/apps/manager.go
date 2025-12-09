@@ -29,6 +29,7 @@ const (
 
 var ErrAppNotFound = fmt.Errorf("app not found")
 var ErrNoAppsConfigured = fmt.Errorf("no apps configured")
+var ErrAppInvalidState = fmt.Errorf("not a valid app state")
 
 // AppManager manages the lifecycle of applications defined in the configuration
 type AppManager struct {
@@ -258,7 +259,7 @@ func (m *AppManager) ensureAppVersion(name string) (string, error) {
 		return "", fmt.Errorf("cannot check if %s is installed: %w", name, err)
 	}
 	if !installed {
-		return "", fmt.Errorf("app %s is not installed", name)
+		return "", fmt.Errorf("%w: app %s is not installed", ErrAppInvalidState, name)
 	}
 
 	version, err := m.appVersionFromFile(name)
@@ -298,13 +299,13 @@ func (m *AppManager) InstallAsync(ctx context.Context, name string, force bool) 
 	}
 
 	if _, ok := m.supervisors[name]; ok {
-		return fmt.Errorf("cannot install %s while it is running", name)
+		return fmt.Errorf("%w: cannot install %s while it is running", ErrAppInvalidState, name)
 	}
 
 	m.mu.Lock()
 	if m.installing[name] {
 		m.mu.Unlock()
-		return fmt.Errorf("install for %s is already running", name)
+		return fmt.Errorf("%w: install for %s is already running", ErrAppInvalidState, name)
 	}
 
 	if !force {
@@ -315,7 +316,7 @@ func (m *AppManager) InstallAsync(ctx context.Context, name string, force bool) 
 		}
 		if installed {
 			m.mu.Unlock()
-			return fmt.Errorf("app %s is already installed", name)
+			return fmt.Errorf("%w: app %s is already installed", ErrAppInvalidState, name)
 		}
 	}
 	m.mu.Unlock()

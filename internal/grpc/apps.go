@@ -41,6 +41,9 @@ func (s *AppServiceServer) grpcError(err error) error {
 	if errors.Is(err, apps.ErrNoAppsConfigured) {
 		return status.Errorf(codes.NotFound, "%s", err.Error())
 	}
+	if errors.Is(err, apps.ErrAppInvalidState) {
+		return status.Errorf(codes.FailedPrecondition, "%s", err.Error())
+	}
 	return status.Errorf(codes.Internal, "%s", err.Error())
 }
 
