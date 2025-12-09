@@ -439,17 +439,17 @@ func (m *AppManager) Start(ctx context.Context, name string) error {
 		return fmt.Errorf("cannot check if %s is installed: %w", name, err)
 	}
 	if !isInstalled {
-		return fmt.Errorf("app %s is not installed", name)
+		return fmt.Errorf("%w: app %s is not installed", ErrAppInvalidState, name)
 	}
 
 	installing := m.installing[name]
 	if installing {
-		return fmt.Errorf("app %s is currently installing", name)
+		return fmt.Errorf("%w: app %s is currently installing", ErrAppInvalidState, name)
 	}
 
 	_, ok := m.GetSupervisor(name)
 	if ok {
-		return fmt.Errorf("app %s is already running", name)
+		return fmt.Errorf("%w: app %s is already running", ErrAppInvalidState, name)
 	}
 
 	s := m.newSupervisor(app)
@@ -467,7 +467,7 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 
 	sup, ok := m.GetSupervisor(name)
 	if !ok {
-		return fmt.Errorf("app %s is not running", name)
+		return fmt.Errorf("%w: app %s is not running", ErrAppInvalidState, name)
 	}
 
 	close(sup.stopCh)
