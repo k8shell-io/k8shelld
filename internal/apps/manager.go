@@ -105,6 +105,7 @@ func (m *AppManager) ensureAppStateDir(name string) (string, error) {
 	return stateDir, nil
 }
 
+// GetApp retrieves the app specification by name.
 func (m *AppManager) GetApp(name string) (*config.AppSpec, error) {
 	if m.apps == nil {
 		return nil, ErrNoAppsConfigured
@@ -253,6 +254,7 @@ func (m *AppManager) writeAppVersionToFile(name, version string) error {
 	return nil
 }
 
+// ensureAppVersion ensures the app is installed and retrieves its version.
 func (m *AppManager) ensureAppVersion(name string) (string, error) {
 	installed, err := m.isAppInstalled(name)
 	if err != nil {
@@ -278,6 +280,7 @@ func (m *AppManager) ensureAppVersion(name string) (string, error) {
 	return version, nil
 }
 
+// parseVersion extracts the version string from the given input using the provided regex.
 func (m *AppManager) parseVersion(versionRegex, str string) (string, error) {
 	re, err := regexp.Compile(versionRegex)
 	if err != nil {
@@ -430,7 +433,7 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 	return nil
 }
 
-// EnsureRunning starts a supervisor for the given app if not already running.
+// Start starts a supervisor for the given app if not already running.
 // The supervisor will keep the app running according to its RestartPolicy.
 func (m *AppManager) Start(ctx context.Context, name string) error {
 	app, err := m.GetApp(name)
