@@ -484,7 +484,7 @@ func (a *RESTService) GetAppLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if logType == "install" && !a.server.appManager.IsInstalling(name) || logType == "app" && !a.server.appManager.IsRunning(name) {
+	if (logType == "install" && !a.server.appManager.IsInstalling(name)) || (logType == "app" && !a.server.appManager.IsRunning(name)) {
 		logText, err := os.ReadFile(logPath)
 		if err != nil {
 			a.logger.Error().Msgf("Failed to read %s logs for app %s: %v", logType, name, err)
