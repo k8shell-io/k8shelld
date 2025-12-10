@@ -25,6 +25,7 @@ func AppStatusToProto(u *AppStatus) *k8shelldpb.AppStatus {
 		Pid:      int32(u.PID),
 		Age:      u.Age,
 		Restarts: int32(u.Restarts),
+		Protocol: u.Protocol,
 	}
 }
 
@@ -37,6 +38,7 @@ func AppStatusFromProto(u *k8shelldpb.AppStatus) *AppStatus {
 		PID:      int(u.GetPid()),
 		Age:      u.GetAge(),
 		Restarts: int(u.GetRestarts()),
+		Protocol: u.GetProtocol(),
 	}
 }
 
