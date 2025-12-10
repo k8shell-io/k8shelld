@@ -749,7 +749,7 @@ func expandEnvSlice(in []string, env []string) []string {
 	return out
 }
 
-// EnsureInstalledAndRunning installs the app if needed and then ensures it is running.
+// InstallAndStart installs the app if needed and then ensures it is running.
 func (m *AppManager) InstallAndStart(ctx context.Context, name string) error {
 	_, err := m.GetApp(name)
 	if err != nil {
