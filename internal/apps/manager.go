@@ -624,7 +624,7 @@ func (m *AppManager) OpenLogFile(name string, logType string) (*os.File, string,
 	return logFile, logPath, nil
 }
 
-// GetLastlLog returns the contents of the most recent log of the given type for the app.
+// GetLastLog returns the contents of the most recent log of the given type for the app.
 // If no log exists, it returns empty string and no error.
 func (m *AppManager) GetLastLog(name string, logType string) (string, error) {
 	path, err := m.GetLastLogPath(name, logType)
