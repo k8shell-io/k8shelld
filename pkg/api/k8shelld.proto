@@ -211,6 +211,7 @@ message AppStatus {
   int32  pid = 5;
   string age = 6;
   int32  restarts = 7;
+  string protocol = 8;
 }
 
 message InstallAppRequest {

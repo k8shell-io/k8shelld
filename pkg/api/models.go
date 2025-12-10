@@ -13,6 +13,7 @@ type AppStatus struct {
 	PID      int    `json:"pid"`
 	Age      string `json:"age"`
 	Restarts int    `json:"restarts"`
+	Protocol string `json:"protocol"`
 }
 
 func AppStatusToProto(u *AppStatus) *k8shelldpb.AppStatus {

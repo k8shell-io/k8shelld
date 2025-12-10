@@ -1357,6 +1357,7 @@ type AppStatus struct {
 	Pid           int32                  `protobuf:"varint,5,opt,name=pid,proto3" json:"pid,omitempty"`
 	Age           string                 `protobuf:"bytes,6,opt,name=age,proto3" json:"age,omitempty"`
 	Restarts      int32                  `protobuf:"varint,7,opt,name=restarts,proto3" json:"restarts,omitempty"`
+	Protocol      string                 `protobuf:"bytes,8,opt,name=protocol,proto3" json:"protocol,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1438,6 +1439,13 @@ func (x *AppStatus) GetRestarts() int32 {
 		return x.Restarts
 	}
 	return 0
+}
+
+func (x *AppStatus) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
 }
 
 type InstallAppRequest struct {
@@ -1958,7 +1966,7 @@ const file_pkg_api_k8shelld_proto_rawDesc = "" +
 	"socketPath\"\x11\n" +
 	"\x0fListAppsRequest\";\n" +
 	"\x10ListAppsResponse\x12'\n" +
-	"\x04apps\x18\x01 \x03(\v2\x13.k8shelld.AppStatusR\x04apps\"\xa5\x01\n" +
+	"\x04apps\x18\x01 \x03(\v2\x13.k8shelld.AppStatusR\x04apps\"\xc1\x01\n" +
 	"\tAppStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
@@ -1966,7 +1974,8 @@ const file_pkg_api_k8shelld_proto_rawDesc = "" +
 	"\x04port\x18\x04 \x01(\x05R\x04port\x12\x10\n" +
 	"\x03pid\x18\x05 \x01(\x05R\x03pid\x12\x10\n" +
 	"\x03age\x18\x06 \x01(\tR\x03age\x12\x1a\n" +
-	"\brestarts\x18\a \x01(\x05R\brestarts\"=\n" +
+	"\brestarts\x18\a \x01(\x05R\brestarts\x12\x1a\n" +
+	"\bprotocol\x18\b \x01(\tR\bprotocol\"=\n" +
 	"\x11InstallAppRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05force\x18\x02 \x01(\bR\x05force\"\x14\n" +

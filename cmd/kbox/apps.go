@@ -37,6 +37,11 @@ var appsTableFields = []table.FieldDefinition{
 		Type:  table.Int,
 	},
 	{
+		Name:  "protocol",
+		Width: 8,
+		Type:  table.String,
+	},
+	{
 		Name:  "pid",
 		Width: 5,
 		Type:  table.Int,

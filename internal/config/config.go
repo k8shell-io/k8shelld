@@ -106,6 +106,7 @@ type AppSpec struct {
 	MaxRestartBackoff time.Duration `yaml:"maxRestartBackoff"`
 	InstallAsRoot     bool          `yaml:"installAsRoot"`
 	AutoStart         bool          `yaml:"autoStart"`
+	Protocol          string        `yaml:"protocol"`
 }
 
 // Group represents a group in the workspace
