@@ -119,8 +119,8 @@ func (a *RESTService) logRoutes(router *mux.Router) {
 func (a *RESTService) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/logs" ||
-			strings.HasPrefix(r.URL.Path, "/api/v1/apps/") &&
-				strings.HasSuffix(r.URL.Path, "/logs") {
+			(strings.HasPrefix(r.URL.Path, "/api/v1/apps/") &&
+				strings.HasSuffix(r.URL.Path, "/logs")) {
 			next.ServeHTTP(w, r)
 			return
 		}
