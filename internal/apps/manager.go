@@ -420,7 +420,7 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 
 	err = m.writeAppVersionToFile(name, appVersion)
 	if err != nil {
-		m.logger.Warn().Msgf("could not write app version before install: %v", err)
+		m.logger.Warn().Msgf("could not write app version after install: %v", err)
 	}
 
 	return nil
