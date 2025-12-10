@@ -1,8 +1,10 @@
 package system
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -310,4 +312,123 @@ func CreateEnvVars(envVars []string, homeDir string) []string {
 		}
 	}
 	return newEnv
+}
+
+// GetProcessRunningTime returns how long the given PID has been running as a time.Duration.
+func GetProcessRunningTime(pid int) (time.Duration, error) {
+	upBytes, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return 0, err
+	}
+	var uptimeSeconds float64
+	if _, err := fmt.Sscanf(string(upBytes), "%f", &uptimeSeconds); err != nil {
+		return 0, err
+	}
+
+	statPath := filepath.Join("/proc", strconv.Itoa(pid), "stat")
+	data, err := os.ReadFile(statPath)
+	if err != nil {
+		return 0, err
+	}
+	// Field 22 is starttime (clock ticks since boot)
+	// field 2 (comm) may contain spaces in parentheses
+	parts := strings.Fields(string(data))
+	if len(parts) < 22 {
+		return 0, fmt.Errorf("unexpected /proc/%d/stat format", pid)
+	}
+	// starttime is at index 21 (0-based)
+	startTicksStr := parts[21]
+	startTicks, err := strconv.ParseUint(startTicksStr, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	hz := 100.0
+	startSeconds := float64(startTicks) / hz
+	running := uptimeSeconds - startSeconds
+	if running < 0 {
+		running = 0
+	}
+	return time.Duration(running * float64(time.Second)), nil
+}
+
+// GetPIDListeningOnPort tries to find a PID that is listening on the given TCP port.
+func GetPIDListeningOnPort(port int) (int, error) {
+	inodeToPID := make(map[string]int)
+
+	procEntries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0, err
+	}
+
+	for _, e := range procEntries {
+		if !e.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		fdDir := filepath.Join("/proc", e.Name(), "fd")
+		fds, err := os.ReadDir(fdDir)
+		if err != nil {
+			continue
+		}
+		for _, fd := range fds {
+			link, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
+			if err != nil {
+				continue
+			}
+			if strings.HasPrefix(link, "socket:[") && strings.HasSuffix(link, "]") {
+				inode := link[len("socket:[") : len(link)-1]
+				inodeToPID[inode] = pid
+			}
+		}
+	}
+
+	portHex := fmt.Sprintf("%04X", port)
+
+	checkFile := func(path string) (int, error) {
+		f, err := os.Open(path)
+		if err != nil {
+			return 0, nil
+		}
+		defer f.Close()
+
+		sc := bufio.NewScanner(f)
+		if !sc.Scan() {
+			return 0, nil
+		}
+		for sc.Scan() {
+			line := strings.TrimSpace(sc.Text())
+			fields := strings.Fields(line)
+			if len(fields) < 10 {
+				continue
+			}
+			localAddress := fields[1]
+			state := fields[3]
+			inode := fields[9]
+
+			parts := strings.Split(localAddress, ":")
+			if len(parts) != 2 {
+				continue
+			}
+			portPart := parts[1]
+			if strings.EqualFold(portPart, portHex) && state == "0A" {
+				if pid, ok := inodeToPID[inode]; ok {
+					return pid, nil
+				}
+			}
+		}
+		return 0, nil
+	}
+
+	if pid, err := checkFile("/proc/net/tcp"); err == nil && pid != 0 {
+		return pid, nil
+	}
+	if pid, err := checkFile("/proc/net/tcp6"); err == nil && pid != 0 {
+		return pid, nil
+	}
+
+	return 0, nil
 }

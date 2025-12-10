@@ -68,6 +68,53 @@ func (UnixSocketMode) EnumDescriptor() ([]byte, []int) {
 	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{0}
 }
 
+// Which log to return
+type LogType int32
+
+const (
+	LogType_LOG_TYPE_APP     LogType = 0 // runtime app log
+	LogType_LOG_TYPE_INSTALL LogType = 1 // install log
+)
+
+// Enum value maps for LogType.
+var (
+	LogType_name = map[int32]string{
+		0: "LOG_TYPE_APP",
+		1: "LOG_TYPE_INSTALL",
+	}
+	LogType_value = map[string]int32{
+		"LOG_TYPE_APP":     0,
+		"LOG_TYPE_INSTALL": 1,
+	}
+)
+
+func (x LogType) Enum() *LogType {
+	p := new(LogType)
+	*p = x
+	return p
+}
+
+func (x LogType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (LogType) Descriptor() protoreflect.EnumDescriptor {
+	return file_pkg_api_k8shelld_proto_enumTypes[1].Descriptor()
+}
+
+func (LogType) Type() protoreflect.EnumType {
+	return &file_pkg_api_k8shelld_proto_enumTypes[1]
+}
+
+func (x LogType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use LogType.Descriptor instead.
+func (LogType) EnumDescriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{1}
+}
+
 // HandshakeRequest message
 type HandshakeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1221,6 +1268,626 @@ func (x *UnixSocketStartRequest) GetSocketPath() string {
 	return ""
 }
 
+type ListAppsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAppsRequest) Reset() {
+	*x = ListAppsRequest{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAppsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAppsRequest) ProtoMessage() {}
+
+func (x *ListAppsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAppsRequest.ProtoReflect.Descriptor instead.
+func (*ListAppsRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{17}
+}
+
+type ListAppsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Apps          []*AppStatus           `protobuf:"bytes,1,rep,name=apps,proto3" json:"apps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAppsResponse) Reset() {
+	*x = ListAppsResponse{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAppsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAppsResponse) ProtoMessage() {}
+
+func (x *ListAppsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAppsResponse.ProtoReflect.Descriptor instead.
+func (*ListAppsResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListAppsResponse) GetApps() []*AppStatus {
+	if x != nil {
+		return x.Apps
+	}
+	return nil
+}
+
+type AppStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	Port          int32                  `protobuf:"varint,4,opt,name=port,proto3" json:"port,omitempty"`
+	Pid           int32                  `protobuf:"varint,5,opt,name=pid,proto3" json:"pid,omitempty"`
+	Age           string                 `protobuf:"bytes,6,opt,name=age,proto3" json:"age,omitempty"`
+	Restarts      int32                  `protobuf:"varint,7,opt,name=restarts,proto3" json:"restarts,omitempty"`
+	Protocol      string                 `protobuf:"bytes,8,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppStatus) Reset() {
+	*x = AppStatus{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppStatus) ProtoMessage() {}
+
+func (x *AppStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppStatus.ProtoReflect.Descriptor instead.
+func (*AppStatus) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *AppStatus) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AppStatus) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AppStatus) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *AppStatus) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *AppStatus) GetPid() int32 {
+	if x != nil {
+		return x.Pid
+	}
+	return 0
+}
+
+func (x *AppStatus) GetAge() string {
+	if x != nil {
+		return x.Age
+	}
+	return ""
+}
+
+func (x *AppStatus) GetRestarts() int32 {
+	if x != nil {
+		return x.Restarts
+	}
+	return 0
+}
+
+func (x *AppStatus) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+type InstallAppRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Force         bool                   `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstallAppRequest) Reset() {
+	*x = InstallAppRequest{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstallAppRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstallAppRequest) ProtoMessage() {}
+
+func (x *InstallAppRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstallAppRequest.ProtoReflect.Descriptor instead.
+func (*InstallAppRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *InstallAppRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *InstallAppRequest) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
+}
+
+type InstallAppResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstallAppResponse) Reset() {
+	*x = InstallAppResponse{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstallAppResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstallAppResponse) ProtoMessage() {}
+
+func (x *InstallAppResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstallAppResponse.ProtoReflect.Descriptor instead.
+func (*InstallAppResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{21}
+}
+
+type StartAppRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartAppRequest) Reset() {
+	*x = StartAppRequest{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartAppRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartAppRequest) ProtoMessage() {}
+
+func (x *StartAppRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartAppRequest.ProtoReflect.Descriptor instead.
+func (*StartAppRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *StartAppRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type StartAppResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartAppResponse) Reset() {
+	*x = StartAppResponse{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartAppResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartAppResponse) ProtoMessage() {}
+
+func (x *StartAppResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartAppResponse.ProtoReflect.Descriptor instead.
+func (*StartAppResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{23}
+}
+
+type StopAppRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopAppRequest) Reset() {
+	*x = StopAppRequest{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopAppRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopAppRequest) ProtoMessage() {}
+
+func (x *StopAppRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopAppRequest.ProtoReflect.Descriptor instead.
+func (*StopAppRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *StopAppRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type StopAppResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopAppResponse) Reset() {
+	*x = StopAppResponse{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopAppResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopAppResponse) ProtoMessage() {}
+
+func (x *StopAppResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopAppResponse.ProtoReflect.Descriptor instead.
+func (*StopAppResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{25}
+}
+
+type GetLogsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type          LogType                `protobuf:"varint,2,opt,name=type,proto3,enum=k8shelld.LogType" json:"type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetLogsRequest) Reset() {
+	*x = GetLogsRequest{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetLogsRequest) ProtoMessage() {}
+
+func (x *GetLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetLogsRequest.ProtoReflect.Descriptor instead.
+func (*GetLogsRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *GetLogsRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *GetLogsRequest) GetType() LogType {
+	if x != nil {
+		return x.Type
+	}
+	return LogType_LOG_TYPE_APP
+}
+
+type GetLogsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Log           string                 `protobuf:"bytes,1,opt,name=log,proto3" json:"log,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetLogsResponse) Reset() {
+	*x = GetLogsResponse{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetLogsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetLogsResponse) ProtoMessage() {}
+
+func (x *GetLogsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetLogsResponse.ProtoReflect.Descriptor instead.
+func (*GetLogsResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *GetLogsResponse) GetLog() string {
+	if x != nil {
+		return x.Log
+	}
+	return ""
+}
+
+type GetLogsStreamRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type          LogType                `protobuf:"varint,2,opt,name=type,proto3,enum=k8shelld.LogType" json:"type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetLogsStreamRequest) Reset() {
+	*x = GetLogsStreamRequest{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetLogsStreamRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetLogsStreamRequest) ProtoMessage() {}
+
+func (x *GetLogsStreamRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetLogsStreamRequest.ProtoReflect.Descriptor instead.
+func (*GetLogsStreamRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *GetLogsStreamRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *GetLogsStreamRequest) GetType() LogType {
+	if x != nil {
+		return x.Type
+	}
+	return LogType_LOG_TYPE_APP
+}
+
+type GetLogsStreamResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Line          string                 `protobuf:"bytes,1,opt,name=line,proto3" json:"line,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetLogsStreamResponse) Reset() {
+	*x = GetLogsStreamResponse{}
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetLogsStreamResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetLogsStreamResponse) ProtoMessage() {}
+
+func (x *GetLogsStreamResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_api_k8shelld_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetLogsStreamResponse.ProtoReflect.Descriptor instead.
+func (*GetLogsStreamResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *GetLogsStreamResponse) GetLine() string {
+	if x != nil {
+		return x.Line
+	}
+	return ""
+}
+
 var File_pkg_api_k8shelld_proto protoreflect.FileDescriptor
 
 const file_pkg_api_k8shelld_proto_rawDesc = "" +
@@ -1296,10 +1963,45 @@ const file_pkg_api_k8shelld_proto_rawDesc = "" +
 	"\x04mode\x18\x01 \x01(\x0e2\x18.k8shelld.UnixSocketModeR\x04mode\x12\x1e\n" +
 	"\n" +
 	"socketPath\x18\x02 \x01(\tR\n" +
-	"socketPath*H\n" +
+	"socketPath\"\x11\n" +
+	"\x0fListAppsRequest\";\n" +
+	"\x10ListAppsResponse\x12'\n" +
+	"\x04apps\x18\x01 \x03(\v2\x13.k8shelld.AppStatusR\x04apps\"\xc1\x01\n" +
+	"\tAppStatus\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\x12\x12\n" +
+	"\x04port\x18\x04 \x01(\x05R\x04port\x12\x10\n" +
+	"\x03pid\x18\x05 \x01(\x05R\x03pid\x12\x10\n" +
+	"\x03age\x18\x06 \x01(\tR\x03age\x12\x1a\n" +
+	"\brestarts\x18\a \x01(\x05R\brestarts\x12\x1a\n" +
+	"\bprotocol\x18\b \x01(\tR\bprotocol\"=\n" +
+	"\x11InstallAppRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05force\x18\x02 \x01(\bR\x05force\"\x14\n" +
+	"\x12InstallAppResponse\"%\n" +
+	"\x0fStartAppRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"\x12\n" +
+	"\x10StartAppResponse\"$\n" +
+	"\x0eStopAppRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"\x11\n" +
+	"\x0fStopAppResponse\"K\n" +
+	"\x0eGetLogsRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
+	"\x04type\x18\x02 \x01(\x0e2\x11.k8shelld.LogTypeR\x04type\"#\n" +
+	"\x0fGetLogsResponse\x12\x10\n" +
+	"\x03log\x18\x01 \x01(\tR\x03log\"Q\n" +
+	"\x14GetLogsStreamRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
+	"\x04type\x18\x02 \x01(\x0e2\x11.k8shelld.LogTypeR\x04type\"+\n" +
+	"\x15GetLogsStreamResponse\x12\x12\n" +
+	"\x04line\x18\x01 \x01(\tR\x04line*H\n" +
 	"\x0eUnixSocketMode\x12\x1b\n" +
 	"\x17UNIX_SOCKET_MODE_LISTEN\x10\x00\x12\x19\n" +
-	"\x15UNIX_SOCKET_MODE_DIAL\x10\x012U\n" +
+	"\x15UNIX_SOCKET_MODE_DIAL\x10\x01*1\n" +
+	"\aLogType\x12\x10\n" +
+	"\fLOG_TYPE_APP\x10\x00\x12\x14\n" +
+	"\x10LOG_TYPE_INSTALL\x10\x012U\n" +
 	"\rSystemService\x12D\n" +
 	"\tHandshake\x12\x1a.k8shelld.HandshakeRequest\x1a\x1b.k8shelld.HandshakeResponse2\xa1\x01\n" +
 	"\fShellService\x12<\n" +
@@ -1311,7 +2013,16 @@ const file_pkg_api_k8shelld_proto_rawDesc = "" +
 	"\x04Exec\x12\x15.k8shelld.ExecRequest\x1a\x16.k8shelld.ExecResponse(\x010\x012`\n" +
 	"\x11UnixSocketService\x12K\n" +
 	"\n" +
-	"UnixSocket\x12\x1b.k8shelld.UnixSocketRequest\x1a\x1c.k8shelld.UnixSocketResponse(\x010\x01B>Z<github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb;k8shelldpbb\x06proto3"
+	"UnixSocket\x12\x1b.k8shelld.UnixSocketRequest\x1a\x1c.k8shelld.UnixSocketResponse(\x010\x012\xaf\x03\n" +
+	"\n" +
+	"AppService\x12A\n" +
+	"\bListApps\x12\x19.k8shelld.ListAppsRequest\x1a\x1a.k8shelld.ListAppsResponse\x12G\n" +
+	"\n" +
+	"InstallApp\x12\x1b.k8shelld.InstallAppRequest\x1a\x1c.k8shelld.InstallAppResponse\x12A\n" +
+	"\bStartApp\x12\x19.k8shelld.StartAppRequest\x1a\x1a.k8shelld.StartAppResponse\x12>\n" +
+	"\aStopApp\x12\x18.k8shelld.StopAppRequest\x1a\x19.k8shelld.StopAppResponse\x12>\n" +
+	"\aGetLogs\x12\x18.k8shelld.GetLogsRequest\x1a\x19.k8shelld.GetLogsResponse\x12R\n" +
+	"\rGetLogsStream\x12\x1e.k8shelld.GetLogsStreamRequest\x1a\x1f.k8shelld.GetLogsStreamResponse0\x01B>Z<github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb;k8shelldpbb\x06proto3"
 
 var (
 	file_pkg_api_k8shelld_proto_rawDescOnce sync.Once
@@ -1325,52 +2036,81 @@ func file_pkg_api_k8shelld_proto_rawDescGZIP() []byte {
 	return file_pkg_api_k8shelld_proto_rawDescData
 }
 
-var file_pkg_api_k8shelld_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pkg_api_k8shelld_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_pkg_api_k8shelld_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_pkg_api_k8shelld_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_pkg_api_k8shelld_proto_goTypes = []any{
 	(UnixSocketMode)(0),            // 0: k8shelld.UnixSocketMode
-	(*HandshakeRequest)(nil),       // 1: k8shelld.HandshakeRequest
-	(*User)(nil),                   // 2: k8shelld.User
-	(*HandshakeResponse)(nil),      // 3: k8shelld.HandshakeResponse
-	(*ShellRequest)(nil),           // 4: k8shelld.ShellRequest
-	(*ShellResponse)(nil),          // 5: k8shelld.ShellResponse
-	(*ShellStartRequest)(nil),      // 6: k8shelld.ShellStartRequest
-	(*ResizeTerminalRequest)(nil),  // 7: k8shelld.ResizeTerminalRequest
-	(*ResizeTerminalResponse)(nil), // 8: k8shelld.ResizeTerminalResponse
-	(*PortForwardRequest)(nil),     // 9: k8shelld.PortForwardRequest
-	(*Destination)(nil),            // 10: k8shelld.Destination
-	(*PortForwardResponse)(nil),    // 11: k8shelld.PortForwardResponse
-	(*ExecRequest)(nil),            // 12: k8shelld.ExecRequest
-	(*ExecResponse)(nil),           // 13: k8shelld.ExecResponse
-	(*CommandDetails)(nil),         // 14: k8shelld.CommandDetails
-	(*UnixSocketRequest)(nil),      // 15: k8shelld.UnixSocketRequest
-	(*UnixSocketResponse)(nil),     // 16: k8shelld.UnixSocketResponse
-	(*UnixSocketStartRequest)(nil), // 17: k8shelld.UnixSocketStartRequest
+	(LogType)(0),                   // 1: k8shelld.LogType
+	(*HandshakeRequest)(nil),       // 2: k8shelld.HandshakeRequest
+	(*User)(nil),                   // 3: k8shelld.User
+	(*HandshakeResponse)(nil),      // 4: k8shelld.HandshakeResponse
+	(*ShellRequest)(nil),           // 5: k8shelld.ShellRequest
+	(*ShellResponse)(nil),          // 6: k8shelld.ShellResponse
+	(*ShellStartRequest)(nil),      // 7: k8shelld.ShellStartRequest
+	(*ResizeTerminalRequest)(nil),  // 8: k8shelld.ResizeTerminalRequest
+	(*ResizeTerminalResponse)(nil), // 9: k8shelld.ResizeTerminalResponse
+	(*PortForwardRequest)(nil),     // 10: k8shelld.PortForwardRequest
+	(*Destination)(nil),            // 11: k8shelld.Destination
+	(*PortForwardResponse)(nil),    // 12: k8shelld.PortForwardResponse
+	(*ExecRequest)(nil),            // 13: k8shelld.ExecRequest
+	(*ExecResponse)(nil),           // 14: k8shelld.ExecResponse
+	(*CommandDetails)(nil),         // 15: k8shelld.CommandDetails
+	(*UnixSocketRequest)(nil),      // 16: k8shelld.UnixSocketRequest
+	(*UnixSocketResponse)(nil),     // 17: k8shelld.UnixSocketResponse
+	(*UnixSocketStartRequest)(nil), // 18: k8shelld.UnixSocketStartRequest
+	(*ListAppsRequest)(nil),        // 19: k8shelld.ListAppsRequest
+	(*ListAppsResponse)(nil),       // 20: k8shelld.ListAppsResponse
+	(*AppStatus)(nil),              // 21: k8shelld.AppStatus
+	(*InstallAppRequest)(nil),      // 22: k8shelld.InstallAppRequest
+	(*InstallAppResponse)(nil),     // 23: k8shelld.InstallAppResponse
+	(*StartAppRequest)(nil),        // 24: k8shelld.StartAppRequest
+	(*StartAppResponse)(nil),       // 25: k8shelld.StartAppResponse
+	(*StopAppRequest)(nil),         // 26: k8shelld.StopAppRequest
+	(*StopAppResponse)(nil),        // 27: k8shelld.StopAppResponse
+	(*GetLogsRequest)(nil),         // 28: k8shelld.GetLogsRequest
+	(*GetLogsResponse)(nil),        // 29: k8shelld.GetLogsResponse
+	(*GetLogsStreamRequest)(nil),   // 30: k8shelld.GetLogsStreamRequest
+	(*GetLogsStreamResponse)(nil),  // 31: k8shelld.GetLogsStreamResponse
 }
 var file_pkg_api_k8shelld_proto_depIdxs = []int32{
-	2,  // 0: k8shelld.HandshakeRequest.user:type_name -> k8shelld.User
-	6,  // 1: k8shelld.ShellRequest.start_request:type_name -> k8shelld.ShellStartRequest
-	10, // 2: k8shelld.PortForwardRequest.destination:type_name -> k8shelld.Destination
-	14, // 3: k8shelld.ExecRequest.command_details:type_name -> k8shelld.CommandDetails
-	17, // 4: k8shelld.UnixSocketRequest.start_request:type_name -> k8shelld.UnixSocketStartRequest
+	3,  // 0: k8shelld.HandshakeRequest.user:type_name -> k8shelld.User
+	7,  // 1: k8shelld.ShellRequest.start_request:type_name -> k8shelld.ShellStartRequest
+	11, // 2: k8shelld.PortForwardRequest.destination:type_name -> k8shelld.Destination
+	15, // 3: k8shelld.ExecRequest.command_details:type_name -> k8shelld.CommandDetails
+	18, // 4: k8shelld.UnixSocketRequest.start_request:type_name -> k8shelld.UnixSocketStartRequest
 	0,  // 5: k8shelld.UnixSocketStartRequest.mode:type_name -> k8shelld.UnixSocketMode
-	1,  // 6: k8shelld.SystemService.Handshake:input_type -> k8shelld.HandshakeRequest
-	4,  // 7: k8shelld.ShellService.Shell:input_type -> k8shelld.ShellRequest
-	7,  // 8: k8shelld.ShellService.ResizeTerminal:input_type -> k8shelld.ResizeTerminalRequest
-	9,  // 9: k8shelld.PortForwardService.PortForward:input_type -> k8shelld.PortForwardRequest
-	12, // 10: k8shelld.ExecService.Exec:input_type -> k8shelld.ExecRequest
-	15, // 11: k8shelld.UnixSocketService.UnixSocket:input_type -> k8shelld.UnixSocketRequest
-	3,  // 12: k8shelld.SystemService.Handshake:output_type -> k8shelld.HandshakeResponse
-	5,  // 13: k8shelld.ShellService.Shell:output_type -> k8shelld.ShellResponse
-	8,  // 14: k8shelld.ShellService.ResizeTerminal:output_type -> k8shelld.ResizeTerminalResponse
-	11, // 15: k8shelld.PortForwardService.PortForward:output_type -> k8shelld.PortForwardResponse
-	13, // 16: k8shelld.ExecService.Exec:output_type -> k8shelld.ExecResponse
-	16, // 17: k8shelld.UnixSocketService.UnixSocket:output_type -> k8shelld.UnixSocketResponse
-	12, // [12:18] is the sub-list for method output_type
-	6,  // [6:12] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	21, // 6: k8shelld.ListAppsResponse.apps:type_name -> k8shelld.AppStatus
+	1,  // 7: k8shelld.GetLogsRequest.type:type_name -> k8shelld.LogType
+	1,  // 8: k8shelld.GetLogsStreamRequest.type:type_name -> k8shelld.LogType
+	2,  // 9: k8shelld.SystemService.Handshake:input_type -> k8shelld.HandshakeRequest
+	5,  // 10: k8shelld.ShellService.Shell:input_type -> k8shelld.ShellRequest
+	8,  // 11: k8shelld.ShellService.ResizeTerminal:input_type -> k8shelld.ResizeTerminalRequest
+	10, // 12: k8shelld.PortForwardService.PortForward:input_type -> k8shelld.PortForwardRequest
+	13, // 13: k8shelld.ExecService.Exec:input_type -> k8shelld.ExecRequest
+	16, // 14: k8shelld.UnixSocketService.UnixSocket:input_type -> k8shelld.UnixSocketRequest
+	19, // 15: k8shelld.AppService.ListApps:input_type -> k8shelld.ListAppsRequest
+	22, // 16: k8shelld.AppService.InstallApp:input_type -> k8shelld.InstallAppRequest
+	24, // 17: k8shelld.AppService.StartApp:input_type -> k8shelld.StartAppRequest
+	26, // 18: k8shelld.AppService.StopApp:input_type -> k8shelld.StopAppRequest
+	28, // 19: k8shelld.AppService.GetLogs:input_type -> k8shelld.GetLogsRequest
+	30, // 20: k8shelld.AppService.GetLogsStream:input_type -> k8shelld.GetLogsStreamRequest
+	4,  // 21: k8shelld.SystemService.Handshake:output_type -> k8shelld.HandshakeResponse
+	6,  // 22: k8shelld.ShellService.Shell:output_type -> k8shelld.ShellResponse
+	9,  // 23: k8shelld.ShellService.ResizeTerminal:output_type -> k8shelld.ResizeTerminalResponse
+	12, // 24: k8shelld.PortForwardService.PortForward:output_type -> k8shelld.PortForwardResponse
+	14, // 25: k8shelld.ExecService.Exec:output_type -> k8shelld.ExecResponse
+	17, // 26: k8shelld.UnixSocketService.UnixSocket:output_type -> k8shelld.UnixSocketResponse
+	20, // 27: k8shelld.AppService.ListApps:output_type -> k8shelld.ListAppsResponse
+	23, // 28: k8shelld.AppService.InstallApp:output_type -> k8shelld.InstallAppResponse
+	25, // 29: k8shelld.AppService.StartApp:output_type -> k8shelld.StartAppResponse
+	27, // 30: k8shelld.AppService.StopApp:output_type -> k8shelld.StopAppResponse
+	29, // 31: k8shelld.AppService.GetLogs:output_type -> k8shelld.GetLogsResponse
+	31, // 32: k8shelld.AppService.GetLogsStream:output_type -> k8shelld.GetLogsStreamResponse
+	21, // [21:33] is the sub-list for method output_type
+	9,  // [9:21] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_pkg_api_k8shelld_proto_init() }
@@ -1409,10 +2149,10 @@ func file_pkg_api_k8shelld_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_api_k8shelld_proto_rawDesc), len(file_pkg_api_k8shelld_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   17,
+			NumEnums:      2,
+			NumMessages:   30,
 			NumExtensions: 0,
-			NumServices:   5,
+			NumServices:   6,
 		},
 		GoTypes:           file_pkg_api_k8shelld_proto_goTypes,
 		DependencyIndexes: file_pkg_api_k8shelld_proto_depIdxs,

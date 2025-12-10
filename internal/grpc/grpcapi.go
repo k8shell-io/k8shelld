@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/common/pkg/gapi"
+	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
@@ -43,7 +44,7 @@ type GRPCService struct {
 	grpcConfig          gapi.ServerConfig           // The gRPC server configuration
 	logger              *zerolog.Logger             // The logger
 	initScriptsDir      string                      // The directory where the init scripts are located
-	user                system.User                 // The workspace owner
+	user                config.User                 // The workspace owner
 	procWatcher         *system.ProcessWatcher      // The process watcher
 	portForwardingRules []config.PortForwardingRule // The port forwarding rules that are allowed
 	ExecStore           *sync.Map                   // The store for the exec data
@@ -51,6 +52,7 @@ type GRPCService struct {
 	SessionStore        *sync.Map                   // The store for the session data
 	UnixSocketStore     *sync.Map                   // The store for the unix socket data
 	apiClient           *apiClient.Client           // The API client to communicate with the API server
+	appManager          *apps.AppManager            // The app manager
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -70,9 +72,10 @@ func getStatus(deleted time.Time) string {
 }
 
 // NewGRPCAPI creates a new GRPCApiService
-func NewGRPCService(user system.User, grpcConfig gapi.ServerConfig,
+func NewGRPCService(user config.User, grpcConfig gapi.ServerConfig,
 	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
-	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client) (*GRPCService, error) {
+	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
+	appManager *apps.AppManager) (*GRPCService, error) {
 
 	logger := logger.NewLogger("grpc")
 
@@ -88,6 +91,7 @@ func NewGRPCService(user system.User, grpcConfig gapi.ServerConfig,
 		SessionStore:        &sync.Map{},
 		UnixSocketStore:     &sync.Map{},
 		apiClient:           apiClient,
+		appManager:          appManager,
 	}, nil
 }
 
@@ -108,6 +112,7 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 		k8shelldpb.RegisterExecServiceServer(s, NewExecServiceServer(a))
 		k8shelldpb.RegisterPortForwardServiceServer(s, NewPortForwardServiceServer(a))
 		k8shelldpb.RegisterUnixSocketServiceServer(s, NewUnixSocketServiceServer(a))
+		k8shelldpb.RegisterAppServiceServer(s, NewAppServiceServer(a.appManager))
 		a.logger.Info().Msgf("GRPC services server registered")
 		return nil
 	})

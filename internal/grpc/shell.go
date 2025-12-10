@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
@@ -25,7 +26,7 @@ import (
 // SessionData stores the data of a shell session.
 type SessionData struct {
 	Id       string
-	user     system.User
+	user     config.User
 	CmdShell string
 	Cmd      *exec.Cmd
 	Ptmx     *os.File

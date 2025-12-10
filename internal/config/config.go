@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/k8shell-io/common/pkg/gapi"
-	"github.com/k8shell-io/k8shelld/internal/system"
 )
 
 // Maximum packet size for streaming data
@@ -37,6 +37,21 @@ const (
 // - terminateOrphans: Configuration for the terminate orphans feature.
 // - reapZombies: Configuration for the reap zombies feature.
 // - logger: Configuration for the logger.
+
+// Config represents the main configuration file structure
+type Config struct {
+	System              System           `yaml:"system"`
+	User                User             `yaml:"user"`
+	Env                 Env              `yaml:"env"`
+	PortForwarding      []string         `yaml:"portForwarding"`
+	TerminateOrphans    TerminateOrphans `yaml:"terminateOrphans"`
+	ReapZombies         ReapZombies      `yaml:"reapZombies"`
+	Docker              DockerConfig     `yaml:"docker"`
+	PortForwardingRules []PortForwardingRule
+	InitScriptsDir      string `yaml:"initScriptsDir"`
+	EnableApps          bool   `yaml:"enableApps"`
+	Apps                *Apps  `yaml:"apps" json:"apps"`
+}
 
 // System represents the general system configuration
 type System struct {
@@ -75,16 +90,42 @@ type DockerConfig struct {
 	CreateDockerSockSymlink bool `yaml:"createDockerSockSymlink"`
 }
 
-// Config represents the main configuration file structure
-type Config struct {
-	System              System           `yaml:"system"`
-	User                system.User      `yaml:"user"`
-	Env                 Env              `yaml:"env"`
-	PortForwarding      []string         `yaml:"portForwarding"`
-	TerminateOrphans    TerminateOrphans `yaml:"terminateOrphans"`
-	ReapZombies         ReapZombies      `yaml:"reapZombies"`
-	Docker              DockerConfig     `yaml:"docker"`
-	PortForwardingRules []PortForwardingRule
+// Apps represents a map of application specifications
+type Apps map[string]*AppSpec
+
+// AppSpec represents the specification for an application
+type AppSpec struct {
+	Name              string        `yaml:"name"`
+	Binary            string        `yaml:"binary"`
+	VersionCmd        []string      `yaml:"versionCmd,omitempty"`
+	VersionRegex      string        `yaml:"versionRegex,omitempty"`
+	Install           string        `yaml:"install"`
+	Start             []string      `yaml:"start"`
+	Listen            int           `yaml:"listen"`
+	RestartPolicy     string        `yaml:"restartPolicy"`
+	MaxRestartBackoff time.Duration `yaml:"maxRestartBackoff"`
+	InstallAsRoot     bool          `yaml:"installAsRoot"`
+	AutoStart         bool          `yaml:"autoStart"`
+	Protocol          string        `yaml:"protocol"`
+}
+
+// Group represents a group in the workspace
+type Group struct {
+	Name string `yaml:"name"`
+	Gid  int    `yaml:"gid"`
+}
+
+// User represents a user in the workspace
+type User struct {
+	Username  string   `yaml:"username"`
+	Fullname  string   `yaml:"fullname"`
+	Uid       int      `yaml:"uid"`
+	Gid       int      `yaml:"gid"`
+	Shell     string   `yaml:"shell"`
+	Sudo      bool     `yaml:"sudo"`
+	Groups    *[]Group `yaml:"groups,omitempty" json:"groups,omitempty"`
+	HomeDir   string
+	UserToken string
 }
 
 // parsePortForwardingRule converts a rule into a PortForwardingRule struct

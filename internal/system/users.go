@@ -14,26 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 )
-
-type Group struct {
-	Name string `yaml:"name"`
-	Gid  int    `yaml:"gid"`
-}
-
-// User represents a user in the workspace
-type User struct {
-	Username  string   `yaml:"username"`
-	Fullname  string   `yaml:"fullname"`
-	Uid       int      `yaml:"uid"`
-	Gid       int      `yaml:"gid"`
-	Shell     string   `yaml:"shell"`
-	Sudo      bool     `yaml:"sudo"`
-	Groups    *[]Group `yaml:"groups,omitempty" json:"groups,omitempty"`
-	HomeDir   string
-	UserToken string
-}
 
 const groupFilePath = "/etc/group"
 
@@ -43,7 +26,7 @@ func runCommand(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 }
 
 // CreateUser creates the user in the system.
-func CreateUser(user User) error {
+func CreateUser(user config.User) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 

@@ -168,3 +168,85 @@ message UnixSocketStartRequest {
   UnixSocketMode mode = 1; 
   string socketPath = 2;            
 }
+
+// *** AppService
+
+service AppService {
+  // List all apps and their status
+  rpc ListApps (ListAppsRequest) returns (ListAppsResponse);
+
+  // Install an app (optionally force reinstall)
+  rpc InstallApp (InstallAppRequest) returns (InstallAppResponse);
+
+  // Start an app
+  rpc StartApp (StartAppRequest) returns (StartAppResponse);
+
+  // Stop an app
+  rpc StopApp (StopAppRequest) returns (StopAppResponse);
+
+  // unary: return whole log as a single string
+  rpc GetLogs (GetLogsRequest) returns (GetLogsResponse);
+
+  // streaming: tail logs line by line
+  rpc GetLogsStream (GetLogsStreamRequest) returns (stream GetLogsStreamResponse);
+}
+
+// Which log to return
+enum LogType {
+  LOG_TYPE_APP = 0;      // runtime app log
+  LOG_TYPE_INSTALL = 1;  // install log
+}
+
+message ListAppsRequest {}
+
+message ListAppsResponse {
+  repeated AppStatus apps = 1;
+}
+
+message AppStatus {
+  string name = 1;
+  string status = 2;
+  string version = 3;
+  int32  port = 4;
+  int32  pid = 5;
+  string age = 6;
+  int32  restarts = 7;
+  string protocol = 8;
+}
+
+message InstallAppRequest {
+  string name = 1;
+  bool   force = 2;
+}
+
+message InstallAppResponse {}
+
+message StartAppRequest {
+  string name = 1;
+}
+
+message StartAppResponse {}
+
+message StopAppRequest {
+  string name = 1;
+}
+
+message StopAppResponse {}
+
+message GetLogsRequest {
+  string  name = 1;
+  LogType type = 2; 
+}
+
+message GetLogsResponse {
+  string log = 1;
+}
+
+message GetLogsStreamRequest {
+  string  name   = 1;
+  LogType type   = 2;
+}
+
+message GetLogsStreamResponse {
+  string line = 1; 
+}
