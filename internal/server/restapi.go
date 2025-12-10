@@ -527,8 +527,8 @@ func (a *RESTService) GetAppLogs(w http.ResponseWriter, r *http.Request) {
 			}
 			if err != nil {
 				if err == io.EOF {
-					if logType == "install" && !a.server.appManager.IsInstalling(name) ||
-						logType == "app" && !a.server.appManager.IsRunning(name) {
+					if (logType == "install" && !a.server.appManager.IsInstalling(name)) ||
+						(logType == "app" && !a.server.appManager.IsRunning(name)) {
 						return
 					}
 					time.Sleep(200 * time.Millisecond)
