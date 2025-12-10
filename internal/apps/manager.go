@@ -372,7 +372,11 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		log.Error().Err(err).Msg("failed to open install log file")
 		return fmt.Errorf("open install log file: %w", err)
 	}
-	defer logFile.Close()
+	defer func() {
+		if err := logFile.Close(); err != nil {
+			log.Error().Err(err).Msgf("failed to close install log file for %s", name)
+		}
+	}()
 
 	m.logger.Debug().Msgf("running install script for %s, output=%s, as_root=%v", name, logPath, app.InstallAsRoot)
 
