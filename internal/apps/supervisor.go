@@ -104,7 +104,11 @@ func (s *AppSupervisor) supervise() {
 			s.log.Error().Err(err).Msg("failed to open app log file")
 			return
 		}
-		defer logFile.Close()
+		defer func() {
+			if err := logFile.Close(); err != nil {
+				s.log.Error().Err(err).Msg("failed to close app log file")
+			}
+		}()
 
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
