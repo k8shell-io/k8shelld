@@ -514,6 +514,7 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 			Status:   "-",
 			Version:  "",
 			Port:     app.Listen,
+			Protocol: app.Protocol,
 			PID:      0,
 			Age:      "",
 			Restarts: 0,
