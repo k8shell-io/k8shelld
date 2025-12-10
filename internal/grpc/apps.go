@@ -70,7 +70,7 @@ func (s *AppServiceServer) ListApps(ctx context.Context,
 	return resp, nil
 }
 
-// StopApp stops the specified application by name.
+// InstallApp installs the specified application by name.
 func (s *AppServiceServer) InstallApp(ctx context.Context,
 	req *k8shelldpb.InstallAppRequest) (*k8shelldpb.InstallAppResponse, error) {
 	if s.appManager == nil {
