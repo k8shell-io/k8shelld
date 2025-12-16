@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,7 +14,9 @@ import (
 	"github.com/k8shell-io/common/pkg/models"
 	pb "github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // BufferedReadWriter is an interface that is used to read and write data with
@@ -617,10 +620,16 @@ func (k *K8shelld) RunProcessor(ctx context.Context, handler CommandHandler) err
 
 		in, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
-				k.log.Info().Msg("command listener stream closed by server")
+			if isEOFError(err) {
+				k.log.Info().Msgf("command listener stream closed by server: %v", err)
 				return nil
 			}
+
+			if st, ok := status.FromError(err); ok && st.Code() == codes.Canceled {
+				k.log.Info().Msgf("command listener stream canceled: %v", err)
+				return nil
+			}
+
 			return fmt.Errorf("failed to receive command from server: %w", err)
 		}
 
@@ -713,4 +722,26 @@ func (wc *K8shelldApps) StartApp(ctx context.Context, appName string) error {
 func (wc *K8shelldApps) StopApp(ctx context.Context, appName string) error {
 	_, err := wc.app.StopApp(ctx, &pb.StopAppRequest{Name: appName})
 	return err
+}
+
+// *** Helper functions
+
+// isEOFError reports whether the given error represents a clean EOF/stream close
+// from the server, including the common gRPC-wrapped form:
+func isEOFError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if err == io.EOF {
+		return true
+	}
+
+	if st, ok := status.FromError(err); ok {
+		if st.Code() == codes.Unavailable && strings.Contains(st.Message(), "EOF") {
+			return true
+		}
+	}
+
+	return false
 }
