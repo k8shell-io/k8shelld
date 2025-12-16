@@ -158,7 +158,8 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 
 func (a *RESTService) Shutdown(w http.ResponseWriter, r *http.Request) {
 	a.logger.Debug().Msgf("Shutting down workspace %s", a.server.workspace)
-	if err := a.server.apiClient.DeleteWorkspace(r.Context(), a.user.Username, a.server.workspace); err != nil {
+	_, err := a.server.grpcService.CommandService.SendCommand(r.Context(), "shutdown")
+	if err != nil {
 		a.logger.Warn().Msgf("Cannot shutdown workspace: %v", err)
 		http.Error(w, "Failed to shutdown workspace", http.StatusBadGateway)
 		return
