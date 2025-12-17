@@ -51,7 +51,7 @@ type GRPCService struct {
 	PortForwardStore    *sync.Map                   // The store for the port forwarding data
 	SessionStore        *sync.Map                   // The store for the session data
 	UnixSocketStore     *sync.Map                   // The store for the unix socket data
-	apiClient           *apiClient.Client           // The API client to communicate with the API server
+	apiClientx          *apiClient.Client           // The API client to communicate with the API server
 	appManager          *apps.AppManager            // The app manager
 	CommandService      *CommandServiceServer       // The command service
 }
@@ -91,7 +91,7 @@ func NewGRPCService(user config.User, grpcConfig gapi.ServerConfig,
 		PortForwardStore:    &sync.Map{},
 		SessionStore:        &sync.Map{},
 		UnixSocketStore:     &sync.Map{},
-		apiClient:           apiClient,
+		apiClientx:          apiClient,
 		appManager:          appManager,
 		CommandService:      NewCommandServiceServer(),
 	}, nil

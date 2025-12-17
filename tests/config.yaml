@@ -5,7 +5,9 @@ system:
   pprof: false
 
   # api server
-  apiServer: http://api-server.k8shell-test:9101
+  apiServer: 
+    enabled: false
+    address: http://api-server.k8shell-test:9101
 
   # grpc server
   grpc:

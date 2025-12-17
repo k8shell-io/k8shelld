@@ -71,6 +71,13 @@ func dockerCredsHelper(operation string) {
 			fmt.Printf("Failed to get credentials: %v\n", err)
 			os.Exit(0)
 		}
+		defer resp.Body.Close()
+
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("%v\n", err)
+			return
+		}
 
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -117,6 +124,13 @@ func gitCredsHelper(operation string) {
 			return
 		}
 		defer resp.Body.Close()
+
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("%v\n", err)
+			return
+		}
+
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			fmt.Fprint(os.Stdout, "\n")

@@ -27,17 +27,6 @@ const (
 	DOCKER_SOCKET_SYMLINK = "/var/run/docker.sock"
 )
 
-// Configuration file structure
-// The configuration file is a YAML file that contains the following fields:
-// - system: General system configuration.
-// - mainUser: The main user that will be created when the service starts.
-// - extraUsers: A list of additional users that will be created when the service starts.
-// - dockerDNS: Configuration for the Docker DNS feature.
-// - portForwarding: Configuration for the port forwarding feature.
-// - terminateOrphans: Configuration for the terminate orphans feature.
-// - reapZombies: Configuration for the reap zombies feature.
-// - logger: Configuration for the logger.
-
 // Config represents the main configuration file structure
 type Config struct {
 	System              System           `yaml:"system"`
@@ -57,8 +46,13 @@ type Config struct {
 type System struct {
 	PProf      bool              `yaml:"pprof"`
 	LogLevel   string            `yaml:"logLevel" jsonschema:"enum=debug,enum=info,enum=warn,enum=error,default=info"`
-	ApiServer  string            `yaml:"apiServer"`
+	ApiServer  ApiServerConfig   `yaml:"apiServer"`
 	GrpcConfig gapi.ServerConfig `yaml:"grpc"`
+}
+
+type ApiServerConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Address string `yaml:"address"`
 }
 
 // TerminateOrphans represents the configuration for the terminate orphans feature of process watcher

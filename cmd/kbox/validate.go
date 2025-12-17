@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 
@@ -58,9 +57,10 @@ var ValidateCmd = &cobra.Command{
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			fmt.Printf("Validation failed with status: %s\n", resp.Status)
-			os.Exit(1)
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("%v\n", err)
+			return
 		}
 
 		var response models.K8shellFileValidationResponse

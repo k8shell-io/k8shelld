@@ -23,8 +23,9 @@ var ShutdownCmd = &cobra.Command{
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode >= 400 {
-			fmt.Printf("Server returned error: %s\n", resp.Status)
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("%v\n", err)
 			return
 		}
 

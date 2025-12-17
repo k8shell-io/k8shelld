@@ -82,6 +82,12 @@ Use the --sort flag to sort the output by one or more fields. Prefix the field n
 		}
 		defer resp.Body.Close()
 
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("%v\n", err)
+			return
+		}
+
 		bodyBytes, _ := io.ReadAll(resp.Body)
 
 		var t *table.Table

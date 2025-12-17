@@ -33,6 +33,13 @@ var UptimeCmd = &cobra.Command{
 			fmt.Println("Error fetching uptime:", err)
 			return
 		}
+		defer resp.Body.Close()
+
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("%v\n", err)
+			return
+		}
 
 		var data models.SystemInfoResponse
 		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
