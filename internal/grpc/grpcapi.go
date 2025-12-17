@@ -51,8 +51,9 @@ type GRPCService struct {
 	PortForwardStore    *sync.Map                   // The store for the port forwarding data
 	SessionStore        *sync.Map                   // The store for the session data
 	UnixSocketStore     *sync.Map                   // The store for the unix socket data
-	apiClient           *apiClient.Client           // The API client to communicate with the API server
+	apiClientx          *apiClient.Client           // The API client to communicate with the API server
 	appManager          *apps.AppManager            // The app manager
+	CommandService      *CommandServiceServer       // The command service
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -90,8 +91,9 @@ func NewGRPCService(user config.User, grpcConfig gapi.ServerConfig,
 		PortForwardStore:    &sync.Map{},
 		SessionStore:        &sync.Map{},
 		UnixSocketStore:     &sync.Map{},
-		apiClient:           apiClient,
+		apiClientx:          apiClient,
 		appManager:          appManager,
+		CommandService:      NewCommandServiceServer(),
 	}, nil
 }
 
@@ -113,6 +115,7 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 		k8shelldpb.RegisterPortForwardServiceServer(s, NewPortForwardServiceServer(a))
 		k8shelldpb.RegisterUnixSocketServiceServer(s, NewUnixSocketServiceServer(a))
 		k8shelldpb.RegisterAppServiceServer(s, NewAppServiceServer(a.appManager))
+		k8shelldpb.RegisterCommandServiceServer(s, a.CommandService)
 		a.logger.Info().Msgf("GRPC services server registered")
 		return nil
 	})

@@ -75,7 +75,9 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 
 		s.logger.Debug().Msgf("User token received in handshake: token=***%s", tokenPreview)
 		s.grpcApi.user.UserToken = req.User.UserToken
-		s.grpcApi.apiClient.UpdateToken(req.User.UserToken)
+		if s.grpcApi.apiClientx != nil {
+			s.grpcApi.apiClientx.UpdateToken(req.User.UserToken)
+		}
 	}
 
 	if !s.initScriptsRun {

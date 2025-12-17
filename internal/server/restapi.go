@@ -133,6 +133,11 @@ func (a *RESTService) loggingMiddleware(next http.Handler) http.Handler {
 }
 
 func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
+	if a.server.apiClientx == nil {
+		http.Error(w, "API server not configured.", http.StatusBadRequest)
+		return
+	}
+
 	num := r.URL.Query().Get("num")
 	if num == "" {
 		num = "10"
@@ -144,7 +149,7 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.logger.Debug().Msgf("Fetching last %d sessions for workspace %s", n, a.server.workspace)
-	sessions, err := a.server.apiClient.ListUserSessions(r.Context(), a.user.Username,
+	sessions, err := a.server.apiClientx.ListUserSessions(r.Context(), a.user.Username,
 		a.server.workspace, n, 0, true)
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot retrieve workspace sessions: %v", err)
@@ -158,7 +163,8 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 
 func (a *RESTService) Shutdown(w http.ResponseWriter, r *http.Request) {
 	a.logger.Debug().Msgf("Shutting down workspace %s", a.server.workspace)
-	if err := a.server.apiClient.DeleteWorkspace(r.Context(), a.user.Username, a.server.workspace); err != nil {
+	_, err := a.server.grpcService.CommandService.SendCommand(r.Context(), "shutdown")
+	if err != nil {
 		a.logger.Warn().Msgf("Cannot shutdown workspace: %v", err)
 		http.Error(w, "Failed to shutdown workspace", http.StatusBadGateway)
 		return
@@ -167,6 +173,11 @@ func (a *RESTService) Shutdown(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
+	if a.server.apiClientx == nil {
+		http.Error(w, "API server not configured.", http.StatusBadRequest)
+		return
+	}
+
 	address := r.URL.Query().Get("address")
 	if address == "" {
 		http.Error(w, "Missing 'address' query parameter", http.StatusBadRequest)
@@ -185,7 +196,7 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 	a.logger.Debug().Msgf("Fetching %s credentials for address %s and user %s", credsType,
 		address, a.user.Username)
 
-	creds, err := a.server.apiClient.GetUserCredentials(r.Context(), a.user.Username)
+	creds, err := a.server.apiClientx.GetUserCredentials(r.Context(), a.user.Username)
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot retrieve user credentials: %v", err)
 		http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
@@ -332,6 +343,11 @@ func (a *RESTService) GetLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Request) {
+	if a.server.apiClientx == nil {
+		http.Error(w, "API server not configured.", http.StatusBadRequest)
+		return
+	}
+
 	filename := r.URL.Query().Get("file")
 	if filename == "" {
 		http.Error(w, "Missing 'file' query parameter", http.StatusBadRequest)
@@ -363,7 +379,7 @@ func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Reques
 		}
 
 		if compose {
-			_, err := a.server.apiClient.ComposeBlueprint(r.Context(), a.user.Username, &k8shellFile)
+			_, err := a.server.apiClientx.ComposeBlueprint(r.Context(), a.user.Username, &k8shellFile)
 			if err != nil {
 				response.Status = "invalid"
 				response.Errors = []string{fmt.Sprintf("Failed to compose final blueprint: %v", err)}

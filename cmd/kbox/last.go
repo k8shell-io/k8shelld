@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/k8shell-io/common/pkg/models"
@@ -45,8 +44,9 @@ The command displays the following fields:
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			fmt.Printf("Server returned error: %s\n", resp.Status)
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("%v\n", err)
 			return
 		}
 

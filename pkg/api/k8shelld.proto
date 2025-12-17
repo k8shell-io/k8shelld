@@ -169,6 +169,21 @@ message UnixSocketStartRequest {
   string socketPath = 2;            
 }
 
+// *** CommandService
+
+service CommandService {
+  rpc CommandListener (stream CommandMessage) returns (stream CommandMessage);
+}
+
+message CommandMessage {
+  string command_id = 1;
+
+  oneof payload {
+    string      command = 2; 
+    string      reply   = 3; 
+  }
+}
+
 // *** AppService
 
 service AppService {

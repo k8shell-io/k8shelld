@@ -556,6 +556,102 @@ var UnixSocketService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	CommandService_CommandListener_FullMethodName = "/k8shelld.CommandService/CommandListener"
+)
+
+// CommandServiceClient is the client API for CommandService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type CommandServiceClient interface {
+	CommandListener(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[CommandMessage, CommandMessage], error)
+}
+
+type commandServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewCommandServiceClient(cc grpc.ClientConnInterface) CommandServiceClient {
+	return &commandServiceClient{cc}
+}
+
+func (c *commandServiceClient) CommandListener(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[CommandMessage, CommandMessage], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &CommandService_ServiceDesc.Streams[0], CommandService_CommandListener_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[CommandMessage, CommandMessage]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type CommandService_CommandListenerClient = grpc.BidiStreamingClient[CommandMessage, CommandMessage]
+
+// CommandServiceServer is the server API for CommandService service.
+// All implementations must embed UnimplementedCommandServiceServer
+// for forward compatibility.
+type CommandServiceServer interface {
+	CommandListener(grpc.BidiStreamingServer[CommandMessage, CommandMessage]) error
+	mustEmbedUnimplementedCommandServiceServer()
+}
+
+// UnimplementedCommandServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedCommandServiceServer struct{}
+
+func (UnimplementedCommandServiceServer) CommandListener(grpc.BidiStreamingServer[CommandMessage, CommandMessage]) error {
+	return status.Errorf(codes.Unimplemented, "method CommandListener not implemented")
+}
+func (UnimplementedCommandServiceServer) mustEmbedUnimplementedCommandServiceServer() {}
+func (UnimplementedCommandServiceServer) testEmbeddedByValue()                        {}
+
+// UnsafeCommandServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to CommandServiceServer will
+// result in compilation errors.
+type UnsafeCommandServiceServer interface {
+	mustEmbedUnimplementedCommandServiceServer()
+}
+
+func RegisterCommandServiceServer(s grpc.ServiceRegistrar, srv CommandServiceServer) {
+	// If the following call pancis, it indicates UnimplementedCommandServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&CommandService_ServiceDesc, srv)
+}
+
+func _CommandService_CommandListener_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(CommandServiceServer).CommandListener(&grpc.GenericServerStream[CommandMessage, CommandMessage]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type CommandService_CommandListenerServer = grpc.BidiStreamingServer[CommandMessage, CommandMessage]
+
+// CommandService_ServiceDesc is the grpc.ServiceDesc for CommandService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var CommandService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "k8shelld.CommandService",
+	HandlerType: (*CommandServiceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "CommandListener",
+			Handler:       _CommandService_CommandListener_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
+	Metadata: "pkg/api/k8shelld.proto",
+}
+
+const (
 	AppService_ListApps_FullMethodName      = "/k8shelld.AppService/ListApps"
 	AppService_InstallApp_FullMethodName    = "/k8shelld.AppService/InstallApp"
 	AppService_StartApp_FullMethodName      = "/k8shelld.AppService/StartApp"

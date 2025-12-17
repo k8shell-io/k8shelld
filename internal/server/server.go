@@ -28,7 +28,7 @@ type Server struct {
 	restService *RESTService
 	grpcService *grpc.GRPCService
 	procWatcher *system.ProcessWatcher
-	apiClient   *client.Client
+	apiClientx  *client.Client
 	pprof       bool
 	sysInfo     *system.SystemInfo
 	sysInfoMu   sync.Mutex
@@ -37,13 +37,21 @@ type Server struct {
 
 func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
 
+	var apiClient *client.Client
+	if cfg.System.ApiServer.Enabled {
+		if cfg.System.ApiServer.Address == "" {
+			return nil, fmt.Errorf("api server is enabled but address is empty")
+		}
+		apiClient = client.NewClient(cfg.System.ApiServer.Address, cfg.User.UserToken)
+	}
+
 	s := &Server{
-		logger:    logger.NewLogger("k8shelld"),
-		testMode:  testMode,
-		config:    cfg,
-		pprof:     cfg.System.PProf,
-		sysInfo:   nil,
-		apiClient: client.NewClient(cfg.System.ApiServer, cfg.User.UserToken),
+		logger:     logger.NewLogger("k8shelld"),
+		testMode:   testMode,
+		config:     cfg,
+		pprof:      cfg.System.PProf,
+		sysInfo:    nil,
+		apiClientx: apiClient,
 	}
 
 	var err error
@@ -67,7 +75,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	}
 
 	s.grpcService, err = grpc.NewGRPCService(cfg.User, cfg.System.GrpcConfig, cfg.PortForwardingRules,
-		cfg.InitScriptsDir, s.procWatcher, s.apiClient, s.appManager)
+		cfg.InitScriptsDir, s.procWatcher, s.apiClientx, s.appManager)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
