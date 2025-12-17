@@ -135,7 +135,7 @@ func (c *K8shelld) RunShell(ctx context.Context, rw BufferedReadWriter, sessionI
 		for {
 			n, rerr := rw.Read(buf)
 			if rerr != nil {
-				if rerr == io.EOF {
+				if isEOFErrorOrCanceled(rerr) {
 					errCh <- nil
 				} else {
 					errCh <- fmt.Errorf("reader read: %w", rerr)
@@ -162,7 +162,7 @@ func (c *K8shelld) RunShell(ctx context.Context, rw BufferedReadWriter, sessionI
 		for {
 			resp, rerr := stream.Recv()
 			if rerr != nil {
-				if rerr == io.EOF {
+				if isEOFErrorOrCanceled(rerr) {
 					errCh <- nil
 				} else {
 					errCh <- fmt.Errorf("grpc recv: %w", rerr)
@@ -255,7 +255,7 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 		for {
 			size, err := upstream.ReadBufferSize()
 			if err != nil {
-				if err == io.EOF {
+				if isEOFErrorOrCanceled(err) {
 					return
 				}
 				errCh <- fmt.Errorf("buffer check: %w", err)
@@ -265,7 +265,7 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 			if size > 0 {
 				n, rerr := upstream.Read(buf)
 				if rerr != nil {
-					if rerr == io.EOF {
+					if isEOFErrorOrCanceled(rerr) {
 						errCh <- nil
 					} else {
 						errCh <- fmt.Errorf("upstream read: %w", rerr)
@@ -301,7 +301,7 @@ func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWrite
 		for {
 			resp, rerr := stream.Recv()
 			if rerr != nil {
-				if rerr == io.EOF {
+				if isEOFErrorOrCanceled(rerr) {
 					errCh <- nil
 				} else {
 					errCh <- fmt.Errorf("grpc recv: %w", rerr)
@@ -368,7 +368,7 @@ func (c *K8shelld) RunPortForward(ctx context.Context, upstream BufferedReadWrit
 		for {
 			n, rerr := upstream.Read(buf)
 			if rerr != nil {
-				if rerr == io.EOF {
+				if isEOFErrorOrCanceled(rerr) {
 					errCh <- nil
 				} else {
 					errCh <- fmt.Errorf("ssh read: %w", rerr)
@@ -395,7 +395,7 @@ func (c *K8shelld) RunPortForward(ctx context.Context, upstream BufferedReadWrit
 		for {
 			resp, rerr := stream.Recv()
 			if rerr != nil {
-				if rerr == io.EOF {
+				if isEOFErrorOrCanceled(rerr) {
 					errCh <- nil
 				} else {
 					errCh <- fmt.Errorf("grpc recv: %w", rerr)
@@ -484,7 +484,7 @@ func (c *K8shelld) RunExec(ctx context.Context, upstream BufferedReadWriter, exe
 
 			size, err := upstream.ReadBufferSize()
 			if err != nil {
-				if err == io.EOF {
+				if isEOFErrorOrCanceled(err) {
 					return
 				}
 				writerErr = fmt.Errorf("buffer check: %w", err)
@@ -494,7 +494,7 @@ func (c *K8shelld) RunExec(ctx context.Context, upstream BufferedReadWriter, exe
 			if size > 0 {
 				n, rerr := upstream.Read(buf)
 				if rerr != nil {
-					if rerr == io.EOF {
+					if isEOFErrorOrCanceled(rerr) {
 						return
 					}
 					writerErr = fmt.Errorf("reader read: %w", rerr)
@@ -595,13 +595,8 @@ func (c *K8shelld) RunExec(ctx context.Context, upstream BufferedReadWriter, exe
 // It receives the command string and returns the reply string (or an error).
 type CommandHandler func(ctx context.Context, command string) (string, error)
 
-// RunProcessor starts a long-lived command processing loop.
-//
-// It connects to CommandService.CommandListener, receives commands from the
-// server, passes them to the provided handler, and sends replies back using
-// the same command_id. The loop exits when the context is canceled or the
-// stream ends.
-func (k *K8shelld) RunProcessor(ctx context.Context, handler CommandHandler) error {
+// RunCommandProcessor starts a command processing loop.
+func (k *K8shelld) RunCommandProcessor(ctx context.Context, handler CommandHandler) error {
 	if handler == nil {
 		return fmt.Errorf("nil command handler")
 	}
@@ -620,16 +615,9 @@ func (k *K8shelld) RunProcessor(ctx context.Context, handler CommandHandler) err
 
 		in, err := stream.Recv()
 		if err != nil {
-			if isEOFError(err) {
-				k.log.Info().Msgf("command listener stream closed by server: %v", err)
+			if isEOFErrorOrCanceled(err) {
 				return nil
 			}
-
-			if st, ok := status.FromError(err); ok && st.Code() == codes.Canceled {
-				k.log.Info().Msgf("command listener stream canceled: %v", err)
-				return nil
-			}
-
 			return fmt.Errorf("failed to receive command from server: %w", err)
 		}
 
@@ -726,9 +714,9 @@ func (wc *K8shelldApps) StopApp(ctx context.Context, appName string) error {
 
 // *** Helper functions
 
-// isEOFError reports whether the given error represents a clean EOF/stream close
-// from the server, including the common gRPC-wrapped form:
-func isEOFError(err error) bool {
+// isEOFErrorOrCanceled reports whether the given error represents a clean EOF/stream close
+// from the server, including the common gRPC-wrapped form
+func isEOFErrorOrCanceled(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -738,7 +726,7 @@ func isEOFError(err error) bool {
 	}
 
 	if st, ok := status.FromError(err); ok {
-		if st.Code() == codes.Unavailable && strings.Contains(st.Message(), "EOF") {
+		if (st.Code() == codes.Unavailable && strings.Contains(st.Message(), "EOF")) || st.Code() == codes.Canceled {
 			return true
 		}
 	}
