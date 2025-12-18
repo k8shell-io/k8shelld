@@ -1,5 +1,5 @@
 # Variables
-GOOS_LIST := linux 
+GOOS_LIST := linux
 GOARCH_LIST := amd64 arm64
 REPO=fitcr.ksi.in.fit.cvut.cz
 
@@ -19,7 +19,7 @@ image:
 	@go mod vendor -o docker/k8shelld/files/vendor
 	@echo "Building image..."
 	@version=$$(git describe --tags --match 'v*' | sed 's/-g.*//') && \
-	echo -n "k8shell-base/k8shelld:$$version" > docker/k8shelld/BUILD && \
+	echo -n "k8shell-test/k8shelld:$$version" > docker/k8shelld/BUILD && \
 	cp -r go.mod go.sum internal pkg cmd sftp scripts docker/k8shelld/files && \
 	cd docker/k8shelld && docker build --build-arg VERSION=$$version \
 		--build-arg COMMIT_ID=$$(git rev-parse --short HEAD) -t $(REPO)/$$(cat ./BUILD) .
