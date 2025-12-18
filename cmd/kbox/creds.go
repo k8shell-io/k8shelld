@@ -56,7 +56,7 @@ func dockerCredsHelper(operation string) {
 	case "get":
 		scanner := bufio.NewScanner(os.Stdin)
 		if !scanner.Scan() {
-			fmt.Println("No address provided. Please provide a Docker registry address.")
+			fmt.Fprintln(os.Stderr, "No address provided.")
 			os.Exit(1)
 		}
 
@@ -67,20 +67,17 @@ func dockerCredsHelper(operation string) {
 
 		resp, err := client.MakeRequest("GET", url, headers, nil)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
 		}
 		defer resp.Body.Close()
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
 		}
 
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println(string(bodyBytes))
