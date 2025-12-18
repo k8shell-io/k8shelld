@@ -67,34 +67,32 @@ func dockerCredsHelper(operation string) {
 
 		resp, err := client.MakeRequest("GET", url, headers, nil)
 		if err != nil {
-			fmt.Println("{}")
-			fmt.Printf("Failed to get credentials: %v\n", err)
-			os.Exit(0)
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
 		}
 		defer resp.Body.Close()
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {
-			fmt.Printf("%v\n", err)
-			return
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
 		}
 
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
-			fmt.Println("{}")
-			fmt.Printf("Failed to read response body: %v\n", err)
-			os.Exit(0)
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
 		}
 		fmt.Println(string(bodyBytes))
 
 	case "store":
-		fmt.Println("Request to store credentials, operation not supported.")
+		fmt.Fprintln(os.Stderr, "Request to store credentials, operation not supported.")
 
 	case "erase":
-		fmt.Println("Request to erase credentials, operation not supported.")
+		fmt.Fprintln(os.Stderr, "Request to erase credentials, operation not supported.")
 
 	default:
-		fmt.Printf("Invalid operation: %s\n", operation)
+		fmt.Fprintf(os.Stderr, "Invalid operation: %s\n", operation)
 		os.Exit(1)
 	}
 }
