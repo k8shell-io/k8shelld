@@ -47,7 +47,7 @@ jobs:
         run: |
           mkdir -p docker/k8shelld/files
           cp -r go.mod go.sum internal pkg cmd sftp scripts -t docker/k8shelld/files/
-          echo -n "k8shell-base/k8shelld:$VERSION" > docker/k8shelld/BUILD
+          echo -n "k8shell-test/k8shelld:$VERSION" > docker/k8shelld/BUILD
 
       - name: Load REPO_NAME from docker/k8shelld/BUILD
         run: echo "REPO_NAME=$(cat docker/k8shelld/BUILD)" >> $GITHUB_ENV
