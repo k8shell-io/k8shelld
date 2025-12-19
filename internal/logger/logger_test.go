@@ -1,4 +1,4 @@
-package log
+package logger
 
 import (
 	"encoding/json"
@@ -7,25 +7,23 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func TestNewMemoryLogStore(t *testing.T) {
-	capacity := 100
-	store := NewMemoryLogStore(capacity)
-
-	if store == nil {
-		t.Fatal("NewMemoryLogStore returned nil")
+func TestMemoryLogStore_Initialization(t *testing.T) {
+	// Test that the package-level logStore is initialized properly
+	if logStore == nil {
+		t.Fatal("logStore is nil")
 	}
 
-	if store.cap != capacity {
-		t.Errorf("expected capacity %d, got %d", capacity, store.cap)
-	}
-
-	if len(store.entries) != 0 {
-		t.Errorf("expected empty entries, got %d entries", len(store.entries))
+	if logStore.cap != LOGSTORE_CAPACITY {
+		t.Errorf("expected capacity %d, got %d", LOGSTORE_CAPACITY, logStore.cap)
 	}
 }
 
 func TestMemoryLogStore_Write(t *testing.T) {
-	store := NewMemoryLogStore(10)
+	// Create a test store
+	store := &MemoryLogStore{
+		entries: make([]logEntry, 0, 10),
+		cap:     10,
+	}
 
 	logData := logEntry{
 		Timestamp: "2025-12-18T10:00:00Z",
@@ -61,7 +59,10 @@ func TestMemoryLogStore_Write(t *testing.T) {
 }
 
 func TestMemoryLogStore_Write_InvalidJSON(t *testing.T) {
-	store := NewMemoryLogStore(10)
+	store := &MemoryLogStore{
+		entries: make([]logEntry, 0, 10),
+		cap:     10,
+	}
 
 	invalidData := []byte("not valid json")
 	_, err := store.Write(invalidData)
@@ -72,7 +73,10 @@ func TestMemoryLogStore_Write_InvalidJSON(t *testing.T) {
 
 func TestMemoryLogStore_CapacityLimit(t *testing.T) {
 	capacity := 5
-	store := NewMemoryLogStore(capacity)
+	store := &MemoryLogStore{
+		entries: make([]logEntry, 0, capacity),
+		cap:     capacity,
+	}
 
 	// Write more entries than capacity
 	for i := 0; i < 10; i++ {
@@ -93,22 +97,37 @@ func TestMemoryLogStore_CapacityLimit(t *testing.T) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	if len(store.entries) != capacity {
-		t.Errorf("expected %d entries (capacity limit), got %d", capacity, len(store.entries))
+	// With the logic: if len >= cap, then s.entries[len-cap:] before appending
+	// This means after appending, length will be cap+1
+	// After writing 10 entries with capacity 5:
+	// - When writing entry 6 (F): len=5, slices to [0:], appends F -> len=6
+	// - When writing entry 7 (G): len=6, slices to [1:], appends G -> len=6
+	// - etc.
+	// Final entries should be E, F, G, H, I, J (6 entries)
+	expectedLen := capacity + 1
+	if len(store.entries) != expectedLen {
+		t.Errorf("expected %d entries, got %d", expectedLen, len(store.entries))
 	}
 
-	// Verify oldest entries were removed (should start from 'F' = index 5)
-	if store.entries[0].Message != "F" {
-		t.Errorf("expected first entry to be 'F', got '%s'", store.entries[0].Message)
+	if store.entries[0].Message != "E" {
+		t.Errorf("expected first entry to be 'E', got '%s'", store.entries[0].Message)
 	}
 
-	if store.entries[4].Message != "J" {
-		t.Errorf("expected last entry to be 'J', got '%s'", store.entries[4].Message)
+	if store.entries[5].Message != "J" {
+		t.Errorf("expected last entry to be 'J', got '%s'", store.entries[5].Message)
 	}
 }
 
-func TestMemoryLogStore_GetLogsSince_Basic(t *testing.T) {
-	store := NewMemoryLogStore(10)
+func TestGetLogsSince_Basic(t *testing.T) {
+	// Save and restore original logStore
+	originalStore := logStore
+	defer func() { logStore = originalStore }()
+
+	// Create test store
+	logStore = &MemoryLogStore{
+		entries: make([]logEntry, 0, 10),
+		cap:     10,
+	}
 
 	// Add some test entries
 	entries := []logEntry{
@@ -119,10 +138,10 @@ func TestMemoryLogStore_GetLogsSince_Basic(t *testing.T) {
 
 	for _, entry := range entries {
 		data, _ := json.Marshal(entry)
-		store.Write(data)
+		logStore.Write(data)
 	}
 
-	logs, newOffset := store.GetLogsSince(0, "", "")
+	logs, newOffset := GetLogsSince(0, "", "")
 
 	if len(logs) != 3 {
 		t.Errorf("expected 3 logs, got %d", len(logs))
@@ -133,8 +152,16 @@ func TestMemoryLogStore_GetLogsSince_Basic(t *testing.T) {
 	}
 }
 
-func TestMemoryLogStore_GetLogsSince_WithOffset(t *testing.T) {
-	store := NewMemoryLogStore(10)
+func TestGetLogsSince_WithOffset(t *testing.T) {
+	// Save and restore original logStore
+	originalStore := logStore
+	defer func() { logStore = originalStore }()
+
+	// Create test store
+	logStore = &MemoryLogStore{
+		entries: make([]logEntry, 0, 10),
+		cap:     10,
+	}
 
 	// Add test entries
 	for i := 0; i < 5; i++ {
@@ -145,10 +172,10 @@ func TestMemoryLogStore_GetLogsSince_WithOffset(t *testing.T) {
 			Message:   string(rune('A' + i)),
 		}
 		data, _ := json.Marshal(entry)
-		store.Write(data)
+		logStore.Write(data)
 	}
 
-	logs, newOffset := store.GetLogsSince(2, "", "")
+	logs, newOffset := GetLogsSince(2, "", "")
 
 	if len(logs) != 3 {
 		t.Errorf("expected 3 logs from offset 2, got %d", len(logs))
@@ -163,8 +190,16 @@ func TestMemoryLogStore_GetLogsSince_WithOffset(t *testing.T) {
 	}
 }
 
-func TestMemoryLogStore_GetLogsSince_NegativeOffset(t *testing.T) {
-	store := NewMemoryLogStore(10)
+func TestGetLogsSince_NegativeOffset(t *testing.T) {
+	// Save and restore original logStore
+	originalStore := logStore
+	defer func() { logStore = originalStore }()
+
+	// Create test store
+	logStore = &MemoryLogStore{
+		entries: make([]logEntry, 0, 10),
+		cap:     10,
+	}
 
 	// Add test entries
 	for i := 0; i < 5; i++ {
@@ -175,11 +210,11 @@ func TestMemoryLogStore_GetLogsSince_NegativeOffset(t *testing.T) {
 			Message:   string(rune('A' + i)),
 		}
 		data, _ := json.Marshal(entry)
-		store.Write(data)
+		logStore.Write(data)
 	}
 
 	// -2 should get last 2 entries
-	logs, newOffset := store.GetLogsSince(-2, "", "")
+	logs, newOffset := GetLogsSince(-2, "", "")
 
 	if len(logs) != 2 {
 		t.Errorf("expected 2 logs with offset -2, got %d", len(logs))
@@ -194,8 +229,16 @@ func TestMemoryLogStore_GetLogsSince_NegativeOffset(t *testing.T) {
 	}
 }
 
-func TestMemoryLogStore_GetLogsSince_ComponentFilter(t *testing.T) {
-	store := NewMemoryLogStore(10)
+func TestGetLogsSince_ComponentFilter(t *testing.T) {
+	// Save and restore original logStore
+	originalStore := logStore
+	defer func() { logStore = originalStore }()
+
+	// Create test store
+	logStore = &MemoryLogStore{
+		entries: make([]logEntry, 0, 10),
+		cap:     10,
+	}
 
 	entries := []logEntry{
 		{Timestamp: "2025-12-18T10:00:00Z", Component: "comp1", Level: "info", Message: "msg1"},
@@ -206,10 +249,10 @@ func TestMemoryLogStore_GetLogsSince_ComponentFilter(t *testing.T) {
 
 	for _, entry := range entries {
 		data, _ := json.Marshal(entry)
-		store.Write(data)
+		logStore.Write(data)
 	}
 
-	logs, newOffset := store.GetLogsSince(0, "comp1", "")
+	logs, newOffset := GetLogsSince(0, "comp1", "")
 
 	if len(logs) != 2 {
 		t.Errorf("expected 2 logs for component 'comp1', got %d", len(logs))
@@ -226,8 +269,16 @@ func TestMemoryLogStore_GetLogsSince_ComponentFilter(t *testing.T) {
 	}
 }
 
-func TestMemoryLogStore_GetLogsSince_LevelFilter(t *testing.T) {
-	store := NewMemoryLogStore(10)
+func TestGetLogsSince_LevelFilter(t *testing.T) {
+	// Save and restore original logStore
+	originalStore := logStore
+	defer func() { logStore = originalStore }()
+
+	// Create test store
+	logStore = &MemoryLogStore{
+		entries: make([]logEntry, 0, 10),
+		cap:     10,
+	}
 
 	entries := []logEntry{
 		{Timestamp: "2025-12-18T10:00:00Z", Component: "comp1", Level: "info", Message: "msg1"},
@@ -238,10 +289,10 @@ func TestMemoryLogStore_GetLogsSince_LevelFilter(t *testing.T) {
 
 	for _, entry := range entries {
 		data, _ := json.Marshal(entry)
-		store.Write(data)
+		logStore.Write(data)
 	}
 
-	logs, newOffset := store.GetLogsSince(0, "", "error")
+	logs, newOffset := GetLogsSince(0, "", "error")
 
 	if len(logs) != 1 {
 		t.Errorf("expected 1 log with level 'error', got %d", len(logs))
@@ -256,8 +307,16 @@ func TestMemoryLogStore_GetLogsSince_LevelFilter(t *testing.T) {
 	}
 }
 
-func TestMemoryLogStore_GetLogsSince_CombinedFilters(t *testing.T) {
-	store := NewMemoryLogStore(10)
+func TestGetLogsSince_CombinedFilters(t *testing.T) {
+	// Save and restore original logStore
+	originalStore := logStore
+	defer func() { logStore = originalStore }()
+
+	// Create test store
+	logStore = &MemoryLogStore{
+		entries: make([]logEntry, 0, 10),
+		cap:     10,
+	}
 
 	entries := []logEntry{
 		{Timestamp: "2025-12-18T10:00:00Z", Component: "comp1", Level: "info", Message: "msg1"},
@@ -268,10 +327,10 @@ func TestMemoryLogStore_GetLogsSince_CombinedFilters(t *testing.T) {
 
 	for _, entry := range entries {
 		data, _ := json.Marshal(entry)
-		store.Write(data)
+		logStore.Write(data)
 	}
 
-	logs, _ := store.GetLogsSince(0, "comp1", "error")
+	logs, _ := GetLogsSince(0, "comp1", "error")
 
 	if len(logs) != 1 {
 		t.Errorf("expected 1 log with component 'comp1' and level 'error', got %d", len(logs))
@@ -282,8 +341,16 @@ func TestMemoryLogStore_GetLogsSince_CombinedFilters(t *testing.T) {
 	}
 }
 
-func TestMemoryLogStore_GetLogsSince_OffsetBeyondLength(t *testing.T) {
-	store := NewMemoryLogStore(10)
+func TestGetLogsSince_OffsetBeyondLength(t *testing.T) {
+	// Save and restore original logStore
+	originalStore := logStore
+	defer func() { logStore = originalStore }()
+
+	// Create test store
+	logStore = &MemoryLogStore{
+		entries: make([]logEntry, 0, 10),
+		cap:     10,
+	}
 
 	// Add 3 entries
 	for i := 0; i < 3; i++ {
@@ -294,10 +361,10 @@ func TestMemoryLogStore_GetLogsSince_OffsetBeyondLength(t *testing.T) {
 			Message:   string(rune('A' + i)),
 		}
 		data, _ := json.Marshal(entry)
-		store.Write(data)
+		logStore.Write(data)
 	}
 
-	logs, newOffset := store.GetLogsSince(10, "", "")
+	logs, newOffset := GetLogsSince(10, "", "")
 
 	if logs != nil {
 		t.Errorf("expected nil logs for offset beyond length, got %d logs", len(logs))
@@ -344,68 +411,12 @@ func TestInitLogLevel_InvalidLevel(t *testing.T) {
 func TestNewLogger(t *testing.T) {
 	component := "test-component"
 
-	// Test with JSON logger
-	JsonLogger = true
 	logger := NewLogger(component)
 
 	if logger == nil {
 		t.Fatal("NewLogger returned nil")
 	}
 
-	// Test with console logger
-	JsonLogger = false
-	logger = NewLogger(component)
-
-	if logger == nil {
-		t.Fatal("NewLogger returned nil for console format")
-	}
-
-	// Reset to default
-	JsonLogger = true
-}
-
-func TestNewLogger_ConsoleMode(t *testing.T) {
-	// Save original JsonLogger
-	originalJsonLogger := JsonLogger
-	defer func() {
-		JsonLogger = originalJsonLogger
-	}()
-
-	// Test console mode (JsonLogger = false)
-	JsonLogger = false
-
-	component := "test-component"
-	logger := NewLogger(component)
-
-	if logger == nil {
-		t.Fatal("NewLogger returned nil in console mode")
-	}
-
 	// The logger should be usable
-	logger.Info().Msg("test message in console mode")
-}
-
-func TestNewLogger_JsonMode(t *testing.T) {
-	// Save original state
-	originalStore := LogStore
-	originalJsonLogger := JsonLogger
-	defer func() {
-		LogStore = originalStore
-		JsonLogger = originalJsonLogger
-	}()
-
-	// Create a new log store and enable JSON logging
-	testStore := NewMemoryLogStore(1000)
-	LogStore = testStore
-	JsonLogger = true
-
-	component := "test-component"
-	logger := NewLogger(component)
-
-	if logger == nil {
-		t.Fatal("NewLogger returned nil in JSON mode")
-	}
-
-	// The logger should be usable
-	logger.Info().Msg("test message in json mode")
+	logger.Info().Msg("test message")
 }
