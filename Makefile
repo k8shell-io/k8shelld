@@ -11,6 +11,26 @@ init:
 	@echo "Initializing Go module..."
 	go mod tidy
 
+# Run unit tests with coverage
+test:
+	@echo "Running unit tests..."
+	go test ./... -cover
+
+# Build binaries
+build:
+	@echo "Building k8shelld..."
+	go build -o bin/k8shelld ./cmd/k8shelld
+	@echo "Building kbox..."
+	go build -o bin/kbox ./cmd/kbox
+	@echo "Build complete!"
+
+# Run binary smoke tests
+test-binary: build
+	@echo "Running binary smoke tests..."
+	@./bin/kbox -h > /dev/null 2>&1 || (echo "kbox help failed" && exit 1)
+	@./bin/k8shelld -h > /dev/null 2>&1 || (echo "k8shelld help failed" && exit 1)
+	@echo "Binary smoke tests passed!"
+
 image:
 	@echo "k8shelld docker image"
 	@rm -fr docker/k8shelld/files
