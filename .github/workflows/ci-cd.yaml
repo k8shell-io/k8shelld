@@ -10,6 +10,7 @@ on:
 jobs:
   test-and-build:
     runs-on: k8shell-runner
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
 
     env:
       GO111MODULE: on
@@ -28,6 +29,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
+          cache: true
 
       - name: Run unit tests
         run: make test
