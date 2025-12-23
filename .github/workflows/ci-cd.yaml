@@ -1,4 +1,5 @@
 name: CI/CD Pipeline
+# See https://github.com/k8shell-io/internals/tree/main/docs/handbook/docs/development/release_and_testing for information on release and testing processes.
 
 on:
   push:
@@ -31,15 +32,20 @@ jobs:
           go-version: '1.23'
           cache: true
 
+      # Validate code quality and correctness
       - name: Run unit tests
         run: make test
 
+      # Compile k8shelld and kbox executables
       - name: Build binaries
         run: make build
 
+      # Verify binaries execute successfully
       - name: Run binary smoke tests
         run: make test-binary
 
+      # Calculate version and image tag based on PR or push context
+      # PRs: pr-{number}-{short-sha}, Pushes: git describe output
       - name: Determine image tag and version
         run: |
           COMMIT_ID=$(git rev-parse --short HEAD)
@@ -59,21 +65,22 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
 
-      - name: Vendor Go modules
-        run: |
-          go mod vendor
-          mkdir -p docker/k8shelld/files
-          cp -r vendor docker/k8shelld/files/
+      # Vendor dependencies and copy source files to Docker build context
+      - name: Prepare Docker build context
+        run: make vendor prepare-docker
+        env:
+          VERSION: ${{ env.VERSION }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
 
-      - name: Copy sources to docker context
-        run: |
-          mkdir -p docker/k8shelld/files
-          cp -r go.mod go.sum internal pkg cmd sftp scripts -t docker/k8shelld/files/
-          echo -n "k8shell-test/k8shelld:$IMAGE_TAG" > docker/k8shelld/BUILD
+      # Generate BUILD file with image name for Docker build
+      - name: Set image name in BUILD file
+        run: echo -n "k8shell-test/k8shelld:${{ env.IMAGE_TAG }}" > docker/k8shelld/BUILD
 
+      # Extract image name from BUILD file for tagging
       - name: Load REPO_NAME from docker/k8shelld/BUILD
         run: echo "REPO_NAME=$(cat docker/k8shelld/BUILD)" >> $GITHUB_ENV
 
+      # Authenticate to Harbor registry
       - name: Login to Docker Registry
         uses: docker/login-action@v3
         with:
@@ -81,6 +88,7 @@ jobs:
           username: ${{ secrets.HARBOR_USER }}
           password: ${{ secrets.HARBOR_PASSWORD }}
 
+      # Build container image and push to registry with version metadata
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
