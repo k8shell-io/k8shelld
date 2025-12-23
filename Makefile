@@ -14,9 +14,10 @@ init:
 
 # Run unit tests with coverage
 # Used in CI/CD workflow to validate code changes before building
+# -count=1 disables test caching to ensure fresh execution in CI
 test:
 	@echo "Running unit tests..."
-	go test ./... -cover
+	go test ./... -cover -count=1
 
 # Build binaries
 # Compiles k8shelld and kbox executables for local development and CI/CD validation
