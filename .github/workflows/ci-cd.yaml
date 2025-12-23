@@ -30,7 +30,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
-          cache: true
+          # Disable cache for self-hosted runner to avoid conflicts
+          # Self-hosted runners naturally persist Go cache between runs
+          cache: false
 
       # Validate code quality and correctness
       - name: Run unit tests
