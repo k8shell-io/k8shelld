@@ -28,7 +28,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24.5'
 
       - name: Get version and commit ID
         run: |
