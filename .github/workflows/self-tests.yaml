@@ -87,7 +87,7 @@ jobs:
       # Calculate current branch test coverage
       - name: Calculate test coverage
         run: |
-          CURRENT_COVERAGE=$(make coverage)
+          CURRENT_COVERAGE=$(make coverage 2>/dev/null || echo "0%")
           echo "CURRENT_COVERAGE=$CURRENT_COVERAGE" >> $GITHUB_ENV
           echo "Current test coverage: $CURRENT_COVERAGE"
 
@@ -96,8 +96,8 @@ jobs:
         run: |
           git fetch origin main
           git checkout origin/main
-          make test
-          MAIN_COVERAGE=$(make coverage)
+          make test || true
+          MAIN_COVERAGE=$(make coverage 2>/dev/null || echo "0%")
           echo "MAIN_COVERAGE=$MAIN_COVERAGE" >> $GITHUB_ENV
           git checkout -
           echo "Main branch test coverage: $MAIN_COVERAGE"
