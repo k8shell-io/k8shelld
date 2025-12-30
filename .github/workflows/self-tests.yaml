@@ -108,8 +108,8 @@ jobs:
           # Remove % sign and compute delta
           CURRENT_NUM=$(echo $CURRENT_COVERAGE | sed 's/%//')
           MAIN_NUM=$(echo $MAIN_COVERAGE | sed 's/%//')
-          DELTA=$(echo "scale=2; $CURRENT_NUM - $MAIN_NUM" | bc)
-          if (( $(echo "$DELTA > 0" | bc -l) )); then
+          DELTA=$(awk "BEGIN {printf \"%.2f\", $CURRENT_NUM - $MAIN_NUM}")
+          if awk "BEGIN {exit !($DELTA > 0)}"; then
             DELTA_STR="+$DELTA%"
           else
             DELTA_STR="$DELTA%"
@@ -126,17 +126,17 @@ jobs:
             const delta = process.env.COVERAGE_DELTA;
             const marker = '<!-- test-coverage-comment -->';
             const body = `${marker}\n## 🧪 Test Coverage\n\n**Current coverage:** ${current}\n**Change from main:** ${delta}`;
-            
+
             // Get existing comments
             const comments = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
             });
-            
+
             // Find existing coverage comment
             const existingComment = comments.data.find(comment => comment.body.includes(marker));
-            
+
             if (existingComment) {
               // Update existing comment
               await github.rest.issues.updateComment({
