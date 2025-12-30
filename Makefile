@@ -1,7 +1,7 @@
 # Variables
-GOOS_LIST := linux
-GOARCH_LIST := amd64 arm64
 REPO=fitcr.ksi.in.fit.cvut.cz
+REPORTS_DIR := reports
+VENV := .venv
 
 # Default target
 all: build
@@ -10,6 +10,7 @@ init:  ##@ Initialize Go module
        ##@ Ensures go.mod and go.sum are up to date with dependencies
 	@echo "Initializing Go module..."
 	go mod tidy
+	go mod download
 
 install-test-deps: ##@ Install test dependencies
                    ##@ Installs golangci-lint and gosec for static analysis
@@ -20,7 +21,7 @@ install-test-deps: ##@ Install test dependencies
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	@echo "Installing go-junit-report..."
 	go install github.com/jstemmer/go-junit-report/v2@latest
-	@mkdir -p reports
+	@mkdir -p $(REPORTS_DIR)
 
 test-static: ##@ Run static analysis
              ##@ Runs linting and security checks on Go code
@@ -29,8 +30,8 @@ test-static: install-test-deps
 	@echo "Running golangci-lint..."
 	golangci-lint run ./...
 	@echo "Running gosec security scan for HIGH severity issues only..."
-	gosec -fmt=junit-xml -out=reports/gosec-junit.xml -severity high -quiet ./...
-	@if [ ! -s reports/gosec-junit.xml ]; then echo '<?xml version="1.0" encoding="UTF-8"?><testsuites></testsuites>' > reports/gosec-junit.xml; fi
+	gosec -fmt=junit-xml -out=$(REPORTS_DIR)/gosec-junit.xml -severity high -quiet ./...
+	@if [ ! -s $(REPORTS_DIR)/gosec-junit.xml ]; then echo '<?xml version="1.0" encoding="UTF-8"?><testsuites></testsuites>' > $(REPORTS_DIR)/gosec-junit.xml; fi
 	@echo "Static analysis passed!"
 
 test:       ##@ Run unit tests with coverage
@@ -38,7 +39,7 @@ test:       ##@ Run unit tests with coverage
             ##@ -count=1 disables test caching to ensure fresh execution in CI/CD
 test: install-test-deps
 	@echo "Running unit tests..."
-	go test ./... -cover -count=1 -v 2>&1 | go-junit-report -set-exit-code > reports/unit-junit.xml
+	go test ./... -cover -count=1 -v 2>&1 | go-junit-report -set-exit-code > $(REPORTS_DIR)/unit-junit.xml
 	@echo "Unit tests passed!"
 
 build:      ##@ Build k8shelld and kbox binaries
@@ -87,6 +88,7 @@ image:  ##@ Build Docker image
         ##@ Can be used locally or in CI/CD workflow
 image: vendor prepare-docker
 	@echo "Building k8shelld docker image..."
+	@if ! command -v git >/dev/null 2>&1; then echo "Git not found. Please install Git."; exit 1; fi
 	@VERSION=$${VERSION:-$$(git describe --tags --match 'v*' | sed 's/-g.*//')} && \
 	COMMIT_ID=$${COMMIT_ID:-$$(git rev-parse --short HEAD)} && \
 	IMAGE_TAG=$${IMAGE_TAG:-$$VERSION} && \
@@ -108,15 +110,14 @@ protoc:  ##@ Generate gRPC code from protobuf definitions
 ##@
 
 clean: ##@ Clean up generated files
-	rm -rf $(REPORTS_DIR)/*
-	rm -rf .pytest_cache
-	rm -rf __pycache__
-	find . -type d -name __pycache__ -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
+	rm -rf $(REPORTS_DIR)
+	rm -f bin/k8shelld
+	rm -f bin/kbox
+	rm -rf vendor/
+	rm -rf docker/k8shelld/files/
 
-clean-all: ##@ Remove virtual environment and all generated files
+clean-all: ##@ Remove all generated files
 clean-all: clean
-	rm -rf $(VENV)
 
 help: ##@ (Default) Print listing of key targets with their descriptions
 	@printf "\nUsage: make <command>\n"
