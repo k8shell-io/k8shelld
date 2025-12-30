@@ -10,19 +10,9 @@ import (
 	"time"
 
 	"github.com/k8shell-io/common/pkg/gapi"
+	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/internal/types"
 )
-
-// safeIntToUint16 safely converts int to uint16, clamping to 0-65535.
-func safeIntToUint16(v int) uint16 {
-	if v < 0 {
-		return 0
-	}
-	if v > 65535 {
-		return 65535
-	}
-	return uint16(v)
-}
 
 // Maximum packet size for streaming data
 const (
@@ -153,7 +143,7 @@ func ParsePortForwardingRule(rule string) (PortForwardingRule, error) {
 		subnet = nil // Special case for local networks
 	}
 
-	return PortForwardingRule{Subnet: subnet, Port: safeIntToUint16(port)}, nil
+	return PortForwardingRule{Subnet: subnet, Port: system.SafeIntToUint16(port)}, nil
 }
 
 // UnsetEnvVars unsets the environment variables that match the patterns
