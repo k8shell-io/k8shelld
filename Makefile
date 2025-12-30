@@ -39,7 +39,7 @@ test:       ##@ Run unit tests with coverage
             ##@ -count=1 disables test caching to ensure fresh execution in CI/CD
 test: install-test-deps
 	@echo "Running unit tests..."
-	go test ./... -cover -count=1 -v 2>&1 | go-junit-report -set-exit-code > $(REPORTS_DIR)/unit-junit.xml
+	go test ./... -cover -coverprofile=$(REPORTS_DIR)/coverage.out -count=1 -v 2>&1 | go-junit-report -set-exit-code > $(REPORTS_DIR)/unit-junit.xml
 	@echo "Unit tests passed!"
 
 build:      ##@ Build k8shelld and kbox binaries
@@ -96,14 +96,8 @@ image: vendor prepare-docker
 	cd docker/k8shelld && docker build --build-arg VERSION=$$VERSION \
 		--build-arg COMMIT_ID=$$COMMIT_ID -t $(REPO)/$$(cat ./BUILD) .
 
-protoc:  ##@ Generate gRPC code from protobuf definitions
-         ##@ Regenerates Go code from k8shelld.proto file when API changes
-	@echo "Generating Go code from proto file..."
-	rm -rf pkg/api/k8shelldpb
-	protoc \
-		--go_out=module=github.com/k8shell-io/k8shelld:. \
-		--go-grpc_out=module=github.com/k8shell-io/k8shelld:. \
-		pkg/api/k8shelld.proto
+coverage:  ##@ Calculate test coverage percentage from coverage.out
+	@go tool cover -func=$(REPORTS_DIR)/coverage.out | grep total | awk '{print $$3}'
 
 ##@
 ##@ Misc commands
