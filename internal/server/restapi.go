@@ -1,32 +1,38 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net"
 	"net/http"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/k8shell-io/k8shelld/internal/common"
-	"github.com/k8shell-io/k8shelld/internal/log"
+	commonModels "github.com/k8shell-io/common/pkg/models"
+	"github.com/k8shell-io/k8shelld/internal/apps"
+	"github.com/k8shell-io/k8shelld/internal/config"
+	"github.com/k8shell-io/k8shelld/internal/grpc"
+	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/k8shell-io/k8shelld/internal/models"
+	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/rs/zerolog"
+	"gopkg.in/yaml.v3"
 )
 
-const APIServerBaseUrl = "http://api-internal/api/v1"
+const API_VERSION = "v1"
 
-type RESTApiService struct {
-	apiServerToken string // Token for API server authentication
+type RESTService struct {
 	unixSocketPath string
-	user           User
+	user           config.User
 	logger         *zerolog.Logger
 	server         *Server
 }
@@ -52,11 +58,10 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 }
 
 // NewRESTAPI creates a new REST API service
-func NewRESTAPI(apiServerToken string, unixSocketPath string, user User, server *Server) (*RESTApiService, error) {
-	logger := log.NewLogger("api")
+func NewRESTService(unixSocketPath string, user config.User, server *Server) (*RESTService, error) {
+	logger := logger.NewLogger("api")
 
-	return &RESTApiService{
-		apiServerToken: apiServerToken,
+	return &RESTService{
 		unixSocketPath: unixSocketPath,
 		user:           user,
 		logger:         logger,
@@ -65,27 +70,31 @@ func NewRESTAPI(apiServerToken string, unixSocketPath string, user User, server 
 }
 
 // Initialize the router
-func (a *RESTApiService) initializeRouter() *mux.Router {
+func (a *RESTService) initializeRouter() *mux.Router {
 	router := mux.NewRouter()
 
 	router.Use(a.loggingMiddleware)
 
-	// Add token middleware
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
-
-	// Define API endpoints
-	apiRouter.HandleFunc("/docker/dns", a.UpdateDockerDNS).Methods(http.MethodPatch)
-	apiRouter.HandleFunc("/docker/dns", a.GetDockerDNS).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/creds", a.GetCredsHelper).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/sessions", a.GetSessions).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/ssh/channels", a.GetSSHChannels).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/logs", a.GetLogs).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/shutdown", a.Shutdown).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/validate", a.ValidateK8shelldFile).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/apps", a.GetAppsStatus).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/apps/{name}/install", a.InstallApp).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/apps/{name}/logs", a.GetAppLogs).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/apps/{name}/start", a.StartApp).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/apps/{name}/stop", a.StopApp).Methods(http.MethodPost)
+
 	a.logRoutes(router)
 	return router
 }
 
 // logRoutes logs all registered routes in the router
-func (a *RESTApiService) logRoutes(router *mux.Router) {
+func (a *RESTService) logRoutes(router *mux.Router) {
 	err := router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
 		path, err := route.GetPathTemplate()
 		if err != nil {
@@ -106,125 +115,69 @@ func (a *RESTApiService) logRoutes(router *mux.Router) {
 	}
 }
 
-// MakeApiServerRequest makes an HTTP request to the upstream API server
-func (a *RESTApiService) MakeApiServerRequest(method string, url string, headers map[string]string) (string, error) {
-	workspace := os.Getenv("WORKSPACE")
-	fullURL := fmt.Sprintf("%s/workspaces/%s/%s", APIServerBaseUrl, workspace, url)
-
-	req, err := http.NewRequest(method, fullURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create API server request: %v", err)
-	}
-
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.apiServerToken))
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-
-	client := &http.Client{Timeout: 1000 * time.Millisecond}
-
-	sanitizedHeaders := make(map[string]string)
-	for key, values := range req.Header {
-		if strings.ToLower(key) == "authorization" {
-			sanitizedHeaders[key] = "***"
-		} else {
-			sanitizedHeaders[key] = values[0]
-		}
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %v", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		var errorResponse struct {
-			Errno   int    `json:"errno"`
-			Message string `json:"message"`
-		}
-
-		if err := json.Unmarshal(body, &errorResponse); err != nil {
-			return string(body), fmt.Errorf("API call failed with status %d: %s", resp.StatusCode, body)
-		}
-
-		return string(body), fmt.Errorf("%s", errorResponse.Message)
-	}
-
-	return string(body), nil
-}
-
 // Middleware to log requests and responses
-func (a *RESTApiService) loggingMiddleware(next http.Handler) http.Handler {
-	skipPaths := map[string]bool{
-		// we need to skip logs as otherwise http.Flusher will not work
-		"/api/v1/logs": true,
-	}
-
+func (a *RESTService) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if skipPaths[r.URL.Path] {
+		if r.URL.Path == "/api/v1/logs" ||
+			(strings.HasPrefix(r.URL.Path, "/api/v1/apps/") &&
+				strings.HasSuffix(r.URL.Path, "/logs")) {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		a.logger.Debug().Msgf("Request: method %s, path %s, qs: %s", r.Method,
-			r.URL.Path, r.URL.RawQuery)
+		a.logger.Debug().Msgf("Request: method %s, path %s, qs: %s", r.Method, r.URL.Path, r.URL.RawQuery)
 		rec := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		a.logger.Debug().Msgf("Response: status %d, body: %s", rec.statusCode,
-			sanitizeLogMessage(rec.body.String()))
+		a.logger.Debug().Msgf("Response: status %d", rec.statusCode)
 	})
 }
 
-func (a *RESTApiService) UpdateDockerDNS(w http.ResponseWriter, r *http.Request) {
-	var dnsRequest DockerDNSRequest
-
-	err := json.NewDecoder(r.Body).Decode(&dnsRequest)
-	if err != nil {
-		a.logger.Error().Msgf("Invalid request body: %v", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
+	if a.server.apiClientx == nil {
+		http.Error(w, "API server not configured.", http.StatusBadRequest)
 		return
 	}
 
-	if a.server.dns != nil {
-		switch dnsRequest.Status {
-		case "enabled":
-			a.server.dns.Enable()
-		case "disabled":
-			a.server.dns.Disable()
-		default:
-			http.Error(w, "Invalid status", http.StatusBadRequest)
-			return
-		}
+	num := r.URL.Query().Get("num")
+	if num == "" {
+		num = "10"
 	}
-	w.WriteHeader(http.StatusOK)
-}
+	n, err := strconv.Atoi(num)
+	if err != nil || n <= 0 || n > 100 {
+		http.Error(w, "Invalid 'num' parameter, must be between 1 and 100", http.StatusBadRequest)
+		return
+	}
 
-func (a *RESTApiService) GetDockerDNS(w http.ResponseWriter, r *http.Request) {
-	var status string
-	if a.server.dns != nil {
-		if a.server.dns.enabled {
-			status = "enabled"
-		} else {
-			status = "disabled"
-		}
-	} else {
-		status = "n/a"
+	a.logger.Debug().Msgf("Fetching last %d sessions for workspace %s", n, a.server.workspace)
+	sessions, err := a.server.apiClientx.ListUserSessions(r.Context(), a.user.Username,
+		a.server.workspace, n, 0, true)
+	if err != nil {
+		a.logger.Warn().Msgf("Cannot retrieve workspace sessions: %v", err)
+		http.Error(w, "Failed to retrieve sessions", http.StatusBadGateway)
+		return
 	}
-	response := DockerDNSResponse{
-		Status: status,
-	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(sessions)
 }
 
-func (a *RESTApiService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
+func (a *RESTService) Shutdown(w http.ResponseWriter, r *http.Request) {
+	a.logger.Debug().Msgf("Shutting down workspace %s", a.server.workspace)
+	_, err := a.server.grpcService.CommandService.SendCommand(r.Context(), "shutdown")
+	if err != nil {
+		a.logger.Warn().Msgf("Cannot shutdown workspace: %v", err)
+		http.Error(w, "Failed to shutdown workspace", http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
+	if a.server.apiClientx == nil {
+		http.Error(w, "API server not configured.", http.StatusBadRequest)
+		return
+	}
+
 	address := r.URL.Query().Get("address")
 	if address == "" {
 		http.Error(w, "Missing 'address' query parameter", http.StatusBadRequest)
@@ -240,24 +193,41 @@ func (a *RESTApiService) GetCredsHelper(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	url := fmt.Sprintf("%s/creds?address=%s", credsType, address)
-	headers := map[string]string{"Accept": "application/json"}
+	a.logger.Debug().Msgf("Fetching %s credentials for address %s and user %s", credsType,
+		address, a.user.Username)
 
-	creds, err := a.MakeApiServerRequest("GET", url, headers)
+	creds, err := a.server.apiClientx.GetUserCredentials(r.Context(), a.user.Username)
 	if err != nil {
-		a.logger.Warn().Msgf("Cannot retrieve address for %s credential helper when calling upstream API %s: %v",
-			credsType, url, err)
+		a.logger.Warn().Msgf("Cannot retrieve user credentials: %v", err)
 		http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(creds))
+	for _, cred := range creds {
+		a.logger.Debug().Msgf("Checking credential: ServiceName=%s, ServiceURL=%s, Username=%s",
+			cred.ServiceName, cred.ServiceURL, cred.ExternalID)
+		if credsType == "docker" && cred.ServiceName == "registry" && cred.ServiceURL == address {
+			credStr := fmt.Sprintf(`{"ServerURL": "%s", "Username": "%s", "Secret": "%s"}`,
+				cred.ServiceURL, cred.ExternalID, cred.ExternalToken)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(credStr))
+			return
+		}
+		if credsType == "git" && cred.ServiceName == "github" && cred.ServiceURL == address {
+			credStr := fmt.Sprintf(`{"Username": "%s", "Password": "%s"}`,
+				cred.ExternalID, cred.ExternalToken)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(credStr))
+			return
+		}
+	}
+
+	a.logger.Warn().Msgf("No credentials found for address: %s and type: %s", address, credsType)
+	http.Error(w, "Credentials not found", http.StatusNotFound)
 }
 
-func (a *RESTApiService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {
-	response, err := a.server.grpcApi.getAllChannelStoreData()
+func (a *RESTService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {
+	response, err := a.server.grpcService.GetAllChannelStoreData()
 	if err != nil {
 		a.logger.Error().Msgf("Failed to get channels data: %v", err)
 		http.Error(w, "Failed to get channels data", http.StatusInternalServerError)
@@ -268,32 +238,32 @@ func (a *RESTApiService) GetSSHChannels(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusOK)
 }
 
-func (a *RESTApiService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
+func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	a.server.sysInfoMu.Lock()
 	defer a.server.sysInfoMu.Unlock()
 
-	uptime, err := GetStartTimeFromProcStat()
+	uptime, err := system.GetStartTimeFromProcStat()
 	if err != nil {
 		a.logger.Error().Msgf("Failed to get uptime: %v", err)
 		http.Error(w, "Failed to get uptime", http.StatusInternalServerError)
 		return
 	}
 
-	var sysInfo SystemInfo
+	var sysInfo system.SystemInfo
 	if a.server.sysInfo != nil {
 		sysInfo = *a.server.sysInfo
 	}
 
 	var users int = 0
-	a.server.grpcApi.sessionStore.Range(func(key, value any) bool {
-		record, ok := value.(*SessionData)
+	a.server.grpcService.SessionStore.Range(func(key, value any) bool {
+		record, ok := value.(*grpc.SessionData)
 		if ok && record.Deleted.UTC().IsZero() {
 			users += 1
 		}
 		return true
 	})
 
-	response := common.SystemInfoResponse{
+	response := models.SystemInfoResponse{
 		Uptime:             uptime.Format(time.RFC3339),
 		CPUUsageMillicores: sysInfo.CPUUsageMillicores,
 		CPULimitMillicores: sysInfo.CPULimitMillicores,
@@ -310,7 +280,7 @@ func (a *RESTApiService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (a *RESTApiService) GetLogs(w http.ResponseWriter, r *http.Request) {
+func (a *RESTService) GetLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -348,7 +318,7 @@ func (a *RESTApiService) GetLogs(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		default:
-			entries, newOffset := log.LogStore.GetLogsSince(offset, component, level)
+			entries, newOffset := logger.GetLogsSince(offset, component, level)
 
 			for _, entry := range entries {
 				b, err := json.Marshal(entry)
@@ -372,14 +342,228 @@ func (a *RESTApiService) GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *RESTApiService) Handler(ctx context.Context) {
+func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Request) {
+	if a.server.apiClientx == nil {
+		http.Error(w, "API server not configured.", http.StatusBadRequest)
+		return
+	}
+
+	filename := r.URL.Query().Get("file")
+	if filename == "" {
+		http.Error(w, "Missing 'file' query parameter", http.StatusBadRequest)
+		return
+	}
+	compose := r.URL.Query().Get("compose") == "true"
+
+	a.logger.Debug().Msgf("Validating k8shell file: %s", filename)
+
+	k8shellFileYAML, err := os.ReadFile(filename)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to read file %s", filename), http.StatusBadRequest)
+		return
+	}
+
+	var k8shellFile commonModels.K8shellFile
+	if err := yaml.Unmarshal(k8shellFileYAML, &k8shellFile); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid YAML format: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	_, errors := commonModels.ValidateK8shellFile(k8shellFile)
+	var response models.K8shellFileValidationResponse
+	if len(errors) == 0 {
+		response = models.K8shellFileValidationResponse{
+			Status:   "valid",
+			Filename: filename,
+			Errors:   nil,
+		}
+
+		if compose {
+			_, err := a.server.apiClientx.ComposeBlueprint(r.Context(), a.user.Username, &k8shellFile)
+			if err != nil {
+				response.Status = "invalid"
+				response.Errors = []string{fmt.Sprintf("Failed to compose final blueprint: %v", err)}
+			}
+		}
+
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		response = models.K8shellFileValidationResponse{
+			Status:   "invalid",
+			Filename: filename,
+			Errors:   errors,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusOK)
+}
+
+// GetAppsStatus returns the status of all configured apps.
+func (a *RESTService) GetAppsStatus(w http.ResponseWriter, r *http.Request) {
+	a.logger.Debug().Msg("Fetching apps status")
+
+	if a.server == nil || a.server.appManager == nil {
+		http.Error(w, "App manager not available", http.StatusBadRequest)
+		return
+	}
+
+	statuses, err := a.server.appManager.ListAppStatus(r.Context())
+	if err != nil {
+		if errors.Is(err, apps.ErrNoAppsConfigured) {
+			http.Error(w, "No apps configured", http.StatusNotFound)
+		} else {
+			a.logger.Error().Msgf("Failed to list app status: %v", err)
+			http.Error(w, "Failed to list app status", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(statuses); err != nil {
+		a.logger.Error().Msgf("Failed to encode app status response: %v", err)
+	}
+}
+
+// InstallApp installs the specified app (asynchronously).
+func (a *RESTService) InstallApp(w http.ResponseWriter, r *http.Request) {
+	if a.server == nil || a.server.appManager == nil {
+		http.Error(w, "App manager not available", http.StatusBadRequest)
+		return
+	}
+
+	vars := mux.Vars(r)
+	name := vars["name"]
+	if name == "" {
+		http.Error(w, "Missing app name", http.StatusBadRequest)
+		return
+	}
+
+	force := r.URL.Query().Get("force") == "true"
+	a.logger.Info().Msgf("Installing app %s (force=%v)", name, force)
+
+	if err := a.server.appManager.InstallAsync(r.Context(), name, force); err != nil {
+		a.logger.Error().Msgf("Failed to start install for app %s: %v", name, err)
+		http.Error(w, fmt.Sprintf("Failed to start install: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// GetAppLogs returns (and can stream) the latest logs for a given app.
+func (a *RESTService) GetAppLogs(w http.ResponseWriter, r *http.Request) {
+	if a.server == nil || a.server.appManager == nil {
+		http.Error(w, "App manager not available", http.StatusBadRequest)
+		return
+	}
+
+	logType := r.URL.Query().Get("logType")
+	if logType == "" {
+		logType = "app"
+	}
+
+	if logType != "app" && logType != "install" {
+		http.Error(w, "Invalid 'logType' parameter, must be 'app' or 'install'", http.StatusBadRequest)
+		return
+	}
+
+	vars := mux.Vars(r)
+	name := vars["name"]
+	if name == "" {
+		http.Error(w, "Missing app name", http.StatusBadRequest)
+		return
+	}
+
+	follow := r.URL.Query().Get("follow") == "true"
+	logPath, err := a.server.appManager.GetLastLogPath(name, logType)
+	if err != nil {
+		a.logger.Error().Msgf("Failed to get %s log path for app %s: %v", logType, name, err)
+		http.Error(w, fmt.Sprintf("Failed to get %s log: %v", logType, err), http.StatusInternalServerError)
+		return
+	}
+	if logPath == "" {
+		http.Error(w, "No "+logType+" logs found", http.StatusNotFound)
+		return
+	}
+
+	if !follow {
+		logText, err := os.ReadFile(logPath)
+		if err != nil {
+			a.logger.Error().Msgf("Failed to read %s logs for app %s: %v", logType, name, err)
+			http.Error(w, fmt.Sprintf("Failed to read %s logs: %v", logType, err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write(logText)
+		return
+	}
+
+	if (logType == "install" && !a.server.appManager.IsInstalling(name)) || (logType == "app" && !a.server.appManager.IsRunning(name)) {
+		logText, err := os.ReadFile(logPath)
+		if err != nil {
+			a.logger.Error().Msgf("Failed to read %s logs for app %s: %v", logType, name, err)
+			http.Error(w, fmt.Sprintf("Failed to read %s logs: %v", logType, err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write(logText)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to open log file: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	reader := bufio.NewReader(f)
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+			line, err := reader.ReadString('\n')
+			if len(line) > 0 {
+				_, _ = w.Write([]byte(line))
+				flusher.Flush()
+			}
+			if err != nil {
+				if err == io.EOF {
+					if (logType == "install" && !a.server.appManager.IsInstalling(name)) ||
+						(logType == "app" && !a.server.appManager.IsRunning(name)) {
+						return
+					}
+					time.Sleep(200 * time.Millisecond)
+					continue
+				}
+				return
+			}
+		}
+	}
+}
+
+func (a *RESTService) Serve(ctx context.Context) {
 	router := a.initializeRouter()
 	if a.unixSocketPath != "" {
 		go a.manageUnixSocket(ctx, router)
 	}
 }
 
-func (a *RESTApiService) manageUnixSocket(ctx context.Context, router http.Handler) {
+func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -397,13 +581,15 @@ func (a *RESTApiService) manageUnixSocket(ctx context.Context, router http.Handl
 			continue
 		}
 
-		err = os.Chown(a.unixSocketPath, a.user.Uid, a.user.Gid)
-		if err != nil {
-			a.logger.Error().Msgf("Error changing ownership of Unix socket: %v", err)
-			unixListener.Close()
-			os.Remove(a.unixSocketPath)
-			time.Sleep(5 * time.Second)
-			continue
+		if !a.server.testMode {
+			err = os.Chown(a.unixSocketPath, a.user.Uid, a.user.Gid)
+			if err != nil {
+				a.logger.Error().Msgf("Error changing ownership of Unix socket: %v", err)
+				unixListener.Close()
+				os.Remove(a.unixSocketPath)
+				time.Sleep(5 * time.Second)
+				continue
+			}
 		}
 
 		a.logger.Info().Msgf("Unix socket server started at %s", a.unixSocketPath)
@@ -436,24 +622,52 @@ func (a *RESTApiService) manageUnixSocket(ctx context.Context, router http.Handl
 	}
 }
 
-// compile once for efficiency
-var sensitivePatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)"?(password|secret|token)"?\s*:\s*"[^"]*"`),
-	regexp.MustCompile(`(?i)(password|secret|token)\s*=\s*[^&\s]+`), // e.g. in query string
+// StartApp starts supervising and running the specified app.
+func (a *RESTService) StartApp(w http.ResponseWriter, r *http.Request) {
+	if a.server == nil || a.server.appManager == nil {
+		http.Error(w, "App manager not available", http.StatusBadRequest)
+		return
+	}
+
+	vars := mux.Vars(r)
+	name := vars["name"]
+	if name == "" {
+		http.Error(w, "Missing app name", http.StatusBadRequest)
+		return
+	}
+
+	a.logger.Info().Msgf("Starting app %s", name)
+
+	if err := a.server.appManager.Start(r.Context(), name); err != nil {
+		a.logger.Error().Msgf("Failed to start app %s: %v", name, err)
+		http.Error(w, fmt.Sprintf("Failed to start app: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
-func sanitizeLogMessage(s string) string {
-	for _, re := range sensitivePatterns {
-		s = re.ReplaceAllStringFunc(s, func(match string) string {
-			parts := strings.SplitN(match, ":", 2)
-			if len(parts) < 2 {
-				parts = strings.SplitN(match, "=", 2)
-			}
-			if len(parts) == 2 {
-				return parts[0] + ":\"****\""
-			}
-			return match
-		})
+// StopApp stops supervising and (if running) stops the specified app.
+func (a *RESTService) StopApp(w http.ResponseWriter, r *http.Request) {
+	if a.server == nil || a.server.appManager == nil {
+		http.Error(w, "App manager not available", http.StatusBadRequest)
+		return
 	}
-	return s
+
+	vars := mux.Vars(r)
+	name := vars["name"]
+	if name == "" {
+		http.Error(w, "Missing app name", http.StatusBadRequest)
+		return
+	}
+
+	a.logger.Info().Msgf("Stopping app %s", name)
+
+	if err := a.server.appManager.Stop(r.Context(), name); err != nil {
+		a.logger.Error().Msgf("Failed to stop app %s: %v", name, err)
+		http.Error(w, fmt.Sprintf("Failed to stop app: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

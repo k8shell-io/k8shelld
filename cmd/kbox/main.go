@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/k8shell-io/k8shelld/internal/common"
+	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/spf13/cobra"
 )
 
@@ -34,9 +34,13 @@ func init() {
 	kboxCmd.AddCommand(ToolsInitCmd)
 	kboxCmd.AddCommand(UptimeCmd)
 	kboxCmd.AddCommand(ChannelsCmd)
+	kboxCmd.AddCommand(LastCmd)
 	kboxCmd.AddCommand(LogsCmd)
+	kboxCmd.AddCommand(ShutdownCmd)
+	kboxCmd.AddCommand(ValidateCmd)
+	kboxCmd.AddCommand(AppsCmd)
 
-	kboxCmd.PersistentFlags().StringVar(&socketPath, "socket", common.DefaultRESTAPIUnixSocket,
+	kboxCmd.PersistentFlags().StringVar(&socketPath, "socket", models.RESTAPIUnixSocket,
 		"k8shelld unix socket path")
 	kboxCmd.PersistentFlags().BoolP("version", "v", false, "Show version and exit")
 
@@ -46,7 +50,7 @@ func init() {
 			fmt.Printf("kbox version: %s (commit: %s)\n", version, commit_id)
 			os.Exit(0)
 		}
-		common.DefaultRESTAPIUnixSocket = socketPath
+		models.RESTAPIUnixSocket = socketPath
 	}
 
 }

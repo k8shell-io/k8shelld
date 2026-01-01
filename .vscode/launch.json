@@ -12,17 +12,18 @@
             "cwd": "${workspaceFolder}",
             "args": [
                 "--config",
-                "test/config.yaml",
+                "tests/config.yaml",
                 "--port",
                 "2830",
                 "--socket",
                 "/tmp/test.sock",
-                "--server-cert",
-                "test/server.crt",
-                "--server-key",
-                "test/server.key",
+                "--cert",
+                "tests/server.crt",
+                "--key",
+                "tests/server.key",
                 "--test"
             ],
+            "preLaunchTask": "cleanup-before-launch"
         },
         {
             "name": "Go kbox",

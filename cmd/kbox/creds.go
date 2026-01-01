@@ -56,38 +56,40 @@ func dockerCredsHelper(operation string) {
 	case "get":
 		scanner := bufio.NewScanner(os.Stdin)
 		if !scanner.Scan() {
-			fmt.Println("No address provided. Please provide a Docker registry address.")
+			fmt.Fprintln(os.Stderr, "No address provided.")
 			os.Exit(1)
 		}
 
 		address := strings.TrimSpace(scanner.Text())
 
-		url := fmt.Sprintf("/docker/creds?type=docker&address=%s", address)
+		url := fmt.Sprintf("/creds?type=docker&address=%s", address)
 		headers := map[string]string{"Accept": "application/json"}
 
 		resp, err := client.MakeRequest("GET", url, headers, nil)
 		if err != nil {
-			fmt.Println("{}")
-			fmt.Printf("Failed to get credentials: %v\n", err)
-			os.Exit(0)
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			os.Exit(1)
 		}
 
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
-			fmt.Println("{}")
-			fmt.Printf("Failed to read response body: %v\n", err)
-			os.Exit(0)
+			os.Exit(1)
 		}
 		fmt.Println(string(bodyBytes))
 
 	case "store":
-		fmt.Println("Request to store credentials, operation not supported.")
+		fmt.Fprintln(os.Stderr, "Request to store credentials, operation not supported.")
 
 	case "erase":
-		fmt.Println("Request to erase credentials, operation not supported.")
+		fmt.Fprintln(os.Stderr, "Request to erase credentials, operation not supported.")
 
 	default:
-		fmt.Printf("Invalid operation: %s\n", operation)
+		fmt.Fprintf(os.Stderr, "Invalid operation: %s\n", operation)
 		os.Exit(1)
 	}
 }
@@ -117,6 +119,13 @@ func gitCredsHelper(operation string) {
 			return
 		}
 		defer resp.Body.Close()
+
+		err = client.CheckApplicationError(resp)
+		if err != nil {
+			fmt.Printf("%v\n", err)
+			return
+		}
+
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			fmt.Fprint(os.Stdout, "\n")

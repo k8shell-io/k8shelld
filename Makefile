@@ -12,22 +12,22 @@ init:
 	go mod tidy
 
 image:
-	@echo "Building k8shelld docker image..."
+	@echo "k8shelld docker image"
 	@rm -fr docker/k8shelld/files
 	@mkdir -p docker/k8shelld/files
-	version=$$(git describe --tags --match '*' | cut -d'-' -f1-2) && \
+	@echo "Downloading vendor modules..."
+	@go mod vendor -o docker/k8shelld/files/vendor
+	@echo "Building image..."
+	@version=$$(git describe --tags --match 'v*' | sed 's/-g.*//') && \
 	echo -n "k8shell-base/k8shelld:$$version" > docker/k8shelld/BUILD && \
-	cp -r go.mod go.sum grpc internal cmd sftp scripts docker/k8shelld/files && \
+	cp -r go.mod go.sum internal pkg cmd sftp scripts docker/k8shelld/files && \
 	cd docker/k8shelld && docker build --build-arg VERSION=$$version \
 		--build-arg COMMIT_ID=$$(git rev-parse --short HEAD) -t $(REPO)/$$(cat ./BUILD) .
 
 protoc:
-	echo "Generating Go code from proto file..."
-	cd grpc && \
-	rm -fr generated-go && \
-	protoc --go_out=. --go-grpc_out=. --go_opt=Mk8shelld.proto=generated-go/k8shelldpb --go-grpc_opt=Mk8shelld.proto=generated-go/k8shelldpb   k8shelld.proto
-# 	cd grpc && python \
-# 		-m grpc_tools.protoc \
-# 		--python_out=../../k8shell-proxy/k8shell_proxy/grpc_generated \
-# 		--grpc_python_out=../../k8shell-proxy/k8shell_proxy/grpc_generated \
-# 		-I . k8shelld.proto
+	@echo "Generating Go code from proto file..."
+	rm -rf pkg/api/k8shelldpb
+	protoc \
+		--go_out=module=github.com/k8shell-io/k8shelld:. \
+		--go-grpc_out=module=github.com/k8shell-io/k8shelld:. \
+		pkg/api/k8shelld.proto

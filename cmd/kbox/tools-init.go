@@ -63,6 +63,16 @@ These scripts wrap the corresponding sub-commands in the kbox CLI.`,
 				Template:    wrapperScriptGeneralTemplateHelp,
 			},
 			{
+				CommandName: "last",
+				ScriptName:  "last",
+				Template:    wrapperScriptGeneralTemplateHelp,
+			},
+			{
+				CommandName: "shutdown",
+				ScriptName:  "shutdown",
+				Template:    wrapperScriptGeneralTemplateHelp,
+			},
+			{
 				CommandName: "creds docker",
 				ScriptName:  "docker-credential-k8shell",
 				Template:    wrapperScriptGeneralTemplateNoHelp,

@@ -2,101 +2,156 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/api-server/pkg/client"
+	"github.com/k8shell-io/k8shelld/internal/apps"
+	"github.com/k8shell-io/k8shelld/internal/config"
+	"github.com/k8shell-io/k8shelld/internal/grpc"
+	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/rs/zerolog"
 )
 
 type Server struct {
-	logger    *zerolog.Logger
-	restApi   *RESTApiService
-	grpcApi   *GRPCApiService
-	dns       *DockerDNS
-	proc      *ProcessWatcher
-	pprof     bool
-	sysInfo   *SystemInfo
-	sysInfoMu sync.Mutex
+	logger      *zerolog.Logger
+	testMode    bool
+	config      *config.Config
+	workspace   string
+	restService *RESTService
+	grpcService *grpc.GRPCService
+	procWatcher *system.ProcessWatcher
+	apiClientx  *client.Client
+	pprof       bool
+	sysInfo     *system.SystemInfo
+	sysInfoMu   sync.Mutex
+	appManager  *apps.AppManager
 }
 
-func NewServer(config *Config, keys *Keys, grpcApiListenPort int, serverKeyPath string, serverCertPath string,
-	keyLogFilePath string, restpApiUnixSocket string, defaultDNS string, initScriptsDir string) (*Server, error) {
-	server := &Server{logger: log.NewLogger("k8shelld"), pprof: config.System.PProf, sysInfo: nil}
-	var err error
+func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
 
-	// Create GRPC API service
-	server.grpcApi, err = NewGRPCAPI(grpcApiListenPort, keys.A1Key, config.MainUser, serverKeyPath,
-		serverCertPath, keyLogFilePath, config.PortForwardingRules, initScriptsDir)
+	var apiClient *client.Client
+	if cfg.System.ApiServer.Enabled {
+		if cfg.System.ApiServer.Address == "" {
+			return nil, fmt.Errorf("api server is enabled but address is empty")
+		}
+		apiClient = client.NewClient(cfg.System.ApiServer.Address, cfg.User.UserToken)
+	}
+
+	s := &Server{
+		logger:     logger.NewLogger("k8shelld"),
+		testMode:   testMode,
+		config:     cfg,
+		pprof:      cfg.System.PProf,
+		sysInfo:    nil,
+		apiClientx: apiClient,
+	}
+
+	var err error
+	s.workspace = os.Getenv("WORKSPACE")
+	if s.workspace == "" {
+		return nil, fmt.Errorf("cannot get the workspace name from WORKSPACE environment variable")
+	}
+
+	if !s.testMode {
+		s.procWatcher = system.NewProcessWatcher(cfg.TerminateOrphans.Enabled, cfg.ReapZombies.Enabled,
+			cfg.TerminateOrphans.CheckInterval, cfg.TerminateOrphans.Exclude)
+	} else {
+		s.procWatcher = system.NewProcessWatcher(false, false, 0, nil)
+	}
+
+	if cfg.EnableApps {
+		s.appManager, err = apps.NewAppManager(cfg.Apps, cfg.User, s.procWatcher, s.testMode)
+		if err != nil {
+			return nil, fmt.Errorf("error creating App Manager: %v", err)
+		}
+	}
+
+	s.grpcService, err = grpc.NewGRPCService(cfg.User, cfg.System.GrpcConfig, cfg.PortForwardingRules,
+		cfg.InitScriptsDir, s.procWatcher, s.apiClientx, s.appManager)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
 
-	// Create Docker DNS
-	if config.DockerDNS.Enabled {
-		server.dns, err = NewDockerDNS(config.DockerDNS.Fqdn, config.DockerDNS.ContainerName,
-			config.DockerDNS.ContainerId, config.DockerDNS.DNSNames, config.DockerDNS.UpstreamDNS,
-			config.DockerDNS.Searches, defaultDNS)
-		if err != nil {
-			return nil, fmt.Errorf("error creating Docker DNS instance: %v", err)
-		} else {
-			// Start Docker DNS
-			server.dns.Run()
-			defer server.dns.Stop()
-		}
-	}
-
-	// Create API service
-	server.restApi, err = NewRESTAPI(keys.A2Key, restpApiUnixSocket, config.MainUser, server)
-	errors.Is(err, context.Canceled)
+	s.restService, err = NewRESTService(restApiUnixSocketPath, cfg.User, s)
 	if err != nil {
 		return nil, fmt.Errorf("error creating REST API: %v", err)
 	}
 
-	// Create process watcher
-	server.proc = NewProcessWatcher(config.TerminateOrphans.Enabled, config.ReapZombies.Enabled,
-		config.TerminateOrphans.CheckInterval, config.TerminateOrphans.Exclude)
+	config.UnsetEnvVars(cfg.Env)
 
-	// Unset environment variables
-	UnsetEnvVars(config.Env)
+	err = s.initialize()
+	if err != nil {
+		return nil, fmt.Errorf("error initializing server: %v", err)
+	}
 
-	return server, nil
+	return s, nil
+}
+
+func (s *Server) initialize() error {
+	if s.testMode {
+		s.logger.Info().Msg("Test mode enabled, skipping initialization")
+		return nil
+	}
+
+	err := exec.Command("kbox", "tools-init").Run()
+	if err != nil {
+		s.logger.Error().Msgf("Error running kbox tools-init: %v", err)
+	}
+
+	if err := system.CreateUser(s.config.User); err != nil {
+		s.logger.Fatal().Msgf("Error creating user: %v", err)
+	}
+
+	if s.config.Docker.CreateDockerSockSymlink {
+		if _, err := os.Lstat(config.DOCKER_SOCKET_SYMLINK); err != nil {
+			if err := os.Symlink(config.DOCKER_SOCKET_PATH, config.DOCKER_SOCKET_SYMLINK); err != nil {
+				s.logger.Error().Msgf("Error creating docker socket symlink: %v", err)
+			} else {
+				s.logger.Info().Msgf("Created Docker socket symlink: %s -> %s",
+					config.DOCKER_SOCKET_SYMLINK, config.DOCKER_SOCKET_PATH)
+			}
+		} else {
+			s.logger.Warn().Msgf("Docker socket symlink already exists: %s", config.DOCKER_SOCKET_SYMLINK)
+		}
+	}
+	return nil
 }
 
 func (s *Server) Serve() {
-	// Context will be canceled on SIGTERM or SIGINT
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var wg sync.WaitGroup
 
-	// Start gRPC handler
+	// gRPC handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.grpcApi.Handler(ctx)
+		s.grpcService.Serve(ctx)
 	}()
 
-	// Start REST handler
+	// REST handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.restApi.Handler(ctx)
+		s.restService.Serve(ctx)
 	}()
 
-	// Start process handler
+	// process watcher handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.proc.Handler(ctx)
+		s.procWatcher.Run(ctx)
 	}()
 
-	// Start system info handler
+	// system info handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -107,7 +162,7 @@ func (s *Server) Serve() {
 			select {
 			case <-ticker.C:
 				s.sysInfoMu.Lock()
-				newInfo, err := UpdateSystemInfo(s.sysInfo)
+				newInfo, err := system.UpdateSystemInfo(s.sysInfo)
 				if err != nil {
 					s.logger.Warn().Msgf("Failed to update system info: %v", err)
 					s.sysInfoMu.Unlock()
@@ -122,7 +177,7 @@ func (s *Server) Serve() {
 		}
 	}()
 
-	// Start pprof if enabled
+	// pprof if enabled
 	if s.pprof {
 		wg.Add(1)
 		go func() {
@@ -140,6 +195,15 @@ func (s *Server) Serve() {
 
 	sig := <-sigChan
 	s.logger.Info().Msgf("Received signal: %s. Initiating shutdown...", sig)
+
+	if !s.testMode {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			system.KillAllProcesses(s.logger)
+		}()
+	}
+
 	cancel()
 	wg.Wait()
 

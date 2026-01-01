@@ -1,4 +1,4 @@
-package server
+package system
 
 import (
 	"context"
@@ -12,12 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/internal/log"
+	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/rs/zerolog"
 )
 
 // Map of signal names to their corresponding syscall.Signal values
-var signalMap = map[string]syscall.Signal{
+var SignalMap = map[string]syscall.Signal{
 	"ABRT": syscall.SIGABRT,
 	"ALRM": syscall.SIGALRM,
 	"FPE":  syscall.SIGFPE,
@@ -43,8 +43,8 @@ var signalMap = map[string]syscall.Signal{
 }
 
 // Function to convert signal name to syscall.Signal value
-func getSignalValue(name string) (syscall.Signal, error) {
-	signal, ok := signalMap[name]
+func GetSignalValue(name string) (syscall.Signal, error) {
+	signal, ok := SignalMap[name]
 	if !ok {
 		return -1, fmt.Errorf("unknown signal: %s", name)
 	}
@@ -52,12 +52,14 @@ func getSignalValue(name string) (syscall.Signal, error) {
 }
 
 type ProcessWatcher struct {
-	logger            *zerolog.Logger
-	zombies           bool
-	orphans           bool
-	checkInterval     int
-	excludePatterns   []*regexp.Regexp
-	ignoreSIGHUPTable map[int]bool
+	logger              *zerolog.Logger
+	zombies             bool
+	orphans             bool
+	checkInterval       int
+	excludePatterns     []*regexp.Regexp
+	ignoreSIGHUPTable   map[int]bool
+	ignorePIDsMutex     sync.Mutex
+	ignorePIDsTerminate []int
 }
 
 type ProcessInfo struct {
@@ -66,22 +68,15 @@ type ProcessInfo struct {
 	cmdline      string
 }
 
-var IgnorePIDsMutex = &sync.Mutex{}
-var IgnorePIDsTerminate = []int{}
-
-func AddPIDIgnoreTerminate(pid int) {
-	IgnorePIDsMutex.Lock()
-	defer IgnorePIDsMutex.Unlock()
-	IgnorePIDsTerminate = append(IgnorePIDsTerminate, pid)
-}
-
 func NewProcessWatcher(terminateOrphans bool, reapZombies bool, checkInterval int, excludePatterns []string) *ProcessWatcher {
 	p := &ProcessWatcher{
-		logger:            log.NewLogger("process-watcher"),
-		ignoreSIGHUPTable: make(map[int]bool),
-		orphans:           terminateOrphans,
-		zombies:           reapZombies,
-		checkInterval:     checkInterval,
+		logger:              logger.NewLogger("process-watcher"),
+		ignoreSIGHUPTable:   make(map[int]bool),
+		orphans:             terminateOrphans,
+		zombies:             reapZombies,
+		checkInterval:       checkInterval,
+		ignorePIDsMutex:     sync.Mutex{},
+		ignorePIDsTerminate: []int{},
 	}
 
 	// Compile exclude patterns
@@ -95,7 +90,13 @@ func NewProcessWatcher(terminateOrphans bool, reapZombies bool, checkInterval in
 	return p
 }
 
-func (p *ProcessWatcher) Handler(ctx context.Context) {
+func (p *ProcessWatcher) AddPIDIgnoreTerminate(pid int) {
+	p.ignorePIDsMutex.Lock()
+	defer p.ignorePIDsMutex.Unlock()
+	p.ignorePIDsTerminate = append(p.ignorePIDsTerminate, pid)
+}
+
+func (p *ProcessWatcher) Run(ctx context.Context) {
 	// Channel to receive OS signals
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGCHLD)
@@ -216,9 +217,9 @@ func (p *ProcessWatcher) terminateOrphans() {
 			continue
 		}
 
-		IgnorePIDsMutex.Lock()
+		p.ignorePIDsMutex.Lock()
 		found := false
-		for _, ignorePID := range IgnorePIDsTerminate {
+		for _, ignorePID := range p.ignorePIDsTerminate {
 			if pid == ignorePID {
 				p.logger.Debug().Msgf("Ignoring PID %d, in ignore list", pid)
 				p.ignoreSIGHUPTable[pid] = true
@@ -226,7 +227,7 @@ func (p *ProcessWatcher) terminateOrphans() {
 				break
 			}
 		}
-		IgnorePIDsMutex.Unlock()
+		p.ignorePIDsMutex.Unlock()
 		if found {
 			continue
 		}
@@ -283,13 +284,46 @@ func (p *ProcessWatcher) terminateOrphans() {
 		}
 	}
 
-	IgnorePIDsMutex.Lock()
+	p.ignorePIDsMutex.Lock()
 	newIgnoreList := []int{}
-	for pid := range IgnorePIDsTerminate {
+	for pid := range p.ignorePIDsTerminate {
 		if validPIDs[pid] {
 			newIgnoreList = append(newIgnoreList, pid)
 		}
 	}
-	IgnorePIDsTerminate = newIgnoreList
-	IgnorePIDsMutex.Unlock()
+	p.ignorePIDsTerminate = newIgnoreList
+	p.ignorePIDsMutex.Unlock()
+}
+
+func KillAllProcesses(logger *zerolog.Logger) {
+	files, err := os.ReadDir("/proc")
+	if err != nil {
+		logger.Error().Msgf("Failed to read /proc: %v", err)
+		return
+	}
+
+	for _, file := range files {
+		pid, err := strconv.Atoi(file.Name())
+		if err != nil {
+			continue
+		}
+
+		if pid == 1 || pid == os.Getpid() {
+			continue
+		}
+
+		err = syscall.Kill(-pid, syscall.SIGHUP)
+		if err == nil {
+			logger.Info().Msgf("Sent SIGHUP to process group PID %d", pid)
+		} else {
+			err = syscall.Kill(pid, syscall.SIGHUP)
+			if err != nil {
+				logger.Error().Msgf("Failed to send SIGHUP to PID %d: %v, sending SIGKILL...", pid, err)
+				err = syscall.Kill(pid, syscall.SIGKILL)
+				if err != nil {
+					logger.Error().Msgf("Failed to send SIGKILL to PID %d: %v", pid, err)
+				}
+			}
+		}
+	}
 }

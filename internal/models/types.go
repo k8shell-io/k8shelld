@@ -1,6 +1,6 @@
-package common
+package models
 
-var DefaultRESTAPIUnixSocket = "/var/run/k8shelld.sock"
+var RESTAPIUnixSocket = "/var/run/k8shelld.sock"
 
 // SystemInfoResponse represents the response for system info
 type SystemInfoResponse struct {
@@ -13,4 +13,11 @@ type SystemInfoResponse struct {
 	CPUAvg5Min         float64 `json:"cpuAvg5min"`
 	CPUAvg15Min        float64 `json:"cpuAvg15min"`
 	Users              int     `json:"users"`
+}
+
+// K8shellFileValidationResponse represents the response for k8shell file validation
+type K8shellFileValidationResponse struct {
+	Status   string   `json:"status"`
+	Filename string   `json:"filename"`
+	Errors   []string `json:"errors,omitempty"`
 }

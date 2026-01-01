@@ -3,7 +3,7 @@ name: Build k8shelld image
 on:
   push:
     branches:
-      - "v0.10"
+      - "v0.11"
       - "main"
     tags:
       - "v*"
@@ -21,6 +21,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Git for private modules
+        run: |
+          git config --global url."https://${{ secrets.GH_PAT_TOKEN }}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
+
       - name: Install Go
         uses: actions/setup-go@v5
         with:
@@ -28,40 +32,21 @@ jobs:
 
       - name: Get version and commit ID
         run: |
-          VERSION=$(git describe --tags --match '*' | sed 's/-g.*//')
+          VERSION=$(git describe --tags --match 'v*' | sed 's/-g.*//')
           COMMIT_ID=$(git rev-parse --short HEAD)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "COMMIT_ID=$COMMIT_ID" >> $GITHUB_ENV
 
-      - name: Install protoc
+      - name: Vendor Go modules
         run: |
-          PROTOC_VERSION=31.1
-          PROTOC=protoc-$PROTOC_VERSION-linux-x86_64.zip
-          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v$PROTOC_VERSION/$PROTOC
-          unzip -o $PROTOC -d /tmp
-          rm -f $PROTOC
-
-      - name: Install protoc Go plugins
-        run: |
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-
-      - name: Build GRPC protos
-        run: |
-          mkdir -p grpc
-          cd grpc && \
-          rm -fr generated-go && \
-          /tmp/bin/protoc \
-            --go_out=. \
-            --go-grpc_out=. \
-            --go_opt=Mk8shelld.proto=generated-go/k8shelldpb \
-            --go-grpc_opt=Mk8shelld.proto=generated-go/k8shelldpb \
-            k8shelld.proto
+          go mod vendor
+          mkdir -p docker/k8shelld/files
+          cp -r vendor docker/k8shelld/files/
 
       - name: Copy sources to docker context
         run: |
           mkdir -p docker/k8shelld/files
-          cp -r go.mod go.sum grpc internal cmd sftp scripts -t docker/k8shelld/files/
+          cp -r go.mod go.sum internal pkg cmd sftp scripts -t docker/k8shelld/files/
           echo -n "k8shell-base/k8shelld:$VERSION" > docker/k8shelld/BUILD
 
       - name: Load REPO_NAME from docker/k8shelld/BUILD
