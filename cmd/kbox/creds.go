@@ -19,7 +19,7 @@ var CredsCmd = &cobra.Command{
 	Short: "Credentials helpers",
 	Long:  "Credentials helpers for Docker and Git",
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
+		_ = cmd.Help()
 	},
 }
 

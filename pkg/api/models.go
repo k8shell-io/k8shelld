@@ -4,6 +4,17 @@ import (
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 )
 
+// safeIntToInt32 converts int to int32, clamping to int32 max/min.
+func safeIntToInt32(v int) int32 {
+	if v > 2147483647 {
+		return 2147483647
+	}
+	if v < -2147483648 {
+		return -2147483648
+	}
+	return int32(v)
+}
+
 // AppStatus represents the current status of an application
 type AppStatus struct {
 	Name     string `json:"name"`
@@ -21,10 +32,10 @@ func AppStatusToProto(u *AppStatus) *k8shelldpb.AppStatus {
 		Name:     u.Name,
 		Status:   u.Status,
 		Version:  u.Version,
-		Port:     int32(u.Port),
-		Pid:      int32(u.PID),
+		Port:     safeIntToInt32(u.Port),
+		Pid:      safeIntToInt32(u.PID),
 		Age:      u.Age,
-		Restarts: int32(u.Restarts),
+		Restarts: safeIntToInt32(u.Restarts),
 		Protocol: u.Protocol,
 	}
 }

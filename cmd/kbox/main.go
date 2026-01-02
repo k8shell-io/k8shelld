@@ -17,7 +17,7 @@ var kboxCmd = &cobra.Command{
 	Short: "kbox is a set of tools for k8shell system operations",
 	Long:  `kbox is a set of tools for k8shell system operations.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
+		_ = cmd.Help()
 	},
 }
 

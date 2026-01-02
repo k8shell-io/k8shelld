@@ -10,7 +10,19 @@ import (
 	"time"
 
 	"github.com/k8shell-io/common/pkg/gapi"
+	"github.com/k8shell-io/k8shelld/internal/types"
 )
+
+// safeIntToUint16 safely converts int to uint16, clamping to 0-65535.
+func safeIntToUint16(v int) uint16 {
+	if v < 0 {
+		return 0
+	}
+	if v > 65535 {
+		return 65535
+	}
+	return uint16(v)
+}
 
 // Maximum packet size for streaming data
 const (
@@ -30,7 +42,7 @@ const (
 // Config represents the main configuration file structure
 type Config struct {
 	System              System           `yaml:"system"`
-	User                User             `yaml:"user"`
+	User                types.User       `yaml:"user"`
 	Env                 Env              `yaml:"env"`
 	PortForwarding      []string         `yaml:"portForwarding"`
 	TerminateOrphans    TerminateOrphans `yaml:"terminateOrphans"`
@@ -103,25 +115,6 @@ type AppSpec struct {
 	Protocol          string        `yaml:"protocol"`
 }
 
-// Group represents a group in the workspace
-type Group struct {
-	Name string `yaml:"name"`
-	Gid  int    `yaml:"gid"`
-}
-
-// User represents a user in the workspace
-type User struct {
-	Username  string   `yaml:"username"`
-	Fullname  string   `yaml:"fullname"`
-	Uid       int      `yaml:"uid"`
-	Gid       int      `yaml:"gid"`
-	Shell     string   `yaml:"shell"`
-	Sudo      bool     `yaml:"sudo"`
-	Groups    *[]Group `yaml:"groups,omitempty" json:"groups,omitempty"`
-	HomeDir   string
-	UserToken string
-}
-
 // parsePortForwardingRule converts a rule into a PortForwardingRule struct
 // The rule format is: localnetworks[:<port>], localhost or <cidr>[:<port>]
 // When the port is not specified, it defaults to 0 (all ports)
@@ -140,7 +133,7 @@ func ParsePortForwardingRule(rule string) (PortForwardingRule, error) {
 		return PortForwardingRule{}, fmt.Errorf("invalid rule format: %s", rule)
 	}
 
-	subnet := &net.IPNet{}
+	var subnet *net.IPNet
 	var err error
 	if cidr != "localnetworks" {
 		if cidr == "localhost" {
@@ -160,7 +153,7 @@ func ParsePortForwardingRule(rule string) (PortForwardingRule, error) {
 		subnet = nil // Special case for local networks
 	}
 
-	return PortForwardingRule{Subnet: subnet, Port: uint16(port)}, nil
+	return PortForwardingRule{Subnet: subnet, Port: safeIntToUint16(port)}, nil
 }
 
 // UnsetEnvVars unsets the environment variables that match the patterns

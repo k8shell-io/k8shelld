@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
@@ -206,7 +207,7 @@ func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
 				errCh <- fmt.Errorf("send to stream: %w", serr)
 				return
 			}
-			unixsocket.BytesOut += uint64(n)
+			unixsocket.BytesOut += system.SafeIntToUint64(n)
 		}
 	}()
 
@@ -273,7 +274,7 @@ func (s *UnixSocketServiceServer) communicate(uxListener *net.UnixListener, unix
 							s.logger.Error().Msgf("Failed to send data to the client: %v", err)
 							break
 						}
-						unixsocket.BytesOut += uint64(n)
+						unixsocket.BytesOut += system.SafeIntToUint64(n)
 					}
 				}
 
