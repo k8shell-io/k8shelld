@@ -57,7 +57,10 @@ var (
 func copyConfigJSON(original *config.Config) *config.Config {
 	bytes, _ := json.Marshal(original)
 	var newConfig config.Config
-	json.Unmarshal(bytes, &newConfig)
+	if err := json.Unmarshal(bytes, &newConfig); err != nil {
+		// This should never happen with valid marshaled data, but handle it safely
+		return original
+	}
 	return &newConfig
 }
 

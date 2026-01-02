@@ -14,6 +14,7 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
+	"github.com/k8shell-io/k8shelld/internal/types"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
@@ -55,11 +56,11 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 		return nil, status.Error(codes.PermissionDenied, "user name mismatch")
 	}
 
-	if uint32(s.grpcApi.user.Uid) != req.User.Uid {
+	if system.SafeIntToUint32(s.grpcApi.user.Uid) != req.User.Uid {
 		return nil, status.Error(codes.PermissionDenied, "user uid mismatch")
 	}
 
-	if uint32(s.grpcApi.user.Gid) != req.User.Gid {
+	if system.SafeIntToUint32(s.grpcApi.user.Gid) != req.User.Gid {
 		return nil, status.Error(codes.PermissionDenied, "user gid mismatch")
 	}
 
@@ -125,7 +126,7 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 func (s *SystemServiceServer) RunInitScripts(
 	ctx context.Context,
 	scriptsDir string,
-	user config.User,
+	user types.User,
 	envVars []string,
 	onComplete func(),
 ) error {
@@ -189,8 +190,8 @@ func (s *SystemServiceServer) runScript(scriptsDir, scriptName, flagFile string,
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid:    uint32(s.grpcApi.user.Uid),
-			Gid:    uint32(s.grpcApi.user.Gid),
+			Uid:    system.SafeIntToUint32(s.grpcApi.user.Uid),
+			Gid:    system.SafeIntToUint32(s.grpcApi.user.Gid),
 			Groups: system.GetSupplementalGroups(s.grpcApi.user.Username),
 		},
 	}
@@ -225,7 +226,10 @@ func (s *SystemServiceServer) runScript(scriptsDir, scriptName, flagFile string,
 		}
 	}()
 
-	cmd.Wait()
+	if err := cmd.Wait(); err != nil {
+		s.logger.Error().Msgf("Failed to wait for script %s: %v", scriptName, err)
+		return err
+	}
 	s.checkScriptState(cmd, flagFile, scriptName)
 	return nil
 }

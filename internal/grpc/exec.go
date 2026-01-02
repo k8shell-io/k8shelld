@@ -74,7 +74,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	var cmd *exec.Cmd
 	var stdin io.WriteCloser
 	var stdout, stderr io.ReadCloser
-	var exitCode int32 = -1
+	var exitCode int32
 
 	execId, err := s.GetExecID(stream.Context())
 	if err != nil {
@@ -138,8 +138,8 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid: uint32(s.grpcApi.user.Uid),
-			Gid: uint32(s.grpcApi.user.Gid),
+			Uid: system.SafeIntToUint32(s.grpcApi.user.Uid),
+			Gid: system.SafeIntToUint32(s.grpcApi.user.Gid),
 		},
 	}
 
@@ -178,10 +178,14 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 		} else {
 			exitCode = 1
 		}
-		stream.Send(&k8shelldpb.ExecResponse{
+		if sendErr := stream.Send(&k8shelldpb.ExecResponse{
 			Response: &k8shelldpb.ExecResponse_Stderr{Stderr: []byte(err.Error() + "\n")},
-		})
-		stream.Send(&k8shelldpb.ExecResponse{Response: &k8shelldpb.ExecResponse_ExitCode{ExitCode: exitCode}})
+		}); sendErr != nil {
+			s.logger.Error().Msgf("Failed to send stderr: %v", sendErr)
+		}
+		if sendErr := stream.Send(&k8shelldpb.ExecResponse{Response: &k8shelldpb.ExecResponse_ExitCode{ExitCode: exitCode}}); sendErr != nil {
+			s.logger.Error().Msgf("Failed to send exit code: %v", sendErr)
+		}
 		s.logger.Error().Msgf("Failed to start command: %v, exit-code: %d", err, exitCode)
 		return nil
 	}
@@ -217,7 +221,11 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 			case *k8shelldpb.ExecRequest_Input:
 				data := req.GetInput()
 				execData.BytesIn += uint64(len(data))
-				stdin.Write(data)
+				if _, err := stdin.Write(data); err != nil {
+					s.logger.Debug().Msgf("Failed to write to stdin: %v, PID=%d", err, processPID)
+					terminateOnce.Do(func() { close(terminate) })
+					return
+				}
 			case *k8shelldpb.ExecRequest_Signal:
 				s.logger.Debug().Msgf("Received signal %s, sending the signal to PID: %d", req.GetSignal(), processPID)
 				signal, err := system.GetSignalValue(req.GetSignal())
@@ -259,7 +267,9 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 					if cmd.ProcessState == nil || !cmd.ProcessState.Exited() {
 						if cmd.Process != nil {
 							s.logger.Debug().Msgf("Sending SIGTERM to PID: %d due to stdout error", processPID)
-							cmd.Process.Signal(syscall.SIGTERM)
+							if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+								s.logger.Error().Msgf("Failed to send SIGTERM to PID %d: %v", processPID, err)
+							}
 						}
 					}
 				}
@@ -276,7 +286,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 					terminateOnce.Do(func() { close(terminate) })
 					return
 				} else {
-					execData.BytesOut += uint64(n)
+					execData.BytesOut += system.SafeIntToUint64(n)
 				}
 			}
 		}
@@ -297,7 +307,9 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 					if cmd.ProcessState == nil || !cmd.ProcessState.Exited() {
 						if cmd.Process != nil {
 							s.logger.Debug().Msgf("Sending SIGTERM to PID: %d due to stderr error", processPID)
-							cmd.Process.Signal(syscall.SIGTERM)
+							if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+								s.logger.Error().Msgf("Failed to send SIGTERM to PID %d: %v", processPID, err)
+							}
 						}
 					}
 				}
@@ -306,17 +318,20 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 			}
 
 			if n > 0 {
-				stream.Send(&k8shelldpb.ExecResponse{
+				if sendErr := stream.Send(&k8shelldpb.ExecResponse{
 					Response: &k8shelldpb.ExecResponse_Stderr{Stderr: buf[:n]},
-				})
-			} else {
-				execData.BytesOut += uint64(n)
+				}); sendErr != nil {
+					s.logger.Debug().Msgf("Failed to send stderr data: %v, PID=%d", sendErr, processPID)
+					terminateOnce.Do(func() { close(terminate) })
+					return
+				}
+				execData.BytesOut += system.SafeIntToUint64(n)
 			}
 		}
 	}()
 
 	// Wait for the command to finish
-	cmd.Wait()
+	_ = cmd.Wait()
 
 	// Retrieve the exit code
 	if cmd.ProcessState == nil {
@@ -327,9 +342,9 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 			if status.Signaled() {
 				signal := status.Signal()
 				s.logger.Debug().Msgf("Process terminated by signal: %v, PID=%d", signal, processPID)
-				exitCode = 128 + int32(signal)
+				exitCode = 128 + system.SafeIntToInt32(int(signal))
 			} else {
-				exitCode = int32(status.ExitStatus())
+				exitCode = system.SafeIntToInt32(status.ExitStatus())
 			}
 		} else {
 			s.logger.Debug().Msgf("Unexpected process state type, PID=%d", processPID)
@@ -338,7 +353,9 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	}
 
 	// Send the exit code to the client
-	stream.Send(&k8shelldpb.ExecResponse{Response: &k8shelldpb.ExecResponse_ExitCode{ExitCode: exitCode}})
+	if sendErr := stream.Send(&k8shelldpb.ExecResponse{Response: &k8shelldpb.ExecResponse_ExitCode{ExitCode: exitCode}}); sendErr != nil {
+		s.logger.Error().Msgf("Failed to send exit code: %v", sendErr)
+	}
 	s.logger.Debug().Msgf("Command execution complete: %v, PID=%d, exit-code=%d, bytes-in=%d, bytes-out=%d",
 		cmdReq.CommandDetails, processPID, exitCode, execData.BytesIn, execData.BytesOut)
 

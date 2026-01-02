@@ -53,7 +53,7 @@ var UptimeCmd = &cobra.Command{
 			return
 		}
 
-		var output = ""
+		var output string
 
 		if pretty {
 			output = formatDuration(time.Since(startTime))

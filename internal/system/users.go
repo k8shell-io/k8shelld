@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/k8shell-io/k8shelld/internal/types"
 )
 
 const groupFilePath = "/etc/group"
@@ -26,7 +26,7 @@ func runCommand(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 }
 
 // CreateUser creates the user in the system.
-func CreateUser(user config.User) error {
+func CreateUser(user types.User) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -204,8 +204,8 @@ func copySkeletonFiles(ctx context.Context, uid, gid int, homeDir string) error 
 	cmd := exec.CommandContext(ctx, "cp", "-r", "/etc/skel/.", homeDir)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
-			Uid: uint32(uid),
-			Gid: uint32(gid),
+			Uid: SafeIntToUint32(uid),
+			Gid: SafeIntToUint32(gid),
 		},
 	}
 	if _, err := runCommand(ctx, cmd); err != nil {
@@ -229,7 +229,7 @@ func GetSupplementalGroups(username string) []uint32 {
 	for _, gidStr := range groups {
 		gidInt, err := strconv.Atoi(gidStr)
 		if err == nil {
-			gids = append(gids, uint32(gidInt))
+			gids = append(gids, SafeIntToUint32(gidInt))
 		}
 	}
 	return gids
