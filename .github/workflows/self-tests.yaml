@@ -1,25 +1,65 @@
-name: CI/CD Pipeline
+name: Self-Tests
 # See https://github.com/k8shell-io/internals/tree/main/docs/handbook/docs/development/release_and_testing for information on release and testing processes.
 
 on:
   push:
     branches:
       - "main"
+    paths:
+      - "cmd/**"
+      - "docker/**"
+      - "grpc/**"
+      - "internal/**"
+      - "pkg/**"
+      - "scripts/**"
+      - "sftp/**"
+      - "tests/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - ".github/workflows/self-tests.yaml"
 
   pull_request:
+    branches:
+      - "*"
+    paths:
+      - "cmd/**"
+      - "docker/**"
+      - "grpc/**"
+      - "internal/**"
+      - "pkg/**"
+      - "scripts/**"
+      - "sftp/**"
+      - "tests/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - ".github/workflows/self-tests.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
 
 jobs:
-  test-and-build:
+  Self-Tests:
     runs-on: k8shell-runner
     if: github.event_name == 'push' || github.event.pull_request.draft == false
 
     env:
       GO111MODULE: on
 
+    strategy:
+      matrix:
+        go-version: ["1.23"]
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          # Fetch full history for version calculation (git describe)
+          # Set to 1 if you don't need git history
           fetch-depth: 0
 
       - name: Set up Git for private modules
@@ -29,13 +69,19 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
-          # Disable cache for self-hosted runner to avoid conflicts
-          # Self-hosted runners naturally persist Go cache between runs
-          cache: false
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      # Set up Go environment
+      - name: Install dependencies
+        run: make install-test-deps
+
+
+      - name: Run static analysis (test-static)
+        run: make test-static
 
       # Validate code quality and correctness
-      - name: Run unit tests
+      - name: Run unit tests (test)
         run: make test
 
       # Compile k8shelld and kbox executables
@@ -43,8 +89,23 @@ jobs:
         run: make build
 
       # Verify binaries execute successfully
-      - name: Run binary smoke tests
+      - name: Run binary smoke tests (test-binary)
         run: make test-binary
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-test-reports-go${{ matrix.go-version }}
+          path: reports/
+          retention-days: 30
+
+      - name: Publish test results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: reports/**/*-junit.xml
+          check_name: Self-Tests (Go ${{ matrix.go-version }})
 
       # Calculate version and image tag based on PR or push context
       # PRs: pr-{number}-{short-sha} using actual PR head commit

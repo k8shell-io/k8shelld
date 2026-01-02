@@ -6,49 +6,74 @@ REPO=fitcr.ksi.in.fit.cvut.cz
 # Default target
 all: build
 
-# Initialize Go module
-# Ensures go.mod and go.sum are up to date with dependencies
-init:
+init:  ##@ Initialize Go module
+       ##@ Ensures go.mod and go.sum are up to date with dependencies
 	@echo "Initializing Go module..."
 	go mod tidy
 
-# Run unit tests with coverage
-# Used in CI/CD workflow to validate code changes before building
-# -count=1 disables test caching to ensure fresh execution in CI
-test:
-	@echo "Running unit tests..."
-	go test ./... -cover -count=1
+install-test-deps: ##@ Install test dependencies
+                   ##@ Installs golangci-lint and gosec for static analysis
+	@echo "Installing test dependencies..."
+	@echo "Installing golangci-lint..."
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@echo "Installing gosec..."
+	go install github.com/securego/gosec/v2/cmd/gosec@latest
+	@echo "Installing go-junit-report..."
+	go install github.com/jstemmer/go-junit-report/v2@latest
+	@mkdir -p reports
 
-# Build binaries
-# Compiles k8shelld and kbox executables for local development and CI/CD validation
-build:
+test-static: ##@ Run static analysis
+             ##@ Runs linting and security checks on Go code
+             ##@ Used in CI/CD workflow to catch code quality and security issues
+test-static: install-test-deps
+	@echo "Running golangci-lint..."
+	golangci-lint run ./...
+	@echo "Running gosec security scan for HIGH severity issues only..."
+	gosec -fmt=junit-xml -out=reports/gosec-junit.xml -severity high -quiet ./...
+	@if [ ! -s reports/gosec-junit.xml ]; then echo '<?xml version="1.0" encoding="UTF-8"?><testsuites></testsuites>' > reports/gosec-junit.xml; fi
+	@echo "Static analysis passed!"
+
+test:       ##@ Run unit tests with coverage
+            ##@ Validates code correctness through unit tests
+            ##@ -count=1 disables test caching to ensure fresh execution in CI/CD
+test: install-test-deps
+	@echo "Running unit tests..."
+	go test ./... -cover -count=1 -v 2>&1 | go-junit-report -set-exit-code > reports/unit-junit.xml
+	@echo "Unit tests passed!"
+
+build:      ##@ Build k8shelld and kbox binaries
 	@echo "Building k8shelld..."
 	go build -o bin/k8shelld ./cmd/k8shelld
 	@echo "Building kbox..."
 	go build -o bin/kbox ./cmd/kbox
 	@echo "Build complete!"
 
-# Run binary smoke tests
-# Validates that built binaries execute successfully (basic sanity check)
-# Used in CI/CD workflow after build step
+test-binary: ##@ Run binary smoke tests
+             ##@ Validates that built binaries execute successfully (basic sanity check)
+             ##@ Used in CI/CD workflow after build step
 test-binary: build
 	@echo "Running binary smoke tests..."
 	@./bin/kbox -h > /dev/null 2>&1 || (echo "kbox help failed" && exit 1)
+	@echo "kbox smoke tests passed!"
 	@./bin/k8shelld -h > /dev/null 2>&1 || (echo "k8shelld help failed" && exit 1)
-	@echo "Binary smoke tests passed!"
+	@echo "k8shelld smoke tests passed!"
 
-# Vendor Go modules
-# Downloads and stores dependencies locally for reproducible Docker builds
-# Used in CI/CD workflow before preparing Docker context
-vendor:
+test-self:  ##@ Run all self-tests
+            ##@ Executes static analysis, unit tests, build, and binary smoke tests
+            ##@ Comprehensive validation of code quality and functionality (ran by self-tests CI workflow)
+test-self: test-static test build test-binary
+	@echo "All self-tests passed!"
+
+vendor:  ##@ Vendor Go modules
+         ##@ Downloads and vendors all Go module dependencies into the vendor/ directory
+		 ##@ Used in CI/CD workflow before preparing Docker context
 	@echo "Vendoring Go modules..."
 	@go mod vendor
 	@echo "Vendoring complete!"
 
-# Prepare Docker build context
-# Copies vendored dependencies and source files to docker/k8shelld/files/
-# Used in CI/CD workflow before building container image
-prepare-docker:
+prepare-docker:  ##@ Prepare Docker build context
+                 ##@ Copies vendored dependencies and source files to docker/k8shelld/files/
+                ##@ Used in CI/CD workflow before building container image
 	@echo "Preparing Docker build context..."
 	@rm -rf docker/k8shelld/files
 	@mkdir -p docker/k8shelld/files
@@ -56,10 +81,10 @@ prepare-docker:
 	@cp -r go.mod go.sum internal pkg cmd sftp scripts docker/k8shelld/files/
 	@echo "Docker context prepared!"
 
-# Build Docker image
-# Builds k8shelld container image with version tagging
-# Accepts VERSION, COMMIT_ID, IMAGE_TAG from environment or auto-detects from git
-# Can be used locally or in CI/CD workflow
+image:  ##@ Build Docker image
+        ##@ Builds k8shelld container image with version tagging
+        ##@ Accepts VERSION, COMMIT_ID, IMAGE_TAG from environment or auto-detects from git
+        ##@ Can be used locally or in CI/CD workflow
 image: vendor prepare-docker
 	@echo "Building k8shelld docker image..."
 	@VERSION=$${VERSION:-$$(git describe --tags --match 'v*' | sed 's/-g.*//')} && \
@@ -69,12 +94,40 @@ image: vendor prepare-docker
 	cd docker/k8shelld && docker build --build-arg VERSION=$$VERSION \
 		--build-arg COMMIT_ID=$$COMMIT_ID -t $(REPO)/$$(cat ./BUILD) .
 
-# Generate gRPC code from protobuf definitions
-# Regenerates Go code from k8shelld.proto file when API changes
-protoc:
+protoc:  ##@ Generate gRPC code from protobuf definitions
+         ##@ Regenerates Go code from k8shelld.proto file when API changes
 	@echo "Generating Go code from proto file..."
 	rm -rf pkg/api/k8shelldpb
 	protoc \
 		--go_out=module=github.com/k8shell-io/k8shelld:. \
 		--go-grpc_out=module=github.com/k8shell-io/k8shelld:. \
 		pkg/api/k8shelld.proto
+
+##@
+##@ Misc commands
+##@
+
+clean: ##@ Clean up generated files
+	rm -rf $(REPORTS_DIR)/*
+	rm -rf .pytest_cache
+	rm -rf __pycache__
+	find . -type d -name __pycache__ -exec rm -rf {} +
+	find . -type f -name "*.pyc" -delete
+
+clean-all: ##@ Remove virtual environment and all generated files
+clean-all: clean
+	rm -rf $(VENV)
+
+help: ##@ (Default) Print listing of key targets with their descriptions
+	@printf "\nUsage: make <command>\n"
+	@grep -F -h "##@" $(MAKEFILE_LIST) | grep -F -v grep -F | sed -e 's/\\$$//' | awk 'BEGIN {FS = ":*[[:space:]]*##@[[:space:]]*"}; \
+	{ \
+		if($$2 == "") \
+			printf ""; \
+		else if($$0 ~ /^#/) \
+			printf "\n%s\n", $$2; \
+		else if($$1 == "") \
+			printf "     %-20s%s\n", "", $$2; \
+		else \
+			printf "\n    \033[34m%-20s\033[0m %s\n", $$1, $$2; \
+	}'

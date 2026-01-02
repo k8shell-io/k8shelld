@@ -138,7 +138,10 @@ func TestGetLogsSince_Basic(t *testing.T) {
 
 	for _, entry := range entries {
 		data, _ := json.Marshal(entry)
-		logStore.Write(data)
+		_, err := logStore.Write(data)
+		if err != nil {
+			t.Fatalf("failed to write log entry: %v", err)
+		}
 	}
 
 	logs, newOffset := GetLogsSince(0, "", "")
@@ -172,7 +175,10 @@ func TestGetLogsSince_WithOffset(t *testing.T) {
 			Message:   string(rune('A' + i)),
 		}
 		data, _ := json.Marshal(entry)
-		logStore.Write(data)
+		_, err := logStore.Write(data)
+		if err != nil {
+			t.Fatalf("failed to write log entry: %v", err)
+		}
 	}
 
 	logs, newOffset := GetLogsSince(2, "", "")
@@ -210,7 +216,10 @@ func TestGetLogsSince_NegativeOffset(t *testing.T) {
 			Message:   string(rune('A' + i)),
 		}
 		data, _ := json.Marshal(entry)
-		logStore.Write(data)
+		_, err := logStore.Write(data)
+		if err != nil {
+			t.Fatalf("failed to write log entry: %v", err)
+		}
 	}
 
 	// -2 should get last 2 entries
@@ -249,7 +258,10 @@ func TestGetLogsSince_ComponentFilter(t *testing.T) {
 
 	for _, entry := range entries {
 		data, _ := json.Marshal(entry)
-		logStore.Write(data)
+		_, err := logStore.Write(data)
+		if err != nil {
+			t.Fatalf("failed to write log entry: %v", err)
+		}
 	}
 
 	logs, newOffset := GetLogsSince(0, "comp1", "")
@@ -289,7 +301,10 @@ func TestGetLogsSince_LevelFilter(t *testing.T) {
 
 	for _, entry := range entries {
 		data, _ := json.Marshal(entry)
-		logStore.Write(data)
+		_, error := logStore.Write(data)
+		if error != nil {
+			t.Fatalf("failed to write log entry: %v", error)
+		}
 	}
 
 	logs, newOffset := GetLogsSince(0, "", "error")
@@ -327,7 +342,10 @@ func TestGetLogsSince_CombinedFilters(t *testing.T) {
 
 	for _, entry := range entries {
 		data, _ := json.Marshal(entry)
-		logStore.Write(data)
+		_, err := logStore.Write(data)
+		if err != nil {
+			t.Fatalf("failed to write log entry: %v", err)
+		}
 	}
 
 	logs, _ := GetLogsSince(0, "comp1", "error")
@@ -361,7 +379,10 @@ func TestGetLogsSince_OffsetBeyondLength(t *testing.T) {
 			Message:   string(rune('A' + i)),
 		}
 		data, _ := json.Marshal(entry)
-		logStore.Write(data)
+		_, err := logStore.Write(data)
+		if err != nil {
+			t.Fatalf("failed to write log entry: %v", err)
+		}
 	}
 
 	logs, newOffset := GetLogsSince(10, "", "")
