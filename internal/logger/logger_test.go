@@ -97,13 +97,14 @@ func TestMemoryLogStore_CapacityLimit(t *testing.T) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	// With the logic: if len >= cap, then s.entries[len-cap:] before appending
-	// This means after appending, length will be cap+1
+	// With the logic: if len >= cap, then s.entries[len-cap:] is taken before appending.
+	// This means that after appending, the slice length will be cap+1.
 	// After writing 10 entries with capacity 5:
 	// - When writing entry 6 (F): len=5, slices to [0:], appends F -> len=6
 	// - When writing entry 7 (G): len=6, slices to [1:], appends G -> len=6
 	// - etc.
-	// Final entries should be E, F, G, H, I, J (6 entries)
+	// Final entries slice should have length capacity+1 (6 entries, indices [0]..[5]):
+	//   messages E, F, G, H, I, J. This assertion validates the capacity+1 behavior.
 	expectedLen := capacity + 1
 	if len(store.entries) != expectedLen {
 		t.Errorf("expected %d entries, got %d", expectedLen, len(store.entries))
@@ -301,9 +302,9 @@ func TestGetLogsSince_LevelFilter(t *testing.T) {
 
 	for _, entry := range entries {
 		data, _ := json.Marshal(entry)
-		_, error := logStore.Write(data)
-		if error != nil {
-			t.Fatalf("failed to write log entry: %v", error)
+		_, err := logStore.Write(data)
+		if err != nil {
+			t.Fatalf("failed to write log entry: %v", err)
 		}
 	}
 
