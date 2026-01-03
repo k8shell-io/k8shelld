@@ -1,3 +1,5 @@
 {
-    "editor.aiStats.enabled": true
+    "editor.aiStats.enabled": true,
+    "go.lintTool": "golangci-lint",
+    "go.lintOnSave": "package"
 }
