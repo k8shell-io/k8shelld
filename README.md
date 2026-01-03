@@ -1,5 +1,7 @@
 # k8shelld 
 
+[![Self-Tests](https://github.com/k8shell-io/k8shelld/actions/workflows/self-tests.yaml/badge.svg)](https://github.com/k8shell-io/k8shelld/actions/workflows/self-tests.yaml)
+
 **K8shelld** is init process for the k8shell workspace. It is a a secure, container-native development environment framework built on top of Kubernetes. It provides remote shell access, development tooling, and runtime control within isolated Kubernetes pods—while preserving compatibility with standard developer workflows.
 
 This repository contains the following core components:
