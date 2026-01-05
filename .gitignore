@@ -8,3 +8,4 @@ __debug*
 tests/k8shelld
 tests/kbox
 reports/
+.nfs*
