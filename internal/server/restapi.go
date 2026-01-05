@@ -345,7 +345,6 @@ func (a *RESTService) GetLogs(w http.ResponseWriter, r *http.Request) {
 
 			flusher.Flush()
 			offset = newOffset
-			n = 0
 
 			if !follow {
 				return
