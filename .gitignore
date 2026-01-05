@@ -9,3 +9,4 @@ tests/k8shelld
 tests/kbox
 .nfs*
 reports/
+.nfs*
