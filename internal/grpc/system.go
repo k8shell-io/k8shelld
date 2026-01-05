@@ -228,7 +228,6 @@ func (s *SystemServiceServer) runScript(scriptsDir, scriptName, flagFile string,
 
 	if err := cmd.Wait(); err != nil {
 		s.logger.Error().Msgf("Failed to wait for script %s: %v", scriptName, err)
-		return err
 	}
 	s.checkScriptState(cmd, flagFile, scriptName)
 	return nil
