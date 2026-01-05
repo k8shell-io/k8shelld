@@ -74,7 +74,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	var cmd *exec.Cmd
 	var stdin io.WriteCloser
 	var stdout, stderr io.ReadCloser
-	var exitCode int32 = -1
+	var exitCode int32
 
 	execId, err := s.GetExecID(stream.Context())
 	if err != nil {
