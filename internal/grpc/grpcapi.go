@@ -17,6 +17,7 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
+	"github.com/k8shell-io/k8shelld/internal/types"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 
 	apiClient "github.com/k8shell-io/api-server/pkg/client"
@@ -44,7 +45,7 @@ type GRPCService struct {
 	grpcConfig          gapi.ServerConfig           // The gRPC server configuration
 	logger              *zerolog.Logger             // The logger
 	initScriptsDir      string                      // The directory where the init scripts are located
-	user                config.User                 // The workspace owner
+	user                types.User                 // The workspace owner
 	procWatcher         *system.ProcessWatcher      // The process watcher
 	portForwardingRules []config.PortForwardingRule // The port forwarding rules that are allowed
 	ExecStore           *sync.Map                   // The store for the exec data
@@ -73,7 +74,7 @@ func getStatus(deleted time.Time) string {
 }
 
 // NewGRPCAPI creates a new GRPCApiService
-func NewGRPCService(user config.User, grpcConfig gapi.ServerConfig,
+func NewGRPCService(user types.User, grpcConfig gapi.ServerConfig,
 	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
 	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
 	appManager *apps.AppManager) (*GRPCService, error) {
@@ -108,7 +109,7 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 		return fmt.Errorf("failed to create gRPC server: %v", err)
 	}
 
-	server.RegisterService(func(s *grpc.Server) error {
+	if err := server.RegisterService(func(s *grpc.Server) error {
 		k8shelldpb.RegisterSystemServiceServer(s, NewSystemServiceServer(a))
 		k8shelldpb.RegisterShellServiceServer(s, NewShellServiceServer(a))
 		k8shelldpb.RegisterExecServiceServer(s, NewExecServiceServer(a))
@@ -118,7 +119,9 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 		k8shelldpb.RegisterCommandServiceServer(s, a.CommandService)
 		a.logger.Info().Msgf("GRPC services server registered")
 		return nil
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to register services: %v", err)
+	}
 
 	// cleanup goroutine
 	go func() {

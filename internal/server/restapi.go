@@ -19,11 +19,11 @@ import (
 	"github.com/gorilla/mux"
 	commonModels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apps"
-	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
+	"github.com/k8shell-io/k8shelld/internal/types"
 	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
 )
@@ -32,7 +32,7 @@ const API_VERSION = "v1"
 
 type RESTService struct {
 	unixSocketPath string
-	user           config.User
+	user           types.User
 	logger         *zerolog.Logger
 	server         *Server
 }
@@ -58,7 +58,7 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 }
 
 // NewRESTAPI creates a new REST API service
-func NewRESTService(unixSocketPath string, user config.User, server *Server) (*RESTService, error) {
+func NewRESTService(unixSocketPath string, user types.User, server *Server) (*RESTService, error) {
 	logger := logger.NewLogger("api")
 
 	return &RESTService{
@@ -158,7 +158,11 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(sessions)
+	if err := json.NewEncoder(w).Encode(sessions); err != nil {
+		a.logger.Error().Msgf("Failed to encode sessions response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (a *RESTService) Shutdown(w http.ResponseWriter, r *http.Request) {
@@ -210,14 +214,18 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 			credStr := fmt.Sprintf(`{"ServerURL": "%s", "Username": "%s", "Secret": "%s"}`,
 				cred.ServiceURL, cred.ExternalID, cred.ExternalToken)
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(credStr))
+			if _, err := w.Write([]byte(credStr)); err != nil {
+				a.logger.Error().Msgf("Failed to write credentials response: %v", err)
+			}
 			return
 		}
 		if credsType == "git" && cred.ServiceName == "github" && cred.ServiceURL == address {
 			credStr := fmt.Sprintf(`{"Username": "%s", "Password": "%s"}`,
 				cred.ExternalID, cred.ExternalToken)
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(credStr))
+			if _, err := w.Write([]byte(credStr)); err != nil {
+				a.logger.Error().Msgf("Failed to write credentials response: %v", err)
+			}
 			return
 		}
 	}
@@ -234,8 +242,11 @@ func (a *RESTService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		a.logger.Error().Msgf("Failed to encode SSH channels response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
@@ -276,8 +287,11 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		a.logger.Error().Msgf("Failed to encode system info response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (a *RESTService) GetLogs(w http.ResponseWriter, r *http.Request) {
@@ -331,7 +345,6 @@ func (a *RESTService) GetLogs(w http.ResponseWriter, r *http.Request) {
 
 			flusher.Flush()
 			offset = newOffset
-			n = 0
 
 			if !follow {
 				return
@@ -396,7 +409,11 @@ func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		a.logger.Error().Msgf("Failed to encode validation response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -607,7 +624,9 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 		select {
 		case <-ctx.Done():
 			a.logger.Info().Msgf("Shutting down Unix socket server...")
-			server.Shutdown(context.Background())
+			if err := server.Shutdown(context.Background()); err != nil {
+				a.logger.Error().Msgf("Error shutting down server: %v", err)
+			}
 			unixListener.Close()
 			return
 		case err := <-errCh:

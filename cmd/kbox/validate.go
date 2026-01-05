@@ -18,7 +18,7 @@ var (
 
 func init() {
 	ValidateCmd.Flags().StringVarP(&k8shellFile, "file", "f", "", "Path to the k8shell file")
-	ValidateCmd.MarkFlagRequired("file")
+	_ = ValidateCmd.MarkFlagRequired("file")
 	ValidateCmd.Flags().BoolVarP(&compose, "compose", "c", false, "Test to compose the final blueprint")
 }
 

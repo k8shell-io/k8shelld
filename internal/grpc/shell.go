@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
+	"github.com/k8shell-io/k8shelld/internal/types"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
@@ -26,7 +26,7 @@ import (
 // SessionData stores the data of a shell session.
 type SessionData struct {
 	Id       string
-	user     config.User
+	user     types.User
 	CmdShell string
 	Cmd      *exec.Cmd
 	Ptmx     *os.File
@@ -157,8 +157,8 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 	session.Cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid:    uint32(session.user.Uid),
-			Gid:    uint32(session.user.Gid),
+			Uid:    system.SafeIntToUint32(session.user.Uid),
+			Gid:    system.SafeIntToUint32(session.user.Gid),
 			Groups: system.GetSupplementalGroups(session.user.Username),
 		},
 	}
@@ -219,10 +219,13 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 	session.Pid = session.Cmd.Process.Pid
 
 	if width > 0 && height > 0 {
-		pty.Setsize(session.Ptmx, &pty.Winsize{
-			Rows: uint16(height),
-			Cols: uint16(width),
+		err = pty.Setsize(session.Ptmx, &pty.Winsize{
+			Rows: system.ClampUint32ToUint16(height),
+			Cols: system.ClampUint32ToUint16(width),
 		})
+		if err != nil {
+			s.logger.Error().Msgf("Failed to set PTY size: %v", err)
+		}
 	}
 
 	ctx := stream.Context()
@@ -246,7 +249,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 					recvErrCh <- sendErr
 					return
 				}
-				session.BytesOut += uint64(n)
+				session.BytesOut += system.SafeIntToUint64(n)
 			}
 		}
 	}()
@@ -443,9 +446,12 @@ func (s *ShellServiceServer) ResizeTerminal(ctx context.Context,
 
 	s.logger.Debug().Msgf("Resizing shell session %s, cols: %d, rows: %d", session.Id, req.Width, req.Height)
 
-	pty.Setsize(session.Ptmx, &pty.Winsize{
-		Rows: uint16(req.Height),
-		Cols: uint16(req.Width),
+	err = pty.Setsize(session.Ptmx, &pty.Winsize{
+		Rows: system.ClampUint32ToUint16(req.Height),
+		Cols: system.ClampUint32ToUint16(req.Width),
 	})
+	if err != nil {
+		s.logger.Error().Msgf("Failed to resize terminal: %v", err)
+	}
 	return &k8shelldpb.ResizeTerminalResponse{}, nil
 }

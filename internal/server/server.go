@@ -134,7 +134,9 @@ func (s *Server) Serve() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.grpcService.Serve(ctx)
+		if err := s.grpcService.Serve(ctx); err != nil {
+			s.logger.Error().Msgf("gRPC service error: %v", err)
+		}
 	}()
 
 	// REST handler
