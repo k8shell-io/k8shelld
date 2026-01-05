@@ -54,14 +54,13 @@ var (
 )
 
 // copyConfigJSON copies the configuration struct to a new struct
-func copyConfigJSON(original *config.Config) *config.Config {
+func copyConfigJSON(original *config.Config) (*config.Config, error) {
 	bytes, _ := json.Marshal(original)
 	var newConfig config.Config
 	if err := json.Unmarshal(bytes, &newConfig); err != nil {
-		// This should never happen with valid marshaled data, but handle it safely
-		return original
+		return nil, err
 	}
-	return &newConfig
+	return &newConfig, nil
 }
 
 // getOptions parses the command line options and returns the Options struct
@@ -111,7 +110,11 @@ func LoadConfig(configPath string) (*config.Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %v", err)
 	}
 
-	cfg := copyConfigJSON(defaultConfig)
+	cfg, err := copyConfigJSON(defaultConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to copy default config: %v", err)
+	}
+
 	if err := yaml.Unmarshal(yamlData, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse YAML: %v", err)
 	}
