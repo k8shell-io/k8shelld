@@ -22,8 +22,8 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
-	"github.com/k8shell-io/k8shelld/internal/types"
 	"github.com/k8shell-io/k8shelld/internal/system"
+	"github.com/k8shell-io/k8shelld/internal/types"
 	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
 )
@@ -345,6 +345,7 @@ func (a *RESTService) GetLogs(w http.ResponseWriter, r *http.Request) {
 
 			flusher.Flush()
 			offset = newOffset
+			n = 0
 
 			if !follow {
 				return

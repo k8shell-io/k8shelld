@@ -74,7 +74,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	var cmd *exec.Cmd
 	var stdin io.WriteCloser
 	var stdout, stderr io.ReadCloser
-	var exitCode int32
+	var exitCode int32 = -1
 
 	execId, err := s.GetExecID(stream.Context())
 	if err != nil {
@@ -222,9 +222,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 				data := req.GetInput()
 				execData.BytesIn += uint64(len(data))
 				if _, err := stdin.Write(data); err != nil {
-					s.logger.Debug().Msgf("Failed to write to stdin: %v, PID=%d", err, processPID)
-					terminateOnce.Do(func() { close(terminate) })
-					return
+					s.logger.Error().Msgf("Failed to write to stdin: %v, PID=%d", err, processPID)
 				}
 			case *k8shelldpb.ExecRequest_Signal:
 				s.logger.Debug().Msgf("Received signal %s, sending the signal to PID: %d", req.GetSignal(), processPID)
@@ -321,9 +319,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 				if sendErr := stream.Send(&k8shelldpb.ExecResponse{
 					Response: &k8shelldpb.ExecResponse_Stderr{Stderr: buf[:n]},
 				}); sendErr != nil {
-					s.logger.Debug().Msgf("Failed to send stderr data: %v, PID=%d", sendErr, processPID)
-					terminateOnce.Do(func() { close(terminate) })
-					return
+					s.logger.Error().Msgf("Failed to send stderr data: %v, PID=%d", sendErr, processPID)
 				}
 				execData.BytesOut += system.SafeIntToUint64(n)
 			}

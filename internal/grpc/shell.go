@@ -219,15 +219,12 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 	session.Pid = session.Cmd.Process.Pid
 
 	if width > 0 && height > 0 {
-		// Clamp values to uint16 max to prevent overflow
-		wwidth := system.ClampUint32ToUint16(width)
-		hheight := system.ClampUint32ToUint16(height)
 		err = pty.Setsize(session.Ptmx, &pty.Winsize{
-			Rows: hheight,
-			Cols: wwidth,
+			Rows: system.ClampUint32ToUint16(height),
+			Cols: system.ClampUint32ToUint16(width),
 		})
 		if err != nil {
-			return fmt.Errorf("failed to set PTY size: %w", err)
+			s.logger.Error().Msgf("Failed to set PTY size: %v", err)
 		}
 	}
 
@@ -449,16 +446,12 @@ func (s *ShellServiceServer) ResizeTerminal(ctx context.Context,
 
 	s.logger.Debug().Msgf("Resizing shell session %s, cols: %d, rows: %d", session.Id, req.Width, req.Height)
 
-	// Clamp values to uint16 max to prevent overflow
-	rows := system.ClampUint32ToUint16(req.Height)
-	cols := system.ClampUint32ToUint16(req.Width)
-
 	err = pty.Setsize(session.Ptmx, &pty.Winsize{
-		Rows: rows,
-		Cols: cols,
+		Rows: system.ClampUint32ToUint16(req.Height),
+		Cols: system.ClampUint32ToUint16(req.Width),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to resize terminal: %w", err)
+		s.logger.Error().Msgf("Failed to resize terminal: %v", err)
 	}
 	return &k8shelldpb.ResizeTerminalResponse{}, nil
 }
