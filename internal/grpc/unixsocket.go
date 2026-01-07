@@ -122,7 +122,7 @@ func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string
 	if err := os.Chown(unixsocket.socketPath, s.grpcApi.user.Gid, s.grpcApi.user.Gid); err != nil {
 		return status.Errorf(codes.Internal, "failed to chown socket: %v", err)
 	}
-	if err := os.Chmod(unixsocket.socketPath, 0700); err != nil {
+	if err := os.Chmod(unixsocket.socketPath, 0o600); err != nil {
 		return status.Errorf(codes.Internal, "failed to chmod socket: %v", err)
 	}
 

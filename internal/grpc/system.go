@@ -183,7 +183,20 @@ func (s *SystemServiceServer) runScriptHelper(scriptsDir, scriptPath string, fla
 
 // runScript executes a script
 func (s *SystemServiceServer) runScript(scriptsDir, scriptName, flagFile string, envVars []string) error {
-	cmd := exec.Command("/bin/bash", "-l", "-c", fmt.Sprintf("%s/%s", scriptsDir, scriptName))
+	if scriptName == "" || strings.Contains(scriptName, "/") || strings.Contains(scriptName, `\`) ||
+		strings.Contains(scriptName, "..") {
+		return fmt.Errorf("invalid script name")
+	}
+
+	scriptPath := filepath.Join(scriptsDir, scriptName)
+	cleanScriptsDir := filepath.Clean(scriptsDir) + string(filepath.Separator)
+	cleanScriptPath := filepath.Clean(scriptPath)
+	if !strings.HasPrefix(cleanScriptPath, cleanScriptsDir) {
+		return fmt.Errorf("script path escapes scripts dir")
+	}
+
+	// #nosec G204 -- scriptPath is validated above
+	cmd := exec.Command("/bin/bash", "-l", cleanScriptPath)
 	cmd.Env = system.CreateEnvVars(envVars, s.grpcApi.user.HomeDir)
 	cmd.Dir = s.grpcApi.user.HomeDir
 

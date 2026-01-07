@@ -581,17 +581,28 @@ func (a *RESTService) Serve(ctx context.Context) {
 }
 
 func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler) {
+	var unixListener net.Listener
+
 	for {
 		select {
 		case <-ctx.Done():
 			a.logger.Info().Msgf("Context cancelled, stopping Unix socket server loop.")
-			os.Remove(a.unixSocketPath)
+			if unixListener != nil {
+				if err := unixListener.Close(); err != nil {
+					a.logger.Warn().Msgf("failed to close unix listener: %v", err)
+				}
+				unixListener = nil
+			}
+			if err := os.Remove(a.unixSocketPath); err != nil && !os.IsNotExist(err) {
+				a.logger.Warn().Msgf("failed to remove unix socket: %v", err)
+			}
 			return
 		default:
 		}
 
 		a.logger.Warn().Msgf("Creating unix socket %s", a.unixSocketPath)
-		unixListener, err := net.Listen("unix", a.unixSocketPath)
+		var err error
+		unixListener, err = net.Listen("unix", a.unixSocketPath)
 		if err != nil {
 			a.logger.Error().Msgf("Error creating Unix socket listener: %v", err)
 			time.Sleep(5 * time.Second)
@@ -603,6 +614,7 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 			if err != nil {
 				a.logger.Error().Msgf("Error changing ownership of Unix socket: %v", err)
 				unixListener.Close()
+				unixListener = nil
 				os.Remove(a.unixSocketPath)
 				time.Sleep(5 * time.Second)
 				continue
@@ -612,7 +624,11 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 		a.logger.Info().Msgf("Unix socket server started at %s", a.unixSocketPath)
 
 		server := &http.Server{
-			Handler: router,
+			Handler:           router,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       60 * time.Second,
 		}
 
 		errCh := make(chan error, 1)
@@ -627,14 +643,20 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 			if err := server.Shutdown(context.Background()); err != nil {
 				a.logger.Error().Msgf("Error shutting down server: %v", err)
 			}
-			unixListener.Close()
+			if unixListener != nil {
+				unixListener.Close()
+				unixListener = nil
+			}
 			return
 		case err := <-errCh:
 			if err != nil && err != http.ErrServerClosed {
 				a.logger.Error().Msgf("Socket server error: %v", err)
 			}
 			a.logger.Warn().Msg("Unix socket server terminated. Restarting...")
-			unixListener.Close()
+			if unixListener != nil {
+				unixListener.Close()
+				unixListener = nil
+			}
 			time.Sleep(5 * time.Second)
 			continue
 		}

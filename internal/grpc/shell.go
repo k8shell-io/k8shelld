@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -145,8 +146,9 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 	}
 
 	// Start the shell process
+	// #nosec G204 -- shell path is user user-controlled
 	session.Cmd = exec.Command(shell)
-	session.Cmd.Args[0] = "-" + session.Cmd.Args[0] // make the shell a login shell
+	session.Cmd.Args = []string{"-" + filepath.Base(shell)}
 
 	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars, session.user.HomeDir)
 	session.Cmd.Dir = session.user.HomeDir
@@ -200,7 +202,9 @@ func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
 		}
 	}
 	if session.Ptmx != nil {
-		session.Ptmx.Close()
+		if err := session.Ptmx.Close(); err != nil {
+			s.logger.Debug().Msgf("failed to close pty: %v", err)
+		}
 	}
 }
 

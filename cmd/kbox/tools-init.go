@@ -84,7 +84,7 @@ These scripts wrap the corresponding sub-commands in the kbox CLI.`,
 			},
 		}
 
-		if err := os.MkdirAll(outputDir, 0755); err != nil {
+		if err := os.MkdirAll(outputDir, 0o750); err != nil {
 			fmt.Printf("Failed to create output directory %s: %v\n", outputDir, err)
 			os.Exit(1)
 		}
@@ -121,7 +121,7 @@ func generateWrapper(outputDir, toolName, commandName, scriptName, temp string) 
 		return fmt.Errorf("failed to execute template for %s: %v", commandName, err)
 	}
 
-	if err := os.Chmod(scriptPath, 0755); err != nil {
+	if err := os.Chmod(scriptPath, 0o700); err != nil {
 		return fmt.Errorf("failed to make script executable for %s: %v", commandName, err)
 	}
 

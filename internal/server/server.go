@@ -185,7 +185,24 @@ func (s *Server) Serve() {
 		go func() {
 			defer wg.Done()
 			s.logger.Info().Msg("Starting pprof on :6060")
-			if err := http.ListenAndServe("localhost:6060", nil); err != nil && err != http.ErrServerClosed {
+
+			pprofSrv := &http.Server{
+				Addr:              "localhost:6060",
+				Handler:           http.DefaultServeMux,
+				ReadHeaderTimeout: 5 * time.Second,
+				ReadTimeout:       10 * time.Second,
+				WriteTimeout:      10 * time.Second,
+				IdleTimeout:       60 * time.Second,
+			}
+
+			go func() {
+				<-ctx.Done()
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = pprofSrv.Shutdown(shutdownCtx)
+			}()
+
+			if err := pprofSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				s.logger.Error().Msgf("pprof error: %v", err)
 			}
 			s.logger.Info().Msg("pprof stopped")

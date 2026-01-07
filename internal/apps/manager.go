@@ -50,7 +50,7 @@ func NewAppManager(apps *config.Apps, user types.User, procWatcher *system.Proce
 	testMode bool) (*AppManager, error) {
 	log := logger.NewLogger("app-manager")
 
-	if err := os.MkdirAll(APPS_DIR, 0o755); err != nil {
+	if err := os.MkdirAll(APPS_DIR, 0o750); err != nil {
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
 
@@ -249,7 +249,7 @@ func (m *AppManager) writeAppVersionToFile(name, version string) error {
 		return err
 	}
 	versionFilePath := filepath.Join(appStateDir, fmt.Sprintf("%s-version.txt", name))
-	if err := os.WriteFile(versionFilePath, []byte(version), 0o644); err != nil {
+	if err := os.WriteFile(versionFilePath, []byte(version), 0o600); err != nil {
 		return fmt.Errorf("write version file: %w", err)
 	}
 	return nil
@@ -367,7 +367,7 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 	}
 
 	scriptPath := filepath.Join(appStateDir, fmt.Sprintf("%s-install.sh", name))
-	if err := os.WriteFile(scriptPath, []byte(installScript), 0o755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(installScript), 0o700); err != nil {
 		return fmt.Errorf("write install script: %w", err)
 	}
 
@@ -625,7 +625,7 @@ func (m *AppManager) OpenLogFile(name string, logType string) (*os.File, string,
 	logPath := filepath.Join(appStateDir,
 		fmt.Sprintf("%s-%s-%s.out", name, logType, timestamp.Format("20060102-150405")))
 
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, "", err
 	}
