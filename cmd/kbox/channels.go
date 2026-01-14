@@ -59,8 +59,8 @@ var tableFields = []table.FieldDefinition{
 
 var ChannelsCmd = &cobra.Command{
 	Use:   "channels",
-	Short: "Display SSH channels",
-	Long: `Display SSH channels created from the k8shell proxy (shell, port-forward, exec, unix-socket).
+	Short: "Display channels",
+	Long: `Display channels created from the k8shell proxy (shell, port-forward, exec, unix-socket, reverse-proxy).
 
 The command displays the following fields:
 - id: Channel ID
