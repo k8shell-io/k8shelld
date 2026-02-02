@@ -498,21 +498,20 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 
 // ListAppStatus returns app status including port, PID and running time, without internal state.
 func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error) {
-	if m.apps == nil {
-		return nil, ErrNoAppsConfigured
-	}
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	var res []api.AppStatus
+	if m.apps == nil {
+		return res, nil
+	}
 
 	for name, app := range *m.apps {
 		installing := m.installing[name]
 
 		status := api.AppStatus{
 			Name:     name,
-			Status:   "-",
+			Status:   api.AppStatusUnknown,
 			Version:  "",
 			Port:     app.Listen,
 			Protocol: app.Protocol,
@@ -537,7 +536,7 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 			v, err := m.appVersionFromFile(name)
 			if err != nil {
 				m.logger.Warn().Msgf("could not read version file for app %s: %v", name, err)
-				v = "UNKNOWN"
+				v = "N/A"
 			}
 			version = v
 		}
@@ -545,13 +544,13 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 		status.Version = version
 
 		if installing {
-			status.Status = "INSTALLING"
+			status.Status = api.AppStatusInstalling
 			res = append(res, status)
 			continue
 		}
 
 		if !installed {
-			status.Status = "N/A"
+			status.Status = api.AppStatusNotInstalled
 			res = append(res, status)
 			continue
 		}
@@ -560,30 +559,30 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 			pid, err := system.GetPIDListeningOnPort(app.Listen)
 			if err != nil {
 				m.logger.Warn().Msgf("Could not get PID for app %s, port %d: %v", name, app.Listen, err)
-				status.Status = "STOPPED"
+				status.Status = api.AppStatusNotStarted
 				res = append(res, status)
 				continue
 			}
 
 			if pid != 0 {
-				status.Status = "INVALID"
+				status.Status = api.AppStatusInvalid
 				res = append(res, status)
 				continue
 			}
 
-			status.Status = "STOPPED"
+			status.Status = api.AppStatusNotStarted
 			res = append(res, status)
 			continue
 		}
 
 		if sup.pid == 0 {
-			status.Status = "PENDING"
+			status.Status = api.AppStatusPending
 			res = append(res, status)
 			continue
 		}
 
 		status.PID = sup.pid
-		status.Status = "RUNNING"
+		status.Status = api.AppStatusRunning
 
 		if dur, err := system.GetProcessRunningTime(sup.pid); err == nil {
 			status.Age = dur.Truncate(time.Second).String()
