@@ -498,14 +498,13 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 
 // ListAppStatus returns app status including port, PID and running time, without internal state.
 func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error) {
-	if m.apps == nil {
-		return nil, ErrNoAppsConfigured
-	}
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	var res []api.AppStatus
+	if m.apps == nil {
+		return res, nil
+	}
 
 	for name, app := range *m.apps {
 		installing := m.installing[name]

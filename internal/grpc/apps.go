@@ -51,7 +51,7 @@ func (s *AppServiceServer) grpcError(err error) error {
 func (s *AppServiceServer) ListApps(ctx context.Context,
 	req *k8shelldpb.ListAppsRequest) (*k8shelldpb.ListAppsResponse, error) {
 	if s.appManager == nil {
-		return nil, status.Errorf(codes.NotFound, "app manager not available")
+		return &k8shelldpb.ListAppsResponse{Apps: []*k8shelldpb.AppStatus{}}, nil
 	}
 
 	statuses, err := s.appManager.ListAppStatus(ctx)
