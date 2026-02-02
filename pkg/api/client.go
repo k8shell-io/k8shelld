@@ -470,7 +470,12 @@ func (c *K8shelld) RunExec(ctx context.Context, upstream BufferedReadWriter, exe
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer stream.CloseSend()
+		defer func() {
+			err = stream.CloseSend()
+			if err != nil {
+				c.log.Error().Err(err).Msgf("Failed to close exec stream for exec process %s", execID)
+			}
+		}()
 
 		buf := make([]byte, 32*1024)
 		for {
