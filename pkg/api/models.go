@@ -15,22 +15,52 @@ func safeIntToInt32(v int) int32 {
 	return int32(v)
 }
 
+// AppRuntimeStatus represents the lifecycle status reported by AppManager.
+type AppRuntimeStatus string
+
+const (
+	AppStatusUnknown      AppRuntimeStatus = "-"
+	AppStatusNotInstalled AppRuntimeStatus = "UNINSTALLED"
+	AppStatusInstalling   AppRuntimeStatus = "INSTALLING"
+	AppStatusNotStarted   AppRuntimeStatus = "STOPPED"
+	AppStatusPending      AppRuntimeStatus = "PENDING"
+	AppStatusRunning      AppRuntimeStatus = "RUNNING"
+	AppStatusInvalid      AppRuntimeStatus = "INVALID"
+)
+
+func (s AppRuntimeStatus) String() string { return string(s) }
+
+func (s AppRuntimeStatus) IsValid() bool {
+	switch s {
+	case AppStatusUnknown,
+		AppStatusInstalling,
+		AppStatusNotStarted,
+		AppStatusNotInstalled,
+		AppStatusInvalid,
+		AppStatusPending,
+		AppStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
 // AppStatus represents the current status of an application
 type AppStatus struct {
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	Version  string `json:"version"`
-	Port     int    `json:"port"`
-	PID      int    `json:"pid"`
-	Age      string `json:"age"`
-	Restarts int    `json:"restarts"`
-	Protocol string `json:"protocol"`
+	Name     string           `json:"name"`
+	Status   AppRuntimeStatus `json:"status"`
+	Version  string           `json:"version"`
+	Port     int              `json:"port"`
+	PID      int              `json:"pid"`
+	Age      string           `json:"age"`
+	Restarts int              `json:"restarts"`
+	Protocol string           `json:"protocol"`
 }
 
 func AppStatusToProto(u *AppStatus) *k8shelldpb.AppStatus {
 	return &k8shelldpb.AppStatus{
 		Name:     u.Name,
-		Status:   u.Status,
+		Status:   u.Status.String(),
 		Version:  u.Version,
 		Port:     safeIntToInt32(u.Port),
 		Pid:      safeIntToInt32(u.PID),
@@ -41,9 +71,13 @@ func AppStatusToProto(u *AppStatus) *k8shelldpb.AppStatus {
 }
 
 func AppStatusFromProto(u *k8shelldpb.AppStatus) *AppStatus {
+	status := AppRuntimeStatus(u.GetStatus())
+	if !status.IsValid() {
+		status = AppStatusUnknown
+	}
 	return &AppStatus{
 		Name:     u.GetName(),
-		Status:   u.GetStatus(),
+		Status:   status,
 		Version:  u.GetVersion(),
 		Port:     int(u.GetPort()),
 		PID:      int(u.GetPid()),

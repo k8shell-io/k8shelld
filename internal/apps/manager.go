@@ -32,36 +32,6 @@ var ErrAppNotFound = fmt.Errorf("app not found")
 var ErrNoAppsConfigured = fmt.Errorf("no apps configured")
 var ErrAppInvalidState = fmt.Errorf("not a valid app state")
 
-// AppRuntimeStatus represents the lifecycle status reported by AppManager.
-type AppRuntimeStatus string
-
-const (
-	AppStatusUnknown      AppRuntimeStatus = "-"
-	AppStatusNotInstalled AppRuntimeStatus = "UNINSTALLED"
-	AppStatusInstalling   AppRuntimeStatus = "INSTALLING"
-	AppStatusNotStarted   AppRuntimeStatus = "STOPPED"
-	AppStatusPending      AppRuntimeStatus = "PENDING"
-	AppStatusRunning      AppRuntimeStatus = "RUNNING"
-	AppStatusInvalid      AppRuntimeStatus = "INVALID"
-)
-
-func (s AppRuntimeStatus) String() string { return string(s) }
-
-func (s AppRuntimeStatus) IsValid() bool {
-	switch s {
-	case AppStatusUnknown,
-		AppStatusInstalling,
-		AppStatusNotStarted,
-		AppStatusNotInstalled,
-		AppStatusInvalid,
-		AppStatusPending,
-		AppStatusRunning:
-		return true
-	default:
-		return false
-	}
-}
-
 // AppManager manages the lifecycle of applications defined in the configuration
 type AppManager struct {
 	apps        *config.Apps
@@ -542,7 +512,7 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 
 		status := api.AppStatus{
 			Name:     name,
-			Status:   AppStatusUnknown.String(),
+			Status:   api.AppStatusUnknown,
 			Version:  "",
 			Port:     app.Listen,
 			Protocol: app.Protocol,
@@ -567,7 +537,7 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 			v, err := m.appVersionFromFile(name)
 			if err != nil {
 				m.logger.Warn().Msgf("could not read version file for app %s: %v", name, err)
-				v = AppStatusInvalid.String()
+				v = "N/A"
 			}
 			version = v
 		}
@@ -575,13 +545,13 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 		status.Version = version
 
 		if installing {
-			status.Status = AppStatusInstalling.String()
+			status.Status = api.AppStatusInstalling
 			res = append(res, status)
 			continue
 		}
 
 		if !installed {
-			status.Status = AppStatusNotInstalled.String()
+			status.Status = api.AppStatusNotInstalled
 			res = append(res, status)
 			continue
 		}
@@ -590,30 +560,30 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 			pid, err := system.GetPIDListeningOnPort(app.Listen)
 			if err != nil {
 				m.logger.Warn().Msgf("Could not get PID for app %s, port %d: %v", name, app.Listen, err)
-				status.Status = AppStatusNotStarted.String()
+				status.Status = api.AppStatusNotStarted
 				res = append(res, status)
 				continue
 			}
 
 			if pid != 0 {
-				status.Status = AppStatusInvalid.String()
+				status.Status = api.AppStatusInvalid
 				res = append(res, status)
 				continue
 			}
 
-			status.Status = AppStatusNotStarted.String()
+			status.Status = api.AppStatusNotStarted
 			res = append(res, status)
 			continue
 		}
 
 		if sup.pid == 0 {
-			status.Status = AppStatusPending.String()
+			status.Status = api.AppStatusPending
 			res = append(res, status)
 			continue
 		}
 
 		status.PID = sup.pid
-		status.Status = AppStatusRunning.String()
+		status.Status = api.AppStatusRunning
 
 		if dur, err := system.GetProcessRunningTime(sup.pid); err == nil {
 			status.Age = dur.Truncate(time.Second).String()
