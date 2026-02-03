@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/client"
 	"github.com/k8shell-io/k8shelld/pkg/api"
@@ -26,19 +27,27 @@ var InfoCmd = &cobra.Command{
 
 		system := sysInfo.System
 
+		startTime, err := time.Parse(time.RFC3339, system.Uptime)
+		if err != nil {
+			fmt.Println("Error parsing uptime:", err)
+			return
+		}
 		workspace := [][2]string{
-			{"Uptime (since)", system.Uptime},
+			{"Name", env("WORKSPACE", "n/a")},
+			{"Start time", startTime.Format("2006-01-02 15:04:05")},
+			{"Image", env("IMAGE", "n/a")},
+			{"Blueprint", env("BLUEPRINT", "n/a")},
 			{"Users", fmt.Sprintf("%d", system.Users)},
 		}
 		printGroup("Workspace", workspace)
 
 		cpuMem := [][2]string{
-			{"CPU usage", fmt.Sprintf("%.2fm / %.2fm (%s)", system.CPUUsageMillicores, system.CPULimitMillicores,
+			{"CPU usage", fmt.Sprintf("%.2fm / %.0fm (%s)", system.CPUUsageMillicores, system.CPULimitMillicores,
 				pct(system.CPUUsageMillicores, system.CPULimitMillicores))},
-			{"Memory usage", fmt.Sprintf("%.2fMiB / %.2fMiB (%s)", system.MemoryUsageMiB, system.MemLimitMiB,
-				pct(system.MemoryUsageMiB, system.MemLimitMiB))},
 			{"Load average", fmt.Sprintf("%.2f, %.2f, %.2f", system.CPUAvg1Min,
 				system.CPUAvg5Min, system.CPUAvg15Min)},
+			{"Memory usage", fmt.Sprintf("%.2fMiB / %.0fMiB (%s)", system.MemoryUsageMiB, system.MemLimitMiB,
+				pct(system.MemoryUsageMiB, system.MemLimitMiB))},
 		}
 		printGroup("CPU and Memory", cpuMem)
 
@@ -73,6 +82,17 @@ var InfoCmd = &cobra.Command{
 
 		if sysInfo.Docker != nil {
 			du := sysInfo.Docker
+
+			totalLine := formatBytesIEC(du.TotalBytes)
+			if du.DeclaredSize > 0 {
+				totalLine = fmt.Sprintf(
+					"%s / %s (%s)",
+					formatBytesIEC(du.TotalBytes),
+					formatBytesIEC(du.DeclaredSize),
+					pct(float64(du.TotalBytes), float64(du.DeclaredSize)),
+				)
+			}
+
 			dockerLines := [][2]string{
 				{"Socket", du.SocketPath},
 				{"API version", du.APIVersion},
@@ -82,7 +102,7 @@ var InfoCmd = &cobra.Command{
 				{"Containers (rootfs)", formatBytesIEC(du.ContainersRootFsBytes)},
 				{"Volumes", formatBytesIEC(du.VolumesBytes)},
 				{"Build cache", formatBytesIEC(du.BuildCacheBytes)},
-				{"Total", formatBytesIEC(du.TotalBytes)},
+				{"Total", totalLine},
 			}
 			printGroup("Docker", dockerLines)
 		} else {
@@ -152,4 +172,12 @@ func formatBytesIEC(b uint64) string {
 	default:
 		return fmt.Sprintf("%dB", b)
 	}
+}
+
+func env(envKey string, fallback string) string {
+	v := strings.TrimSpace(os.Getenv(envKey))
+	if v == "" {
+		return fallback
+	}
+	return v
 }
