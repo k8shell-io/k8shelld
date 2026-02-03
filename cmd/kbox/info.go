@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/k8shell-io/k8shelld/internal/client"
 	"github.com/k8shell-io/k8shelld/pkg/api"
@@ -23,9 +25,14 @@ var InfoCmd = &cobra.Command{
 		}
 
 		system := sysInfo.System
-		cpuMem := [][2]string{
+
+		workspace := [][2]string{
 			{"Uptime (since)", system.Uptime},
 			{"Users", fmt.Sprintf("%d", system.Users)},
+		}
+		printGroup("Workspace", workspace)
+
+		cpuMem := [][2]string{
 			{"CPU usage", fmt.Sprintf("%.2fm / %.2fm (%s)", system.CPUUsageMillicores, system.CPULimitMillicores,
 				pct(system.CPUUsageMillicores, system.CPULimitMillicores))},
 			{"Memory usage", fmt.Sprintf("%.2fMiB / %.2fMiB (%s)", system.MemoryUsageMiB, system.MemLimitMiB,
@@ -33,17 +40,15 @@ var InfoCmd = &cobra.Command{
 			{"Load average", fmt.Sprintf("%.2f, %.2f, %.2f", system.CPUAvg1Min,
 				system.CPUAvg5Min, system.CPUAvg15Min)},
 		}
-
 		printGroup("CPU and Memory", cpuMem)
 
 		mounts := sysInfo.Mounts
 		sort.Slice(mounts, func(i, j int) bool { return mounts[i].MountPoint < mounts[j].MountPoint })
 
-		stLines := make([][2]string, 0, len(mounts)+1)
+		stLines := make([][2]string, 0, len(mounts))
 		for _, m := range mounts {
 			total := formatBytesIEC(m.TotalBytes)
 			used := formatBytesIEC(m.UsedBytes)
-			avail := formatBytesIEC(m.AvailableBytes)
 
 			extra := []string{}
 			if m.FSType != "" {
@@ -56,8 +61,8 @@ var InfoCmd = &cobra.Command{
 				extra = append(extra, "ro")
 			}
 
-			val := fmt.Sprintf("%s / %s (%s used, %s avail)", used, total,
-				pct(float64(m.UsedBytes), float64(m.TotalBytes)), avail)
+			// Only percent; do not repeat "used" / "avail" phrases.
+			val := fmt.Sprintf("%s / %s (%s)", used, total, pct(float64(m.UsedBytes), float64(m.TotalBytes)))
 			if len(extra) > 0 {
 				val += "  [" + strings.Join(extra, ", ") + "]"
 			}
@@ -77,7 +82,7 @@ var InfoCmd = &cobra.Command{
 				{"Containers (rootfs)", formatBytesIEC(du.ContainersRootFsBytes)},
 				{"Volumes", formatBytesIEC(du.VolumesBytes)},
 				{"Build cache", formatBytesIEC(du.BuildCacheBytes)},
-				{"Total (no double count)", formatBytesIEC(du.TotalBytes)},
+				{"Total", formatBytesIEC(du.TotalBytes)},
 			}
 			printGroup("Docker", dockerLines)
 		} else {
@@ -111,16 +116,12 @@ func printGroup(title string, rows [][2]string) {
 		return
 	}
 
-	maxKey := 0
+	// Use tabwriter to guarantee alignment (fixes occasional misalignment).
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	for _, r := range rows {
-		if len(r[0]) > maxKey {
-			maxKey = len(r[0])
-		}
+		fmt.Fprintf(tw, "  %s:\t%s\n", r[0], r[1])
 	}
-
-	for _, r := range rows {
-		fmt.Printf("  %-*s  %s\n", maxKey, r[0]+":", r[1])
-	}
+	_ = tw.Flush()
 	fmt.Println()
 }
 
@@ -128,7 +129,7 @@ func pct(used, total float64) string {
 	if total == 0 {
 		return "n/a"
 	}
-	return fmt.Sprintf("%.2f%%", (float64(used)/float64(total))*100.0)
+	return fmt.Sprintf("%.2f%%", (used/total)*100.0)
 }
 
 func formatBytesIEC(b uint64) string {
