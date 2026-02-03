@@ -80,6 +80,7 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/sessions", a.GetSessions).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/ssh/channels", a.GetSSHChannels).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/storage", a.GetStorageInfo).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/logs", a.GetLogs).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/shutdown", a.Shutdown).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/validate", a.ValidateK8shelldFile).Methods(http.MethodPost)
@@ -689,4 +690,21 @@ func (a *RESTService) StopApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetStorageInfo returns mount + filesystem usage for all visible mounts in this container,
+// plus best-effort docker usage summary via docker.sock if available.
+func (a *RESTService) GetStorageInfo(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	info, err := system.GetStorageInfo(ctx, a.server.config.Storages, a.server.config.Docker)
+	if err != nil {
+		a.logger.Error().Msgf("Failed to get storage info: %v", err)
+		http.Error(w, "Failed to get storage info", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(info)
 }

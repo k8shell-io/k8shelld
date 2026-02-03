@@ -52,7 +52,23 @@ terminateOrphans:
 
 # docker settings
 docker:
+  enabled: true
   createDockerSockSymlink: true
+  storages:
+    - name: graphdb
+      path: /var/lib/docker
+      readonly: false
+      size: 5Gi
+      
+storages:
+  - name: home
+    path: /home/vitvatom
+    readonly: false
+    size: 10Gi
+  - name: shared
+    path: /opt/shared
+    readonly: false
+    size: 50Gi
 
 enableApps: true
 

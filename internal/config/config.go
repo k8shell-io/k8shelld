@@ -31,17 +31,18 @@ const (
 
 // Config represents the main configuration file structure
 type Config struct {
-	System              System           `yaml:"system"`
-	User                types.User       `yaml:"user"`
-	Env                 Env              `yaml:"env"`
-	PortForwarding      []string         `yaml:"portForwarding"`
-	TerminateOrphans    TerminateOrphans `yaml:"terminateOrphans"`
-	ReapZombies         ReapZombies      `yaml:"reapZombies"`
-	Docker              DockerConfig     `yaml:"docker"`
-	PortForwardingRules []PortForwardingRule
-	InitScriptsDir      string `yaml:"initScriptsDir"`
-	EnableApps          bool   `yaml:"enableApps"`
-	Apps                *Apps  `yaml:"apps" json:"apps"`
+	System              System               `yaml:"system"`
+	User                types.User           `yaml:"user"`
+	Env                 Env                  `yaml:"env"`
+	PortForwarding      []string             `yaml:"portForwarding"`
+	TerminateOrphans    TerminateOrphans     `yaml:"terminateOrphans"`
+	ReapZombies         ReapZombies          `yaml:"reapZombies"`
+	Docker              types.DockerConfig   `yaml:"docker"`
+	PortForwardingRules []PortForwardingRule `yaml:"-"`
+	InitScriptsDir      string               `yaml:"initScriptsDir"`
+	EnableApps          bool                 `yaml:"enableApps"`
+	Apps                *Apps                `yaml:"apps" json:"apps"`
+	Storages            []types.Storage      `yaml:"storages"`
 }
 
 // System represents the general system configuration
@@ -79,11 +80,6 @@ type Env struct {
 type PortForwardingRule struct {
 	Subnet *net.IPNet
 	Port   uint16
-}
-
-// DockerConfig represents the configuration for the Docker feature
-type DockerConfig struct {
-	CreateDockerSockSymlink bool `yaml:"createDockerSockSymlink"`
 }
 
 // Apps represents a map of application specifications

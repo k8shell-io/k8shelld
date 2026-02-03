@@ -110,7 +110,7 @@ func (s *Server) initialize() error {
 		s.logger.Fatal().Msgf("Error creating user: %v", err)
 	}
 
-	if s.config.Docker.CreateDockerSockSymlink {
+	if s.config.Docker.Enabled && s.config.Docker.CreateDockerSockSymlink {
 		if _, err := os.Lstat(config.DOCKER_SOCKET_SYMLINK); err != nil {
 			if err := os.Symlink(config.DOCKER_SOCKET_PATH, config.DOCKER_SOCKET_SYMLINK); err != nil {
 				s.logger.Error().Msgf("Error creating docker socket symlink: %v", err)
