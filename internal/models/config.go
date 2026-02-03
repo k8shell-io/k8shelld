@@ -1,4 +1,4 @@
-package types
+package models
 
 // DockerConfig represents the configuration for the Docker feature
 type DockerConfig struct {

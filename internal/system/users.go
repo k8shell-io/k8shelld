@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/logger"
-	"github.com/k8shell-io/k8shelld/internal/types"
+	"github.com/k8shell-io/k8shelld/internal/models"
 )
 
 const groupFilePath = "/etc/group"
@@ -26,7 +26,7 @@ func runCommand(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 }
 
 // CreateUser creates the user in the system.
-func CreateUser(user types.User) error {
+func CreateUser(user models.User) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 

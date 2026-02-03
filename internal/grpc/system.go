@@ -13,8 +13,8 @@ import (
 
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
-	"github.com/k8shell-io/k8shelld/internal/types"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
@@ -126,7 +126,7 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 func (s *SystemServiceServer) RunInitScripts(
 	ctx context.Context,
 	scriptsDir string,
-	user types.User,
+	user models.User,
 	envVars []string,
 	onComplete func(),
 ) error {

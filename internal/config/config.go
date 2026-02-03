@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/k8shell-io/common/pkg/gapi"
+	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
-	"github.com/k8shell-io/k8shelld/internal/types"
 )
 
 // Maximum packet size for streaming data
@@ -32,17 +32,17 @@ const (
 // Config represents the main configuration file structure
 type Config struct {
 	System              System               `yaml:"system"`
-	User                types.User           `yaml:"user"`
+	User                models.User          `yaml:"user"`
 	Env                 Env                  `yaml:"env"`
 	PortForwarding      []string             `yaml:"portForwarding"`
 	TerminateOrphans    TerminateOrphans     `yaml:"terminateOrphans"`
 	ReapZombies         ReapZombies          `yaml:"reapZombies"`
-	Docker              types.DockerConfig   `yaml:"docker"`
+	Docker              models.DockerConfig  `yaml:"docker"`
 	PortForwardingRules []PortForwardingRule `yaml:"-"`
 	InitScriptsDir      string               `yaml:"initScriptsDir"`
 	EnableApps          bool                 `yaml:"enableApps"`
 	Apps                *Apps                `yaml:"apps" json:"apps"`
-	Storages            []types.Storage      `yaml:"storages"`
+	Storages            []models.Storage     `yaml:"storages"`
 }
 
 // System represents the general system configuration

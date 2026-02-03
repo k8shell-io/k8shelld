@@ -20,7 +20,6 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
-	"github.com/k8shell-io/k8shelld/internal/types"
 	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
@@ -30,7 +29,7 @@ const API_VERSION = "v1"
 
 type RESTService struct {
 	unixSocketPath string
-	user           types.User
+	user           models.User
 	logger         *zerolog.Logger
 	server         *Server
 }
@@ -56,7 +55,7 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 }
 
 // NewRESTAPI creates a new REST API service
-func NewRESTService(unixSocketPath string, user types.User, server *Server) (*RESTService, error) {
+func NewRESTService(unixSocketPath string, user models.User, server *Server) (*RESTService, error) {
 	logger := logger.NewLogger("api")
 
 	return &RESTService{

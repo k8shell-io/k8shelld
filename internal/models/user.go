@@ -1,4 +1,4 @@
-package types
+package models
 
 // Group represents a group in the workspace
 type Group struct {
