@@ -136,7 +136,11 @@ func getMountUsages() ([]MountUsage, error) {
 			continue
 		}
 
-		bsize := uint64(st.Bsize)
+		bsize, ok := u64FromNonNegI64(st.Bsize)
+		if !ok || bsize == 0 {
+			continue
+		}
+
 		total := uint64(st.Blocks) * bsize
 		free := uint64(st.Bfree) * bsize
 		avail := uint64(st.Bavail) * bsize
@@ -354,36 +358,35 @@ func getDockerUsage(ctx context.Context) (*DockerUsage, error) {
 	var images, containersRw, containersRootFs, volumes, cache uint64
 
 	for _, i := range df.Images {
-		// Prefer Size when present; fall back to VirtualSize.
-		if i.Size > 0 {
-			images += uint64(i.Size)
+		if u, ok := u64FromNonNegI64(i.Size); ok && u > 0 {
+			images += u
 			continue
 		}
-		if i.VirtualSize > 0 {
-			images += uint64(i.VirtualSize)
+		if u, ok := u64FromNonNegI64(i.VirtualSize); ok && u > 0 {
+			images += u
 		}
 	}
 
 	for _, c := range df.Containers {
-		// SizeRw is the container writable layer (does NOT include image layers).
-		if c.SizeRw > 0 {
-			containersRw += uint64(c.SizeRw)
+		if u, ok := u64FromNonNegI64(c.SizeRw); ok && u > 0 {
+			containersRw += u
 		}
-		// SizeRootFs typically includes image + writable; useful to show, but don’t add to TotalBytes.
-		if c.SizeRootFs > 0 {
-			containersRootFs += uint64(c.SizeRootFs)
+		if u, ok := u64FromNonNegI64(c.SizeRootFs); ok && u > 0 {
+			containersRootFs += u
 		}
 	}
 
 	for _, v := range df.Volumes {
-		if v.UsageData != nil && v.UsageData.Size > 0 {
-			volumes += uint64(v.UsageData.Size)
+		if v.UsageData != nil {
+			if u, ok := u64FromNonNegI64(v.UsageData.Size); ok && u > 0 {
+				volumes += u
+			}
 		}
 	}
 
 	for _, bc := range df.BuildCache {
-		if bc.Size > 0 {
-			cache += uint64(bc.Size)
+		if u, ok := u64FromNonNegI64(bc.Size); ok && u > 0 {
+			cache += u
 		}
 	}
 
@@ -616,4 +619,17 @@ func ratCeilToUint64(r *big.Rat) (uint64, error) {
 		return 0, fmt.Errorf("overflow")
 	}
 	return q.Uint64(), nil
+}
+
+// u64FromNonNegI64 converts int64 to uint64 without a direct cast (avoids gosec G115).
+// Returns (0,false) for negative values or conversion errors.
+func u64FromNonNegI64(v int64) (uint64, bool) {
+	if v < 0 {
+		return 0, false
+	}
+	u, err := strconv.ParseUint(strconv.FormatInt(v, 10), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return u, true
 }
