@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/client"
-	"github.com/k8shell-io/k8shelld/internal/models"
+	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/spf13/cobra"
 )
 
@@ -41,13 +41,13 @@ var UptimeCmd = &cobra.Command{
 			return
 		}
 
-		var data models.SystemInfoResponse
+		var data api.SystemInfo
 		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 			fmt.Println("Error parsing response:", err)
 			return
 		}
 
-		startTime, err := time.Parse(time.RFC3339, data.Uptime)
+		startTime, err := time.Parse(time.RFC3339, data.System.Uptime)
 		if err != nil {
 			fmt.Println("Error parsing uptime:", err)
 			return
@@ -61,7 +61,7 @@ var UptimeCmd = &cobra.Command{
 			output = startTime.Format("2006-01-02 15:04:05")
 		} else {
 			output = fmt.Sprintf("%s, %d users, load average: %.2f, %.2f, %.2f", formatUptimeClassic(startTime),
-				data.Users, data.CPUAvg1Min, data.CPUAvg5Min, data.CPUAvg15Min)
+				data.System.Users, data.System.CPUAvg1Min, data.System.CPUAvg5Min, data.System.CPUAvg15Min)
 		}
 
 		println(output)

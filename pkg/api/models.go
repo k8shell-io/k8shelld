@@ -4,15 +4,53 @@ import (
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 )
 
-// safeIntToInt32 converts int to int32, clamping to int32 max/min.
-func safeIntToInt32(v int) int32 {
-	if v > 2147483647 {
-		return 2147483647
-	}
-	if v < -2147483648 {
-		return -2147483648
-	}
-	return int32(v)
+// SystemInfoMetrics represents the system info metrics
+type SystemUsage struct {
+	Uptime             string  `json:"uptime"`
+	CPUUsageMillicores float64 `json:"cpuUsageMillicores"`
+	CPULimitMillicores float64 `json:"cpuLimitMillicores"`
+	MemoryUsageMiB     float64 `json:"memoryUsageMiB"`
+	MemLimitMiB        float64 `json:"memLimitMiB"`
+	CPUAvg1Min         float64 `json:"cpuAvg1min"`
+	CPUAvg5Min         float64 `json:"cpuAvg5min"`
+	CPUAvg15Min        float64 `json:"cpuAvg15min"`
+	Users              int     `json:"users"`
+}
+
+type MountUsage struct {
+	MountPoint     string   `json:"mountPoint"`
+	Source         string   `json:"source"`
+	FSType         string   `json:"fsType"`
+	Options        []string `json:"options"`
+	ReadOnly       bool     `json:"readOnly"`
+	IsLikelyTemp   bool     `json:"isLikelyTemp,omitempty"` // overlay/tmpfs/etc.
+	TotalBytes     uint64   `json:"totalBytes"`
+	UsedBytes      uint64   `json:"usedBytes"`
+	FreeBytes      uint64   `json:"freeBytes"`
+	AvailableBytes uint64   `json:"availableBytes"`
+	TotalInodes    uint64   `json:"totalInodes"`
+	FreeInodes     uint64   `json:"freeInodes"`
+	DeclaredSize   uint64   `json:"declaredSize"`
+}
+
+type DockerUsage struct {
+	SocketPath            string `json:"socketPath"`
+	APIVersion            string `json:"apiVersion"`
+	DockerRootDir         string `json:"dockerRootDir"`
+	ImagesBytes           uint64 `json:"imagesBytes"`
+	ContainersBytes       uint64 `json:"containersBytes"`       // writable layer only (SizeRw)
+	ContainersRootFsBytes uint64 `json:"containersRootFsBytes"` // includes image + writable (SizeRootFs)
+	VolumesBytes          uint64 `json:"volumesBytes"`
+	BuildCacheBytes       uint64 `json:"buildCacheBytes"`
+	TotalBytes            uint64 `json:"totalBytes"` // images + containers(writable) + volumes + build cache
+	DeclaredSize          uint64 `json:"declaredSize"`
+}
+
+type SystemInfo struct {
+	Time   string       `json:"time"`
+	System SystemUsage  `json:"system"`
+	Mounts []MountUsage `json:"mounts"`
+	Docker *DockerUsage `json:"docker,omitempty"`
 }
 
 // AppRuntimeStatus represents the lifecycle status reported by AppManager.
@@ -107,4 +145,15 @@ func LogTypeFromProto(logType k8shelldpb.LogType) string {
 	default:
 		return "install"
 	}
+}
+
+// safeIntToInt32 converts int to int32, clamping to int32 max/min.
+func safeIntToInt32(v int) int32 {
+	if v > 2147483647 {
+		return 2147483647
+	}
+	if v < -2147483648 {
+		return -2147483648
+	}
+	return int32(v)
 }

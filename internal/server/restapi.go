@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net"
 	"net/http"
 	"os"
@@ -19,11 +18,10 @@ import (
 	"github.com/gorilla/mux"
 	commonModels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apps"
-	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
-	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/internal/types"
+	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
 )
@@ -80,7 +78,6 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/sessions", a.GetSessions).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/ssh/channels", a.GetSSHChannels).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
-	apiRouter.HandleFunc("/storage", a.GetStorageInfo).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/logs", a.GetLogs).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/shutdown", a.Shutdown).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/validate", a.ValidateK8shelldFile).Methods(http.MethodPost)
@@ -251,40 +248,32 @@ func (a *RESTService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
-	a.server.sysInfoMu.Lock()
-	defer a.server.sysInfoMu.Unlock()
-
-	uptime, err := system.GetStartTimeFromProcStat()
+	system, err := a.server.GetSystemUsageSnapshot()
 	if err != nil {
-		a.logger.Error().Msgf("Failed to get uptime: %v", err)
-		http.Error(w, "Failed to get uptime", http.StatusInternalServerError)
+		a.logger.Error().Msgf("Failed to get system info metrics snapshot: %v", err)
+		http.Error(w, "Failed to get system info metrics snapshot", http.StatusInternalServerError)
 		return
 	}
 
-	var sysInfo system.SystemInfo
-	if a.server.sysInfo != nil {
-		sysInfo = *a.server.sysInfo
+	mounts, err := a.server.GetMountUsageSnapshot()
+	if err != nil {
+		a.logger.Error().Msgf("Failed to get mount usage snapshot: %v", err)
+		http.Error(w, "Failed to get mount usage snapshot", http.StatusInternalServerError)
+		return
 	}
 
-	var users int = 0
-	a.server.grpcService.SessionStore.Range(func(key, value any) bool {
-		record, ok := value.(*grpc.SessionData)
-		if ok && record.Deleted.UTC().IsZero() {
-			users += 1
-		}
-		return true
-	})
+	docker, err := a.server.GetDockerUsageSnapshot(r.Context())
+	if err != nil {
+		a.logger.Error().Msgf("Failed to get docker usage snapshot: %v", err)
+		http.Error(w, "Failed to get docker usage snapshot", http.StatusInternalServerError)
+		return
+	}
 
-	response := models.SystemInfoResponse{
-		Uptime:             uptime.Format(time.RFC3339),
-		CPUUsageMillicores: sysInfo.CPUUsageMillicores,
-		CPULimitMillicores: sysInfo.CPULimitMillicores,
-		MemoryUsageMiB:     sysInfo.MemoryUsageMiB,
-		MemLimitMiB:        sysInfo.MemLimitMiB,
-		CPUAvg1Min:         math.Round(sysInfo.CPUAvg1Min*100) / 100,
-		CPUAvg5Min:         math.Round(sysInfo.CPUAvg5Min*100) / 100,
-		CPUAvg15Min:        math.Round(sysInfo.CPUAvg15Min*100) / 100,
-		Users:              users,
+	response := api.SystemInfo{
+		Time:   time.Now().Format(time.RFC3339),
+		System: *system,
+		Mounts: mounts,
+		Docker: docker,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -690,21 +679,4 @@ func (a *RESTService) StopApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// GetStorageInfo returns mount + filesystem usage for all visible mounts in this container,
-// plus best-effort docker usage summary via docker.sock if available.
-func (a *RESTService) GetStorageInfo(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-	defer cancel()
-
-	info, err := system.GetStorageInfo(ctx, a.server.config.Storages, a.server.config.Docker)
-	if err != nil {
-		a.logger.Error().Msgf("Failed to get storage info: %v", err)
-		http.Error(w, "Failed to get storage info", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(info)
 }

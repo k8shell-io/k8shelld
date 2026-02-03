@@ -17,108 +17,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/internal/types"
+	"github.com/k8shell-io/k8shelld/pkg/api"
 )
 
-type MountUsage struct {
-	MountPoint     string   `json:"mountPoint"`
-	Source         string   `json:"source"`
-	FSType         string   `json:"fsType"`
-	Options        []string `json:"options"`
-	ReadOnly       bool     `json:"readOnly"`
-	IsLikelyTemp   bool     `json:"isLikelyTemp,omitempty"` // overlay/tmpfs/etc.
-	TotalBytes     uint64   `json:"totalBytes"`
-	UsedBytes      uint64   `json:"usedBytes"`
-	FreeBytes      uint64   `json:"freeBytes"`
-	AvailableBytes uint64   `json:"availableBytes"`
-	TotalInodes    uint64   `json:"totalInodes"`
-	FreeInodes     uint64   `json:"freeInodes"`
-	DeclaredSize   uint64   `json:"declaredSize"`
-}
-
-type DockerUsage struct {
-	SocketPath            string `json:"socketPath"`
-	APIVersion            string `json:"apiVersion"`
-	DockerRootDir         string `json:"dockerRootDir"`
-	ImagesBytes           uint64 `json:"imagesBytes"`
-	ContainersBytes       uint64 `json:"containersBytes"`       // writable layer only (SizeRw)
-	ContainersRootFsBytes uint64 `json:"containersRootFsBytes"` // includes image + writable (SizeRootFs)
-	VolumesBytes          uint64 `json:"volumesBytes"`
-	BuildCacheBytes       uint64 `json:"buildCacheBytes"`
-	TotalBytes            uint64 `json:"totalBytes"` // images + containers(writable) + volumes + build cache
-	DeclaredSize          uint64 `json:"declaredSize"`
-}
-
-type StorageInfo struct {
-	TimeRFC3339 string       `json:"time"`
-	Mounts      []MountUsage `json:"mounts"`
-	Docker      *DockerUsage `json:"docker,omitempty"`
-}
-
-// GetStorageInfo enumerates mounts visible to this container and reports filesystem usage via statfs.
-// It also optionally queries Docker daemon usage via unix socket if available.
-func GetStorageInfo(ctx context.Context, storageCfg []types.Storage, docker types.DockerConfig) (*StorageInfo, error) {
-	mounts, err := getMountUsages()
-	if err != nil {
-		return nil, err
-	}
-
-	storageMounts := []MountUsage{}
-	for i := range mounts {
-		m := &mounts[i]
-		for _, s := range storageCfg {
-			if m.MountPoint == s.Path {
-				if sz := strings.TrimSpace(s.Size); sz != "" {
-					if b, perr := parseSizeBytes(sz); perr == nil {
-						m.DeclaredSize = b
-					} else {
-						m.DeclaredSize = 0
-						log.Err(perr).Msgf("Cannot parse declared size %q for workspace storage %q at path %q",
-							sz, s.Name, s.Path)
-					}
-				}
-				storageMounts = append(storageMounts, *m)
-			}
-		}
-	}
-
-	info := &StorageInfo{
-		TimeRFC3339: time.Now().UTC().Format(time.RFC3339),
-		Mounts:      storageMounts,
-	}
-
-	if docker.Enabled {
-		if du, err := getDockerUsage(ctx); err == nil && du != nil {
-			for _, m := range docker.Storages {
-				if du.DockerRootDir != "" && strings.HasPrefix(du.DockerRootDir, m.Path) {
-					if sz := strings.TrimSpace(m.Size); sz != "" {
-						if b, perr := parseSizeBytes(sz); perr == nil {
-							du.DeclaredSize = b
-						} else {
-							du.DeclaredSize = 0
-							log.Err(perr).Msgf("Cannot parse declared size %q for docker storage %q at path %q",
-								sz, m.Name, m.Path)
-						}
-					}
-					break
-				}
-			}
-
-			info.Docker = du
-		}
-	}
-
-	return info, nil
-}
-
-func getMountUsages() ([]MountUsage, error) {
+func GetMountUsages() ([]api.MountUsage, error) {
 	entries, err := readMountInfo("/proc/self/mountinfo")
 	if err != nil {
 		return nil, err
 	}
 
 	seen := make(map[string]struct{}, len(entries))
-	out := make([]MountUsage, 0, len(entries))
+	out := make([]api.MountUsage, 0, len(entries))
 
 	for _, e := range entries {
 		mp := e.mountPoint
@@ -155,7 +64,7 @@ func getMountUsages() ([]MountUsage, error) {
 		fs := e.fsType
 		src := e.source
 
-		out = append(out, MountUsage{
+		out = append(out, api.MountUsage{
 			MountPoint:     mp,
 			Source:         src,
 			FSType:         fs,
@@ -248,7 +157,7 @@ func unescapeMountInfoPath(s string) string {
 	return string(b)
 }
 
-func getDockerUsage(ctx context.Context) (*DockerUsage, error) {
+func GetDockerUsage(ctx context.Context) (*api.DockerUsage, error) {
 	// Avoid importing internal/config here (it imports system -> would cycle).
 	candidates := []string{
 		"/var/run/docker.sock",
@@ -309,7 +218,7 @@ func getDockerUsage(ctx context.Context) (*DockerUsage, error) {
 		return json.NewDecoder(resp.Body).Decode(out)
 	}
 
-	du := &DockerUsage{SocketPath: sock}
+	du := &api.DockerUsage{SocketPath: sock}
 
 	{
 		var inf dockerInfo
@@ -429,7 +338,7 @@ func hasOpt(opts []string, needle string) bool {
 // - Binary SI: Ki, Mi, Gi, Ti, Pi, Ei (base 1024)   e.g. "10Gi", "1.5Gi"
 // - Decimal SI: n, u, m, k, M, G, T, P, E (base 10) e.g. "500M", "1G", "250m"
 // - Scientific notation is accepted                  e.g. "1e3", "1.2e6"
-func parseSizeBytes(s string) (uint64, error) {
+func ParseSizeBytes(s string) (uint64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0, nil
