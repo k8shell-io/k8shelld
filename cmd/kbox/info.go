@@ -56,8 +56,8 @@ var InfoCmd = &cobra.Command{
 
 		stLines := make([][2]string, 0, len(mounts))
 		for _, m := range mounts {
-			total := formatBytesIEC(m.TotalBytes)
-			used := formatBytesIEC(m.UsedBytes)
+			total := formatBytesIEC(m.TotalBytes, 0)
+			used := formatBytesIEC(m.UsedBytes, 0)
 
 			extra := []string{}
 			if m.FSType != "" {
@@ -83,12 +83,12 @@ var InfoCmd = &cobra.Command{
 		if sysInfo.Docker != nil {
 			du := sysInfo.Docker
 
-			totalLine := formatBytesIEC(du.TotalBytes)
+			totalLine := formatBytesIEC(du.TotalBytes, 0)
 			if du.DeclaredSize > 0 {
 				totalLine = fmt.Sprintf(
 					"%s / %s (%s)",
-					formatBytesIEC(du.TotalBytes),
-					formatBytesIEC(du.DeclaredSize),
+					formatBytesIEC(du.TotalBytes, 0),
+					formatBytesIEC(du.DeclaredSize, 0),
 					pct(float64(du.TotalBytes), float64(du.DeclaredSize)),
 				)
 			}
@@ -96,17 +96,14 @@ var InfoCmd = &cobra.Command{
 			dockerLines := [][2]string{
 				{"Socket", du.SocketPath},
 				{"API version", du.APIVersion},
-				{"Root dir", du.DockerRootDir},
-				{"Images", formatBytesIEC(du.ImagesBytes)},
-				{"Containers (rw)", formatBytesIEC(du.ContainersBytes)},
-				{"Containers (rootfs)", formatBytesIEC(du.ContainersRootFsBytes)},
-				{"Volumes", formatBytesIEC(du.VolumesBytes)},
-				{"Build cache", formatBytesIEC(du.BuildCacheBytes)},
+				{"Images", formatBytesIEC(du.ImagesBytes, 0)},
+				{"Containers (rw)", formatBytesIEC(du.ContainersBytes, 0)},
+				{"Containers (rootfs)", formatBytesIEC(du.ContainersRootFsBytes, 0)},
+				{"Volumes", formatBytesIEC(du.VolumesBytes, 0)},
+				{"Build cache", formatBytesIEC(du.BuildCacheBytes, 0)},
 				{"Total", totalLine},
 			}
 			printGroup("Docker", dockerLines)
-		} else {
-			printGroup("Docker", [][2]string{{"Status", "not available"}})
 		}
 	},
 }
@@ -152,7 +149,7 @@ func pct(used, total float64) string {
 	return fmt.Sprintf("%.2f%%", (used/total)*100.0)
 }
 
-func formatBytesIEC(b uint64) string {
+func formatBytesIEC(b uint64, dec int) string {
 	const (
 		KiB = 1024
 		MiB = 1024 * KiB
@@ -162,13 +159,13 @@ func formatBytesIEC(b uint64) string {
 
 	switch {
 	case b >= TiB:
-		return fmt.Sprintf("%.2fTiB", float64(b)/float64(TiB))
+		return fmt.Sprintf("%.*fTiB", dec, float64(b)/float64(TiB))
 	case b >= GiB:
-		return fmt.Sprintf("%.2fGiB", float64(b)/float64(GiB))
+		return fmt.Sprintf("%.*fGiB", dec, float64(b)/float64(GiB))
 	case b >= MiB:
-		return fmt.Sprintf("%.2fMiB", float64(b)/float64(MiB))
+		return fmt.Sprintf("%.*fMiB", dec, float64(b)/float64(MiB))
 	case b >= KiB:
-		return fmt.Sprintf("%.2fKiB", float64(b)/float64(KiB))
+		return fmt.Sprintf("%.*fKiB", dec, float64(b)/float64(KiB))
 	default:
 		return fmt.Sprintf("%dB", b)
 	}
