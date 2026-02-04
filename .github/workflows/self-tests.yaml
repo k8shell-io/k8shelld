@@ -188,18 +188,22 @@ jobs:
             COMMIT_ID=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-7)
             PR_NUMBER=${{ github.event.pull_request.number }}
             IMAGE_TAG="pr-${PR_NUMBER}-${COMMIT_ID}"
+            IMAGE_TAG_LATEST="pr-${PR_NUMBER}-latest"
             VERSION="pr-${PR_NUMBER}-${COMMIT_ID}"
           else
             # For pushes: use current commit and git describe
             COMMIT_ID=$(git rev-parse --short HEAD)
             VERSION=$(git describe --tags --match 'v*' | sed 's/-g.*//')
             IMAGE_TAG="$VERSION"
+            IMAGE_TAG_LATEST="latest"
           fi
 
+          echo "REPO_NAME=$(cat docker/k8shelld/BUILD)" >> $GITHUB_ENV
           echo "COMMIT_ID=$COMMIT_ID" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-
+          echo "IMAGE_TAG_LATEST=$IMAGE_TAG_LATEST" >> $GITHUB_ENV
+          
       # Vendor dependencies and copy source files to Docker build context
       - name: Prepare Docker build context
         run: make vendor prepare-docker
@@ -207,19 +211,11 @@ jobs:
           VERSION: ${{ env.VERSION }}
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
 
-      # Generate BUILD file with image name for Docker build
-      - name: Set image name in BUILD file
-        run: echo -n "k8shell-test/k8shelld:${{ env.IMAGE_TAG }}" > docker/k8shelld/BUILD
-
-      # Extract image name from BUILD file for tagging
-      - name: Load REPO_NAME from docker/k8shelld/BUILD
-        run: echo "REPO_NAME=$(cat docker/k8shelld/BUILD)" >> $GITHUB_ENV
-
       # Authenticate to Harbor registry
       - name: Login to Docker Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.REGISTRY }}
+          registry: registry.k8shell.io
           username: ${{ secrets.HARBOR_USER }}
           password: ${{ secrets.HARBOR_PASSWORD }}
 
@@ -228,7 +224,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: docker/k8shelld
-          tags: ${{ secrets.REGISTRY }}/${{ env.REPO_NAME }}
+          tags: |
+            registry.k8shell.io/${{ env.REPO_NAME }}:${{ env.IMAGE_TAG }}
+            registry.k8shell.io/${{ env.REPO_NAME }}:${{ env.IMAGE_TAG_LATEST }}
           push: true
           build-args: |
             VERSION=${{ env.VERSION }}
@@ -239,11 +237,11 @@ jobs:
         run: |
           echo "## 🐳 Docker Image Built" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ secrets.REGISTRY }}/${{ env.REPO_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`registry.k8shell.io/${{ env.REPO_NAME }}:${{ env.IMAGE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** \`${{ env.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`${{ env.COMMIT_ID }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Pull command:" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ secrets.REGISTRY }}/${{ env.REPO_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ secrets.REGISTRY }}/${{ env.REPO_NAME }}:${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY

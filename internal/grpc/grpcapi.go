@@ -100,6 +100,19 @@ func NewGRPCService(user models.User, grpcConfig gapi.ServerConfig,
 	}, nil
 }
 
+// NumSessions returns the number of active sessions
+func (a *GRPCService) NumSessions() uint32 {
+	var sessions uint32 = 0
+	a.SessionStore.Range(func(key, value any) bool {
+		record, ok := value.(*SessionData)
+		if ok && record.Deleted.UTC().IsZero() {
+			sessions += 1
+		}
+		return true
+	})
+	return sessions
+}
+
 // Serve starts the gRPC server and registers the services.
 // It also sets up the TLS configuration and the interceptor.
 func (a *GRPCService) Serve(ctx context.Context) error {

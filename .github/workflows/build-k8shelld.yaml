@@ -2,9 +2,6 @@ name: Build k8shelld image
 
 on:
   push:
-    branches:
-      - "v0.11"
-      - "main"
     tags:
       - "v*"
 

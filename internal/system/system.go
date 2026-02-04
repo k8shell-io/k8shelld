@@ -138,15 +138,6 @@ func (s *SystemInfo) GetSystemUsageSnapshot() (*api.SystemUsage, error) {
 		return nil, err
 	}
 
-	var users uint32 = 0
-	// s.grpcService.SessionStore.Range(func(key, value any) bool {
-	// 	record, ok := value.(*grpc.SessionData)
-	// 	if ok && record.Deleted.UTC().IsZero() {
-	// 		users += 1
-	// 	}
-	// 	return true
-	// })
-
 	return &api.SystemUsage{
 		Uptime:             uptime.Format(time.RFC3339),
 		CPUUsageMillicores: s.CPUUsageMillicores,
@@ -156,7 +147,6 @@ func (s *SystemInfo) GetSystemUsageSnapshot() (*api.SystemUsage, error) {
 		CPUAvg1Min:         math.Round(s.CPUAvg1Min*100) / 100,
 		CPUAvg5Min:         math.Round(s.CPUAvg5Min*100) / 100,
 		CPUAvg15Min:        math.Round(s.CPUAvg15Min*100) / 100,
-		Users:              users,
 	}, nil
 }
 

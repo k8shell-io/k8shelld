@@ -262,18 +262,7 @@ func (s *SystemServiceServer) SystemInfo(ctx context.Context,
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get system metrics: %v", err)
 	}
-
-	// Active users
-	var users uint32
-	if s.grpcApi != nil {
-		s.grpcApi.SessionStore.Range(func(_, value any) bool {
-			record, ok := value.(*SessionData)
-			if ok && record.Deleted.UTC().IsZero() {
-				users++
-			}
-			return true
-		})
-	}
+	metrics.Users = s.grpcApi.NumSessions()
 
 	mounts, err := s.grpcApi.sysInfo.GetMountUsageSnapshot()
 	if err != nil {

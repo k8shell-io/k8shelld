@@ -253,6 +253,7 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to get system info metrics snapshot", http.StatusInternalServerError)
 		return
 	}
+	metrics.Users = a.server.grpcService.NumSessions()
 
 	mounts, err := a.server.sysInfo.GetMountUsageSnapshot()
 	if err != nil {
