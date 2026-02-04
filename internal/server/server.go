@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/k8shell-io/api-server/pkg/client"
 	"github.com/k8shell-io/k8shelld/internal/apps"
@@ -31,7 +30,6 @@ type Server struct {
 	apiClientx  *client.Client
 	pprof       bool
 	sysInfo     *system.SystemInfo
-	sysInfoMu   sync.Mutex
 	appManager  *apps.AppManager
 }
 
@@ -50,7 +48,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		testMode:   testMode,
 		config:     cfg,
 		pprof:      cfg.System.PProf,
-		sysInfo:    nil,
+		sysInfo:    system.NewSystemInfo(cfg),
 		apiClientx: apiClient,
 	}
 
@@ -75,7 +73,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	}
 
 	s.grpcService, err = grpc.NewGRPCService(cfg.User, cfg.System.GrpcConfig, cfg.PortForwardingRules,
-		cfg.InitScriptsDir, s.procWatcher, s.apiClientx, s.appManager)
+		cfg.InitScriptsDir, s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
@@ -110,7 +108,7 @@ func (s *Server) initialize() error {
 		s.logger.Fatal().Msgf("Error creating user: %v", err)
 	}
 
-	if s.config.Docker.CreateDockerSockSymlink {
+	if s.config.Docker.Enabled && s.config.Docker.CreateDockerSockSymlink {
 		if _, err := os.Lstat(config.DOCKER_SOCKET_SYMLINK); err != nil {
 			if err := os.Symlink(config.DOCKER_SOCKET_PATH, config.DOCKER_SOCKET_SYMLINK); err != nil {
 				s.logger.Error().Msgf("Error creating docker socket symlink: %v", err)
@@ -157,25 +155,9 @@ func (s *Server) Serve() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				s.sysInfoMu.Lock()
-				newInfo, err := system.UpdateSystemInfo(s.sysInfo)
-				if err != nil {
-					s.logger.Warn().Msgf("Failed to update system info: %v", err)
-					s.sysInfoMu.Unlock()
-					continue
-				}
-				s.sysInfo = newInfo
-				s.sysInfoMu.Unlock()
-			case <-ctx.Done():
-				s.logger.Info().Msg("System info updater stopped.")
-				return
-			}
+		err := s.sysInfo.Collect(ctx, 10)
+		if err != nil {
+			s.logger.Error().Msgf("system info collection error: %v", err)
 		}
 	}()
 

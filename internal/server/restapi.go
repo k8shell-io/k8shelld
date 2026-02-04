@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net"
 	"net/http"
 	"os"
@@ -19,11 +18,9 @@ import (
 	"github.com/gorilla/mux"
 	commonModels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apps"
-	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
-	"github.com/k8shell-io/k8shelld/internal/system"
-	"github.com/k8shell-io/k8shelld/internal/types"
+	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
 )
@@ -32,7 +29,7 @@ const API_VERSION = "v1"
 
 type RESTService struct {
 	unixSocketPath string
-	user           types.User
+	user           models.User
 	logger         *zerolog.Logger
 	server         *Server
 }
@@ -58,7 +55,7 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 }
 
 // NewRESTAPI creates a new REST API service
-func NewRESTService(unixSocketPath string, user types.User, server *Server) (*RESTService, error) {
+func NewRESTService(unixSocketPath string, user models.User, server *Server) (*RESTService, error) {
 	logger := logger.NewLogger("api")
 
 	return &RESTService{
@@ -250,40 +247,33 @@ func (a *RESTService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
-	a.server.sysInfoMu.Lock()
-	defer a.server.sysInfoMu.Unlock()
-
-	uptime, err := system.GetStartTimeFromProcStat()
+	metrics, err := a.server.sysInfo.GetSystemUsageSnapshot()
 	if err != nil {
-		a.logger.Error().Msgf("Failed to get uptime: %v", err)
-		http.Error(w, "Failed to get uptime", http.StatusInternalServerError)
+		a.logger.Error().Msgf("Failed to get system info metrics snapshot: %v", err)
+		http.Error(w, "Failed to get system info metrics snapshot", http.StatusInternalServerError)
+		return
+	}
+	metrics.Users = a.server.grpcService.NumSessions()
+
+	mounts, err := a.server.sysInfo.GetMountUsageSnapshot()
+	if err != nil {
+		a.logger.Error().Msgf("Failed to get mount usage snapshot: %v", err)
+		http.Error(w, "Failed to get mount usage snapshot", http.StatusInternalServerError)
 		return
 	}
 
-	var sysInfo system.SystemInfo
-	if a.server.sysInfo != nil {
-		sysInfo = *a.server.sysInfo
+	docker, err := a.server.sysInfo.GetDockerUsageSnapshot(r.Context())
+	if err != nil {
+		a.logger.Error().Msgf("Failed to get docker usage snapshot: %v", err)
+		http.Error(w, "Failed to get docker usage snapshot", http.StatusInternalServerError)
+		return
 	}
 
-	var users int = 0
-	a.server.grpcService.SessionStore.Range(func(key, value any) bool {
-		record, ok := value.(*grpc.SessionData)
-		if ok && record.Deleted.UTC().IsZero() {
-			users += 1
-		}
-		return true
-	})
-
-	response := models.SystemInfoResponse{
-		Uptime:             uptime.Format(time.RFC3339),
-		CPUUsageMillicores: sysInfo.CPUUsageMillicores,
-		CPULimitMillicores: sysInfo.CPULimitMillicores,
-		MemoryUsageMiB:     sysInfo.MemoryUsageMiB,
-		MemLimitMiB:        sysInfo.MemLimitMiB,
-		CPUAvg1Min:         math.Round(sysInfo.CPUAvg1Min*100) / 100,
-		CPUAvg5Min:         math.Round(sysInfo.CPUAvg5Min*100) / 100,
-		CPUAvg15Min:        math.Round(sysInfo.CPUAvg15Min*100) / 100,
-		Users:              users,
+	response := api.SystemInfo{
+		Time:   time.Now().Format(time.RFC3339),
+		System: metrics,
+		Mounts: mounts,
+		Docker: docker,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -599,7 +589,7 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 		}
 
 		if !a.server.testMode {
-			err = os.Chown(a.unixSocketPath, a.user.Uid, a.user.Gid)
+			err = os.Chown(a.unixSocketPath, int(a.user.Uid), int(a.user.Gid))
 			if err != nil {
 				a.logger.Error().Msgf("Error changing ownership of Unix socket: %v", err)
 				unixListener.Close()

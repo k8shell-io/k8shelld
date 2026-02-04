@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/logger"
-	"github.com/k8shell-io/k8shelld/internal/system"
+	"github.com/k8shell-io/k8shelld/internal/utils"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
@@ -119,7 +119,7 @@ func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string
 		return status.Errorf(codes.Internal, "failed to create Unix socket listener: %v", err)
 	}
 
-	if err := os.Chown(unixsocket.socketPath, s.grpcApi.user.Gid, s.grpcApi.user.Gid); err != nil {
+	if err := os.Chown(unixsocket.socketPath, int(s.grpcApi.user.Uid), int(s.grpcApi.user.Gid)); err != nil {
 		return status.Errorf(codes.Internal, "failed to chown socket: %v", err)
 	}
 	if err := os.Chmod(unixsocket.socketPath, 0700); err != nil {
@@ -207,7 +207,7 @@ func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
 				errCh <- fmt.Errorf("send to stream: %w", serr)
 				return
 			}
-			unixsocket.BytesOut += system.SafeIntToUint64(n)
+			unixsocket.BytesOut += utils.SafeIntToUint64(n)
 		}
 	}()
 
@@ -274,7 +274,7 @@ func (s *UnixSocketServiceServer) communicate(uxListener *net.UnixListener, unix
 							s.logger.Error().Msgf("Failed to send data to the client: %v", err)
 							break
 						}
-						unixsocket.BytesOut += system.SafeIntToUint64(n)
+						unixsocket.BytesOut += utils.SafeIntToUint64(n)
 					}
 				}
 
@@ -309,7 +309,7 @@ func (s *UnixSocketServiceServer) communicate(uxListener *net.UnixListener, unix
 				s.logger.Error().Msgf("Failed to write data to the unix socket: %v", err)
 				break
 			}
-			unixsocket.BytesIn += uint64(len(data))
+			unixsocket.BytesIn += utils.SafeIntToUint64(len(data))
 		} else {
 			time.Sleep(100 * time.Millisecond)
 		}

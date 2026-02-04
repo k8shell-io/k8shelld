@@ -15,8 +15,8 @@ import (
 
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
-	"github.com/k8shell-io/k8shelld/internal/types"
 	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -35,7 +35,7 @@ var ErrAppInvalidState = fmt.Errorf("not a valid app state")
 // AppManager manages the lifecycle of applications defined in the configuration
 type AppManager struct {
 	apps        *config.Apps
-	user        types.User
+	user        models.User
 	stateDir    string
 	logger      *zerolog.Logger
 	mu          sync.Mutex
@@ -46,7 +46,7 @@ type AppManager struct {
 }
 
 // NewAppManager creates a new AppManager instance
-func NewAppManager(apps *config.Apps, user types.User, procWatcher *system.ProcessWatcher,
+func NewAppManager(apps *config.Apps, user models.User, procWatcher *system.ProcessWatcher,
 	testMode bool) (*AppManager, error) {
 	log := logger.NewLogger("app-manager")
 
@@ -171,8 +171,8 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 				Setsid:    true,
 				Pdeathsig: 0,
 				Credential: &syscall.Credential{
-					Uid:    system.SafeIntToUint32(m.user.Uid),
-					Gid:    system.SafeIntToUint32(m.user.Gid),
+					Uid:    m.user.Uid,
+					Gid:    m.user.Gid,
 					Groups: system.GetSupplementalGroups(m.user.Username),
 				},
 			}
@@ -396,8 +396,8 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setsid: true,
 				Credential: &syscall.Credential{
-					Uid:    system.SafeIntToUint32(m.user.Uid),
-					Gid:    system.SafeIntToUint32(m.user.Gid),
+					Uid:    m.user.Uid,
+					Gid:    m.user.Gid,
 					Groups: system.GetSupplementalGroups(m.user.Username),
 				},
 			}

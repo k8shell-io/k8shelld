@@ -8,6 +8,62 @@ option go_package = "github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb;k8shelldp
 
 service SystemService {
   rpc Handshake (HandshakeRequest) returns (HandshakeResponse);
+  rpc SystemInfo (SystemInfoRequest) returns (SystemInfoResponse);
+}
+
+// SystemInfo messages
+message SystemInfoRequest {}
+
+// SystemInfoResponse message
+message SystemInfoResponse {
+  string time = 1;
+  SystemMetrics system = 2;
+  repeated MountUsage mounts = 3;
+  DockerUsage docker = 4;
+}
+
+// SystemMetrics message
+message SystemMetrics {
+  string uptime = 1;
+  double cpuUsageMillicores = 2;
+  double cpuLimitMillicores = 3;
+  double memoryUsageMiB = 4;
+  double memLimitMiB = 5;
+  double cpuAvg1Min = 6;
+  double cpuAvg5Min = 7;
+  double cpuAvg15Min = 8;
+  uint32 users = 9;
+}
+
+// MountUsage message
+message MountUsage {
+  string mountPoint = 1;
+  string source = 2;
+  string fsType = 3;
+  repeated string options = 4;
+  bool readOnly = 5;
+  bool isLikelyTemp = 6;
+  uint64 totalBytes = 10;
+  uint64 usedBytes = 11;
+  uint64 freeBytes = 12;
+  uint64 availableBytes = 13;
+  uint64 totalInodes = 14;
+  uint64 freeInodes = 15;
+  uint64 declaredSize = 20;
+}
+
+// DockerUsage message
+message DockerUsage {
+  string socketPath = 1;
+  string apiVersion = 2;
+  string dockerRootDir = 3;
+  uint64 imagesBytes = 10;
+  uint64 containersBytes = 11;
+  uint64 containersRootFsBytes = 12;
+  uint64 volumesBytes = 13;
+  uint64 buildCacheBytes = 14;
+  uint64 totalBytes = 15;
+  uint64 declaredSize = 20;
 }
 
 // HandshakeRequest message

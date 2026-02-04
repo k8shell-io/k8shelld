@@ -37,6 +37,7 @@ type K8shelld struct {
 	commandClient    pb.CommandServiceClient
 	pfClient         pb.PortForwardServiceClient
 	unixSocketClient pb.UnixSocketServiceClient
+	app              pb.AppServiceClient
 	counters         *ConnCounters
 }
 
@@ -73,6 +74,7 @@ func NewClient(cfg gapi.ClientConfig, counters *ConnCounters) (*K8shelld, error)
 		commandClient:    pb.NewCommandServiceClient(gapiClient.Conn),
 		pfClient:         pb.NewPortForwardServiceClient(gapiClient.Conn),
 		unixSocketClient: pb.NewUnixSocketServiceClient(gapiClient.Conn),
+		app:              pb.NewAppServiceClient(gapiClient.Conn),
 	}, nil
 }
 
@@ -92,6 +94,14 @@ func (c *K8shelld) Handshake(ctx context.Context, user *models.User, envVars []s
 	}
 
 	return c.systemClient.Handshake(ctx, req)
+}
+
+func (c *K8shelld) GetSystemInfo(ctx context.Context) (*SystemInfo, error) {
+	resp, err := c.systemClient.SystemInfo(ctx, &pb.SystemInfoRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return ProtoToSystemInfo(resp), nil
 }
 
 // RunShell creates a PTY shell session over gRPC and bridges it with the BufferedReadWriter.
@@ -658,42 +668,8 @@ func (k *K8shelld) RunCommandProcessor(ctx context.Context, handler CommandHandl
 	}
 }
 
-func (c *K8shelld) Close() error {
-	return c.client.Close()
-}
-
-// *** k8shelldApps client
-
-// k8shelldApps is a client for interacting with the k8shelld service
-type K8shelldApps struct {
-	gapiClient *gapi.Client
-	app        pb.AppServiceClient
-}
-
-// NewK8shelldApps creates a new K8shelldApps to interact with the k8shelld service
-func NewK8shelldApps(ctx context.Context, cfg gapi.ClientConfig,
-	status *models.WorkspaceStatus) (*K8shelldApps, error) {
-
-	cfg.Address = fmt.Sprintf("%s:%d", status.PodIP, status.Port)
-	cfg.ServerName = status.Host
-
-	gapiClient, err := gapi.NewClient(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create gRPC client: %w", err)
-	}
-	return &K8shelldApps{
-		gapiClient: gapiClient,
-		app:        pb.NewAppServiceClient(gapiClient.Conn),
-	}, nil
-}
-
-// Close closes the K8shelldApps's gRPC connection
-func (wc *K8shelldApps) Close() error {
-	return wc.gapiClient.Close()
-}
-
 // ListApps retrieves the list of applications from the k8shelld service
-func (wc *K8shelldApps) ListApps(ctx context.Context) ([]*AppStatus, error) {
+func (wc *K8shelld) ListApps(ctx context.Context) ([]*AppStatus, error) {
 	resp, err := wc.app.ListApps(ctx, &pb.ListAppsRequest{})
 	if err != nil {
 		return nil, err
@@ -706,15 +682,20 @@ func (wc *K8shelldApps) ListApps(ctx context.Context) ([]*AppStatus, error) {
 }
 
 // StartApp starts an application in the k8shelld service
-func (wc *K8shelldApps) StartApp(ctx context.Context, appName string) error {
+func (wc *K8shelld) StartApp(ctx context.Context, appName string) error {
 	_, err := wc.app.StartApp(ctx, &pb.StartAppRequest{Name: appName})
 	return err
 }
 
 // StopApp stops an application in the k8shelld service
-func (wc *K8shelldApps) StopApp(ctx context.Context, appName string) error {
+func (wc *K8shelld) StopApp(ctx context.Context, appName string) error {
 	_, err := wc.app.StopApp(ctx, &pb.StopAppRequest{Name: appName})
 	return err
+}
+
+// Close closes the gRPC client connection
+func (c *K8shelld) Close() error {
+	return c.client.Close()
 }
 
 // *** Helper functions

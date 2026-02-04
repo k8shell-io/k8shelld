@@ -15,7 +15,8 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/logger"
-	"github.com/k8shell-io/k8shelld/internal/types"
+	"github.com/k8shell-io/k8shelld/internal/models"
+	"github.com/k8shell-io/k8shelld/internal/utils"
 )
 
 const groupFilePath = "/etc/group"
@@ -26,7 +27,7 @@ func runCommand(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 }
 
 // CreateUser creates the user in the system.
-func CreateUser(user types.User) error {
+func CreateUser(user models.User) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -35,20 +36,20 @@ func CreateUser(user types.User) error {
 		user.Username, user.Uid, user.Gid, user.HomeDir, user.Shell, user.Sudo, user.Groups)
 
 	// Check if the main group exists, and create it if it doesn't
-	if exists, err := groupExists(strconv.Itoa(user.Gid)); err != nil {
+	if exists, err := groupExists(strconv.Itoa(int(user.Gid))); err != nil {
 		return fmt.Errorf("failed to check main group: %v", err)
 	} else if !exists {
-		if err := addGroup(ctx, user.Username, user.Gid); err != nil {
+		if err := addGroup(ctx, user.Username, int(user.Gid)); err != nil {
 			return fmt.Errorf("failed to add the user main group: %v", err)
 		}
 		logger.Info().Msgf("Main group created: %s (%d)", user.Username, user.Gid)
 	}
 
 	// Check if the user exists, and create it if it doesn't
-	if exists, err := userExists(strconv.Itoa(user.Uid)); err != nil {
+	if exists, err := userExists(strconv.Itoa(int(user.Uid))); err != nil {
 		return fmt.Errorf("failed to check main user: %v", err)
 	} else if !exists {
-		if err := addUser(ctx, user.Username, user.Uid, user.Gid,
+		if err := addUser(ctx, user.Username, int(user.Uid), int(user.Gid),
 			fmt.Sprintf("/home/%s", user.Username), user.Shell); err != nil {
 			return fmt.Errorf("failed to add user: %v", err)
 		}
@@ -58,15 +59,15 @@ func CreateUser(user types.User) error {
 	// Add the user to the specified groups
 	if user.Groups != nil && len(*user.Groups) > 0 {
 		for _, group := range *user.Groups {
-			if exists, err := groupExists(strconv.Itoa(group.Gid)); err != nil {
+			if exists, err := groupExists(strconv.Itoa(int(group.Gid))); err != nil {
 				return fmt.Errorf("failed to check group %v: %v", group, err)
 			} else if !exists {
-				if err := addGroup(ctx, group.Name, group.Gid); err != nil {
+				if err := addGroup(ctx, group.Name, int(group.Gid)); err != nil {
 					return fmt.Errorf("failed to create group %v: %v", group, err)
 				}
 				logger.Debug().Msgf("Group created: %v", group)
 			}
-			cmd := exec.CommandContext(ctx, "usermod", "-aG", strconv.Itoa(group.Gid), user.Username)
+			cmd := exec.CommandContext(ctx, "usermod", "-aG", strconv.Itoa(int(group.Gid)), user.Username)
 			output, err := runCommand(ctx, cmd)
 			if err != nil {
 				return fmt.Errorf("failed to add user %s to group %v: %v, output: %s", user.Username, group, err, string(output))
@@ -76,7 +77,7 @@ func CreateUser(user types.User) error {
 	}
 
 	// Copy skeleton files to the main user's home directory
-	if err := copySkeletonFiles(ctx, user.Uid, user.Gid, user.HomeDir); err != nil {
+	if err := copySkeletonFiles(ctx, int(user.Uid), int(user.Gid), user.HomeDir); err != nil {
 		return fmt.Errorf("failed to copy skeleton files: %v", err)
 	}
 
@@ -204,8 +205,8 @@ func copySkeletonFiles(ctx context.Context, uid, gid int, homeDir string) error 
 	cmd := exec.CommandContext(ctx, "cp", "-r", "/etc/skel/.", homeDir)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
-			Uid: SafeIntToUint32(uid),
-			Gid: SafeIntToUint32(gid),
+			Uid: utils.SafeIntToUint32(uid),
+			Gid: utils.SafeIntToUint32(gid),
 		},
 	}
 	if _, err := runCommand(ctx, cmd); err != nil {
@@ -229,7 +230,7 @@ func GetSupplementalGroups(username string) []uint32 {
 	for _, gidStr := range groups {
 		gidInt, err := strconv.Atoi(gidStr)
 		if err == nil {
-			gids = append(gids, SafeIntToUint32(gidInt))
+			gids = append(gids, utils.SafeIntToUint32(gidInt))
 		}
 	}
 	return gids

@@ -12,8 +12,9 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
-	"github.com/k8shell-io/k8shelld/internal/types"
+	"github.com/k8shell-io/k8shelld/internal/utils"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
@@ -26,7 +27,7 @@ import (
 // SessionData stores the data of a shell session.
 type SessionData struct {
 	Id       string
-	user     types.User
+	user     models.User
 	CmdShell string
 	Cmd      *exec.Cmd
 	Ptmx     *os.File
@@ -157,8 +158,8 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 	session.Cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid:    system.SafeIntToUint32(session.user.Uid),
-			Gid:    system.SafeIntToUint32(session.user.Gid),
+			Uid:    session.user.Uid,
+			Gid:    session.user.Gid,
 			Groups: system.GetSupplementalGroups(session.user.Username),
 		},
 	}
@@ -220,8 +221,8 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 
 	if width > 0 && height > 0 {
 		err = pty.Setsize(session.Ptmx, &pty.Winsize{
-			Rows: system.ClampUint32ToUint16(height),
-			Cols: system.ClampUint32ToUint16(width),
+			Rows: utils.ClampUint32ToUint16(height),
+			Cols: utils.ClampUint32ToUint16(width),
 		})
 		if err != nil {
 			s.logger.Error().Msgf("Failed to set PTY size: %v", err)
@@ -249,7 +250,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 					recvErrCh <- sendErr
 					return
 				}
-				session.BytesOut += system.SafeIntToUint64(n)
+				session.BytesOut += utils.SafeIntToUint64(n)
 			}
 		}
 	}()
@@ -447,8 +448,8 @@ func (s *ShellServiceServer) ResizeTerminal(ctx context.Context,
 	s.logger.Debug().Msgf("Resizing shell session %s, cols: %d, rows: %d", session.Id, req.Width, req.Height)
 
 	err = pty.Setsize(session.Ptmx, &pty.Winsize{
-		Rows: system.ClampUint32ToUint16(req.Height),
-		Cols: system.ClampUint32ToUint16(req.Width),
+		Rows: utils.ClampUint32ToUint16(req.Height),
+		Cols: utils.ClampUint32ToUint16(req.Width),
 	})
 	if err != nil {
 		s.logger.Error().Msgf("Failed to resize terminal: %v", err)

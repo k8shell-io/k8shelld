@@ -1,5 +1,5 @@
 # Variables
-REPO=fitcr.ksi.in.fit.cvut.cz
+REPO=registry.k8shell.io
 REPORTS_DIR := reports
 VENV := .venv
 
@@ -98,6 +98,14 @@ image: vendor prepare-docker
 
 coverage:  ##@ Calculate test coverage percentage from coverage.out
 	@go tool cover -func=$(REPORTS_DIR)/coverage.out | grep total | awk '{print $$3}'
+
+protoc:
+	@echo "Generating Go code from proto file..."
+	rm -rf pkg/api/k8shelldpb
+	protoc \
+		--go_out=module=github.com/k8shell-io/k8shelld:. \
+		--go-grpc_out=module=github.com/k8shell-io/k8shelld:. \
+		pkg/api/k8shelld.proto
 
 ##@
 ##@ Misc commands

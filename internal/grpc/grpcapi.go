@@ -16,8 +16,8 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
-	"github.com/k8shell-io/k8shelld/internal/types"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 
 	apiClient "github.com/k8shell-io/api-server/pkg/client"
@@ -45,7 +45,7 @@ type GRPCService struct {
 	grpcConfig          gapi.ServerConfig           // The gRPC server configuration
 	logger              *zerolog.Logger             // The logger
 	initScriptsDir      string                      // The directory where the init scripts are located
-	user                types.User                 // The workspace owner
+	user                models.User                 // The workspace owner
 	procWatcher         *system.ProcessWatcher      // The process watcher
 	portForwardingRules []config.PortForwardingRule // The port forwarding rules that are allowed
 	ExecStore           *sync.Map                   // The store for the exec data
@@ -55,6 +55,7 @@ type GRPCService struct {
 	apiClientx          *apiClient.Client           // The API client to communicate with the API server
 	appManager          *apps.AppManager            // The app manager
 	CommandService      *CommandServiceServer       // The command service
+	sysInfo             *system.SystemInfo          // The system information
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -74,10 +75,10 @@ func getStatus(deleted time.Time) string {
 }
 
 // NewGRPCAPI creates a new GRPCApiService
-func NewGRPCService(user types.User, grpcConfig gapi.ServerConfig,
+func NewGRPCService(user models.User, grpcConfig gapi.ServerConfig,
 	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
 	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
-	appManager *apps.AppManager) (*GRPCService, error) {
+	appManager *apps.AppManager, sysInfo *system.SystemInfo) (*GRPCService, error) {
 
 	logger := logger.NewLogger("grpc")
 
@@ -95,7 +96,21 @@ func NewGRPCService(user types.User, grpcConfig gapi.ServerConfig,
 		apiClientx:          apiClient,
 		appManager:          appManager,
 		CommandService:      NewCommandServiceServer(),
+		sysInfo:             sysInfo,
 	}, nil
+}
+
+// NumSessions returns the number of active sessions
+func (a *GRPCService) NumSessions() uint32 {
+	var sessions uint32 = 0
+	a.SessionStore.Range(func(key, value any) bool {
+		record, ok := value.(*SessionData)
+		if ok && record.Deleted.UTC().IsZero() {
+			sessions += 1
+		}
+		return true
+	})
+	return sessions
 }
 
 // Serve starts the gRPC server and registers the services.

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/k8shell-io/common/pkg/gapi"
-	"github.com/k8shell-io/k8shelld/internal/system"
-	"github.com/k8shell-io/k8shelld/internal/types"
+	"github.com/k8shell-io/k8shelld/internal/models"
+	"github.com/k8shell-io/k8shelld/internal/utils"
 )
 
 // Maximum packet size for streaming data
@@ -31,17 +31,18 @@ const (
 
 // Config represents the main configuration file structure
 type Config struct {
-	System              System           `yaml:"system"`
-	User                types.User       `yaml:"user"`
-	Env                 Env              `yaml:"env"`
-	PortForwarding      []string         `yaml:"portForwarding"`
-	TerminateOrphans    TerminateOrphans `yaml:"terminateOrphans"`
-	ReapZombies         ReapZombies      `yaml:"reapZombies"`
-	Docker              DockerConfig     `yaml:"docker"`
-	PortForwardingRules []PortForwardingRule
-	InitScriptsDir      string `yaml:"initScriptsDir"`
-	EnableApps          bool   `yaml:"enableApps"`
-	Apps                *Apps  `yaml:"apps" json:"apps"`
+	System              System               `yaml:"system"`
+	User                models.User          `yaml:"user"`
+	Env                 Env                  `yaml:"env"`
+	PortForwarding      []string             `yaml:"portForwarding"`
+	TerminateOrphans    TerminateOrphans     `yaml:"terminateOrphans"`
+	ReapZombies         ReapZombies          `yaml:"reapZombies"`
+	Docker              models.DockerConfig  `yaml:"docker"`
+	PortForwardingRules []PortForwardingRule `yaml:"-"`
+	InitScriptsDir      string               `yaml:"initScriptsDir"`
+	EnableApps          bool                 `yaml:"enableApps"`
+	Apps                *Apps                `yaml:"apps" json:"apps"`
+	Storages            []models.Storage     `yaml:"storages"`
 }
 
 // System represents the general system configuration
@@ -79,11 +80,6 @@ type Env struct {
 type PortForwardingRule struct {
 	Subnet *net.IPNet
 	Port   uint16
-}
-
-// DockerConfig represents the configuration for the Docker feature
-type DockerConfig struct {
-	CreateDockerSockSymlink bool `yaml:"createDockerSockSymlink"`
 }
 
 // Apps represents a map of application specifications
@@ -143,7 +139,7 @@ func ParsePortForwardingRule(rule string) (PortForwardingRule, error) {
 		subnet = nil // Special case for local networks
 	}
 
-	return PortForwardingRule{Subnet: subnet, Port: system.SafeIntToUint16(port)}, nil
+	return PortForwardingRule{Subnet: subnet, Port: utils.SafeIntToUint16(port)}, nil
 }
 
 // UnsetEnvVars unsets the environment variables that match the patterns

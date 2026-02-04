@@ -17,6 +17,7 @@ import (
 	"github.com/google/shlex"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
+	"github.com/k8shell-io/k8shelld/internal/utils"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -138,8 +139,8 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid: system.SafeIntToUint32(s.grpcApi.user.Uid),
-			Gid: system.SafeIntToUint32(s.grpcApi.user.Gid),
+			Uid: s.grpcApi.user.Uid,
+			Gid: s.grpcApi.user.Gid,
 		},
 	}
 
@@ -284,7 +285,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 					terminateOnce.Do(func() { close(terminate) })
 					return
 				} else {
-					execData.BytesOut += system.SafeIntToUint64(n)
+					execData.BytesOut += utils.SafeIntToUint64(n)
 				}
 			}
 		}
@@ -321,7 +322,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 				}); sendErr != nil {
 					s.logger.Error().Msgf("Failed to send stderr data: %v, PID=%d", sendErr, processPID)
 				}
-				execData.BytesOut += system.SafeIntToUint64(n)
+				execData.BytesOut += utils.SafeIntToUint64(n)
 			}
 		}
 	}()
@@ -338,9 +339,9 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 			if status.Signaled() {
 				signal := status.Signal()
 				s.logger.Debug().Msgf("Process terminated by signal: %v, PID=%d", signal, processPID)
-				exitCode = 128 + system.SafeIntToInt32(int(signal))
+				exitCode = 128 + utils.SafeIntToInt32(int(signal))
 			} else {
-				exitCode = system.SafeIntToInt32(status.ExitStatus())
+				exitCode = utils.SafeIntToInt32(status.ExitStatus())
 			}
 		} else {
 			s.logger.Debug().Msgf("Unexpected process state type, PID=%d", processPID)

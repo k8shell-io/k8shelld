@@ -10,11 +10,13 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
-	"github.com/k8shell-io/k8shelld/internal/types"
+	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
@@ -56,11 +58,11 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 		return nil, status.Error(codes.PermissionDenied, "user name mismatch")
 	}
 
-	if system.SafeIntToUint32(s.grpcApi.user.Uid) != req.User.Uid {
+	if s.grpcApi.user.Uid != req.User.Uid {
 		return nil, status.Error(codes.PermissionDenied, "user uid mismatch")
 	}
 
-	if system.SafeIntToUint32(s.grpcApi.user.Gid) != req.User.Gid {
+	if s.grpcApi.user.Gid != req.User.Gid {
 		return nil, status.Error(codes.PermissionDenied, "user gid mismatch")
 	}
 
@@ -126,7 +128,7 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 func (s *SystemServiceServer) RunInitScripts(
 	ctx context.Context,
 	scriptsDir string,
-	user types.User,
+	user models.User,
 	envVars []string,
 	onComplete func(),
 ) error {
@@ -190,8 +192,8 @@ func (s *SystemServiceServer) runScript(scriptsDir, scriptName, flagFile string,
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid:    system.SafeIntToUint32(s.grpcApi.user.Uid),
-			Gid:    system.SafeIntToUint32(s.grpcApi.user.Gid),
+			Uid:    s.grpcApi.user.Uid,
+			Gid:    s.grpcApi.user.Gid,
 			Groups: system.GetSupplementalGroups(s.grpcApi.user.Username),
 		},
 	}
@@ -249,4 +251,35 @@ func (s *SystemServiceServer) checkScriptState(cmd *exec.Cmd, flagFile string, s
 	} else {
 		s.logger.Error().Msgf("The script %s failed with exit status %d.", scriptName, status)
 	}
+}
+
+// SystemInfo returns system metrics + mount usage + docker usage over gRPC.
+// Mirrors the REST /sysinfo payload.
+func (s *SystemServiceServer) SystemInfo(ctx context.Context,
+	_ *k8shelldpb.SystemInfoRequest) (*k8shelldpb.SystemInfoResponse, error) {
+
+	metrics, err := s.grpcApi.sysInfo.GetSystemUsageSnapshot()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get system metrics: %v", err)
+	}
+	metrics.Users = s.grpcApi.NumSessions()
+
+	mounts, err := s.grpcApi.sysInfo.GetMountUsageSnapshot()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get mount usage: %v", err)
+	}
+
+	docker, err := s.grpcApi.sysInfo.GetDockerUsageSnapshot(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get docker usage: %v", err)
+	}
+
+	systemInfo := api.SystemInfo{
+		Time:   time.Now().Format(time.RFC3339),
+		System: metrics,
+		Mounts: mounts,
+		Docker: docker,
+	}
+
+	return api.SystemInfoToProto(&systemInfo), nil
 }
