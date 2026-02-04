@@ -65,7 +65,7 @@ func SafeIntToInt32(v int) int32 {
 	return int32(v)
 }
 
-// u32ToInt converts uint32 to int, returning false if overflow would occur.
+// Safeu32ToInt converts uint32 to int, returning 0 if overflow would occur.
 func Safeu32ToInt(v uint32) int {
 	if uint64(v) > uint64(math.MaxInt) {
 		return 0
