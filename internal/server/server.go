@@ -3,15 +3,12 @@ package server
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/k8shell-io/api-server/pkg/client"
 	"github.com/k8shell-io/k8shelld/internal/apps"
@@ -19,9 +16,7 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
-	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
 type Server struct {
@@ -35,7 +30,6 @@ type Server struct {
 	apiClientx  *client.Client
 	pprof       bool
 	sysInfo     *system.SystemInfo
-	sysInfoMu   sync.Mutex
 	appManager  *apps.AppManager
 }
 
@@ -54,7 +48,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		testMode:   testMode,
 		config:     cfg,
 		pprof:      cfg.System.PProf,
-		sysInfo:    nil,
+		sysInfo:    system.NewSystemInfo(cfg),
 		apiClientx: apiClient,
 	}
 
@@ -79,7 +73,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	}
 
 	s.grpcService, err = grpc.NewGRPCService(cfg.User, cfg.System.GrpcConfig, cfg.PortForwardingRules,
-		cfg.InitScriptsDir, s.procWatcher, s.apiClientx, s.appManager)
+		cfg.InitScriptsDir, s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
@@ -161,25 +155,9 @@ func (s *Server) Serve() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				s.sysInfoMu.Lock()
-				newInfo, err := system.UpdateSystemInfo(s.sysInfo)
-				if err != nil {
-					s.logger.Warn().Msgf("Failed to update system info: %v", err)
-					s.sysInfoMu.Unlock()
-					continue
-				}
-				s.sysInfo = newInfo
-				s.sysInfoMu.Unlock()
-			case <-ctx.Done():
-				s.logger.Info().Msg("System info updater stopped.")
-				return
-			}
+		err := s.sysInfo.Collect(ctx, 10)
+		if err != nil {
+			s.logger.Error().Msgf("system info collection error: %v", err)
 		}
 	}()
 
@@ -214,98 +192,4 @@ func (s *Server) Serve() {
 	wg.Wait()
 
 	s.logger.Info().Msgf("Shutdown complete.")
-}
-
-// GetSystemUsageSnapshot returns a snapshot of system metrics.
-func (s *Server) GetSystemUsageSnapshot() (*api.SystemUsage, error) {
-	s.sysInfoMu.Lock()
-	defer s.sysInfoMu.Unlock()
-
-	uptime, err := system.GetStartTimeFromProcStat()
-	if err != nil {
-		return nil, err
-	}
-
-	sysInfo := s.sysInfo
-	if sysInfo == nil {
-		return nil, fmt.Errorf("system info not yet available")
-	}
-
-	var users int = 0
-	s.grpcService.SessionStore.Range(func(key, value any) bool {
-		record, ok := value.(*grpc.SessionData)
-		if ok && record.Deleted.UTC().IsZero() {
-			users += 1
-		}
-		return true
-	})
-
-	return &api.SystemUsage{
-		Uptime:             uptime.Format(time.RFC3339),
-		CPUUsageMillicores: sysInfo.CPUUsageMillicores,
-		CPULimitMillicores: sysInfo.CPULimitMillicores,
-		MemoryUsageMiB:     sysInfo.MemoryUsageMiB,
-		MemLimitMiB:        sysInfo.MemLimitMiB,
-		CPUAvg1Min:         math.Round(sysInfo.CPUAvg1Min*100) / 100,
-		CPUAvg5Min:         math.Round(sysInfo.CPUAvg5Min*100) / 100,
-		CPUAvg15Min:        math.Round(sysInfo.CPUAvg15Min*100) / 100,
-		Users:              users,
-	}, nil
-}
-
-func (s *Server) GetMountUsageSnapshot() ([]api.MountUsage, error) {
-	mounts, err := system.GetMountUsages()
-	if err != nil {
-		return nil, err
-	}
-
-	storageMounts := []api.MountUsage{}
-	for i := range mounts {
-		m := &mounts[i]
-		for _, s := range s.config.Storages {
-			if m.MountPoint == s.Path {
-				if sz := strings.TrimSpace(s.Size); sz != "" {
-					if b, perr := system.ParseSizeBytes(sz); perr == nil {
-						m.DeclaredSize = b
-					} else {
-						m.DeclaredSize = 0
-						log.Err(perr).Msgf("Cannot parse declared size %q for workspace storage %q at path %q",
-							sz, s.Name, s.Path)
-					}
-				}
-				storageMounts = append(storageMounts, *m)
-			}
-		}
-	}
-
-	return storageMounts, nil
-}
-
-func (s *Server) GetDockerUsageSnapshot(ctx context.Context) (*api.DockerUsage, error) {
-	docker := s.config.Docker
-	if !docker.Enabled {
-		return nil, nil
-	}
-
-	du, err := system.GetDockerUsage(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error getting docker usage: %v", err)
-	}
-
-	for _, m := range docker.Storages {
-		if du.DockerRootDir != "" && strings.HasPrefix(du.DockerRootDir, m.Path) {
-			if sz := strings.TrimSpace(m.Size); sz != "" {
-				if b, perr := system.ParseSizeBytes(sz); perr == nil {
-					du.DeclaredSize = b
-				} else {
-					du.DeclaredSize = 0
-					log.Err(perr).Msgf("Cannot parse declared size %q for docker storage %q at path %q",
-						sz, m.Name, m.Path)
-				}
-			}
-			break
-		}
-	}
-
-	return du, nil
 }

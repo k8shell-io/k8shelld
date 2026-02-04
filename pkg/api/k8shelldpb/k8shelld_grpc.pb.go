@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SystemService_Handshake_FullMethodName = "/k8shelld.SystemService/Handshake"
+	SystemService_Handshake_FullMethodName  = "/k8shelld.SystemService/Handshake"
+	SystemService_SystemInfo_FullMethodName = "/k8shelld.SystemService/SystemInfo"
 )
 
 // SystemServiceClient is the client API for SystemService service.
@@ -27,6 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type SystemServiceClient interface {
 	Handshake(ctx context.Context, in *HandshakeRequest, opts ...grpc.CallOption) (*HandshakeResponse, error)
+	SystemInfo(ctx context.Context, in *SystemInfoRequest, opts ...grpc.CallOption) (*SystemInfoResponse, error)
 }
 
 type systemServiceClient struct {
@@ -47,11 +49,22 @@ func (c *systemServiceClient) Handshake(ctx context.Context, in *HandshakeReques
 	return out, nil
 }
 
+func (c *systemServiceClient) SystemInfo(ctx context.Context, in *SystemInfoRequest, opts ...grpc.CallOption) (*SystemInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SystemInfoResponse)
+	err := c.cc.Invoke(ctx, SystemService_SystemInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SystemServiceServer is the server API for SystemService service.
 // All implementations must embed UnimplementedSystemServiceServer
 // for forward compatibility.
 type SystemServiceServer interface {
 	Handshake(context.Context, *HandshakeRequest) (*HandshakeResponse, error)
+	SystemInfo(context.Context, *SystemInfoRequest) (*SystemInfoResponse, error)
 	mustEmbedUnimplementedSystemServiceServer()
 }
 
@@ -64,6 +77,9 @@ type UnimplementedSystemServiceServer struct{}
 
 func (UnimplementedSystemServiceServer) Handshake(context.Context, *HandshakeRequest) (*HandshakeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Handshake not implemented")
+}
+func (UnimplementedSystemServiceServer) SystemInfo(context.Context, *SystemInfoRequest) (*SystemInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SystemInfo not implemented")
 }
 func (UnimplementedSystemServiceServer) mustEmbedUnimplementedSystemServiceServer() {}
 func (UnimplementedSystemServiceServer) testEmbeddedByValue()                       {}
@@ -104,6 +120,24 @@ func _SystemService_Handshake_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SystemService_SystemInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SystemInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).SystemInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_SystemInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).SystemInfo(ctx, req.(*SystemInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SystemService_ServiceDesc is the grpc.ServiceDesc for SystemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -114,6 +148,10 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Handshake",
 			Handler:    _SystemService_Handshake_Handler,
+		},
+		{
+			MethodName: "SystemInfo",
+			Handler:    _SystemService_SystemInfo_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

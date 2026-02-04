@@ -10,11 +10,13 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
+	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
@@ -56,11 +58,11 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 		return nil, status.Error(codes.PermissionDenied, "user name mismatch")
 	}
 
-	if system.SafeIntToUint32(s.grpcApi.user.Uid) != req.User.Uid {
+	if s.grpcApi.user.Uid != req.User.Uid {
 		return nil, status.Error(codes.PermissionDenied, "user uid mismatch")
 	}
 
-	if system.SafeIntToUint32(s.grpcApi.user.Gid) != req.User.Gid {
+	if s.grpcApi.user.Gid != req.User.Gid {
 		return nil, status.Error(codes.PermissionDenied, "user gid mismatch")
 	}
 
@@ -190,8 +192,8 @@ func (s *SystemServiceServer) runScript(scriptsDir, scriptName, flagFile string,
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid:    system.SafeIntToUint32(s.grpcApi.user.Uid),
-			Gid:    system.SafeIntToUint32(s.grpcApi.user.Gid),
+			Uid:    s.grpcApi.user.Uid,
+			Gid:    s.grpcApi.user.Gid,
 			Groups: system.GetSupplementalGroups(s.grpcApi.user.Username),
 		},
 	}
@@ -248,5 +250,86 @@ func (s *SystemServiceServer) checkScriptState(cmd *exec.Cmd, flagFile string, s
 		}
 	} else {
 		s.logger.Error().Msgf("The script %s failed with exit status %d.", scriptName, status)
+	}
+}
+
+// SystemInfo returns system metrics + mount usage + docker usage over gRPC.
+// Mirrors the REST /sysinfo payload.
+func (s *SystemServiceServer) SystemInfo(ctx context.Context,
+	_ *k8shelldpb.SystemInfoRequest) (*k8shelldpb.SystemInfoResponse, error) {
+
+	metrics, err := s.grpcApi.sysInfo.GetSystemUsageSnapshot()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get system metrics: %v", err)
+	}
+
+	// Active users
+	var users uint32
+	if s.grpcApi != nil {
+		s.grpcApi.SessionStore.Range(func(_, value any) bool {
+			record, ok := value.(*SessionData)
+			if ok && record.Deleted.UTC().IsZero() {
+				users++
+			}
+			return true
+		})
+	}
+
+	mounts, err := s.grpcApi.sysInfo.GetMountUsageSnapshot()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get mount usage: %v", err)
+	}
+
+	docker, err := s.grpcApi.sysInfo.GetDockerUsageSnapshot(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get docker usage: %v", err)
+	}
+
+	systemInfo := api.SystemInfo{
+		Time:   time.Now().Format(time.RFC3339),
+		System: metrics,
+		Mounts: mounts,
+		Docker: docker,
+	}
+
+	return api.SystemInfoToProto(&systemInfo), nil
+}
+
+func toPBMountUsage(m *api.MountUsage) *k8shelldpb.MountUsage {
+	if m == nil {
+		return nil
+	}
+	return &k8shelldpb.MountUsage{
+		MountPoint:     m.MountPoint,
+		Source:         m.Source,
+		FsType:         m.FSType,
+		Options:        append([]string(nil), m.Options...),
+		ReadOnly:       m.ReadOnly,
+		IsLikelyTemp:   m.IsLikelyTemp,
+		TotalBytes:     m.TotalBytes,
+		UsedBytes:      m.UsedBytes,
+		FreeBytes:      m.FreeBytes,
+		AvailableBytes: m.AvailableBytes,
+		TotalInodes:    m.TotalInodes,
+		FreeInodes:     m.FreeInodes,
+		DeclaredSize:   m.DeclaredSize,
+	}
+}
+
+func toPBDockerUsage(d *api.DockerUsage) *k8shelldpb.DockerUsage {
+	if d == nil {
+		return nil
+	}
+	return &k8shelldpb.DockerUsage{
+		SocketPath:            d.SocketPath,
+		ApiVersion:            d.APIVersion,
+		DockerRootDir:         d.DockerRootDir,
+		ImagesBytes:           d.ImagesBytes,
+		ContainersBytes:       d.ContainersBytes,
+		ContainersRootFsBytes: d.ContainersRootFsBytes,
+		VolumesBytes:          d.VolumesBytes,
+		BuildCacheBytes:       d.BuildCacheBytes,
+		TotalBytes:            d.TotalBytes,
+		DeclaredSize:          d.DeclaredSize,
 	}
 }

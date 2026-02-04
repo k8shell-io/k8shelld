@@ -16,7 +16,7 @@ import (
 
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
-	"github.com/k8shell-io/k8shelld/internal/system"
+	"github.com/k8shell-io/k8shelld/internal/utils"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
@@ -211,7 +211,7 @@ func (s *PortForwardServiceServer) PortForward(
 	pf := &PortForwardData{
 		Id:          pfID,
 		Destination: dstReq.Destination.Ip,
-		Port:        system.ClampUint32ToUint16(dstReq.Destination.Port),
+		Port:        utils.ClampUint32ToUint16(dstReq.Destination.Port),
 		Created:     time.Now(),
 	}
 	tcpConn, err := s.createTCPConnection(pf.Destination, pf.Port)
@@ -256,7 +256,7 @@ func (s *PortForwardServiceServer) PortForward(
 				recvErrCh <- fmt.Errorf("grpc send: %w", serr)
 				return
 			}
-			pf.BytesOut += system.SafeIntToUint64(n)
+			pf.BytesOut += utils.SafeIntToUint64(n)
 		}
 	}()
 

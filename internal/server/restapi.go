@@ -247,21 +247,21 @@ func (a *RESTService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
-	system, err := a.server.GetSystemUsageSnapshot()
+	metrics, err := a.server.sysInfo.GetSystemUsageSnapshot()
 	if err != nil {
 		a.logger.Error().Msgf("Failed to get system info metrics snapshot: %v", err)
 		http.Error(w, "Failed to get system info metrics snapshot", http.StatusInternalServerError)
 		return
 	}
 
-	mounts, err := a.server.GetMountUsageSnapshot()
+	mounts, err := a.server.sysInfo.GetMountUsageSnapshot()
 	if err != nil {
 		a.logger.Error().Msgf("Failed to get mount usage snapshot: %v", err)
 		http.Error(w, "Failed to get mount usage snapshot", http.StatusInternalServerError)
 		return
 	}
 
-	docker, err := a.server.GetDockerUsageSnapshot(r.Context())
+	docker, err := a.server.sysInfo.GetDockerUsageSnapshot(r.Context())
 	if err != nil {
 		a.logger.Error().Msgf("Failed to get docker usage snapshot: %v", err)
 		http.Error(w, "Failed to get docker usage snapshot", http.StatusInternalServerError)
@@ -270,7 +270,7 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 
 	response := api.SystemInfo{
 		Time:   time.Now().Format(time.RFC3339),
-		System: *system,
+		System: metrics,
 		Mounts: mounts,
 		Docker: docker,
 	}
@@ -588,7 +588,7 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 		}
 
 		if !a.server.testMode {
-			err = os.Chown(a.unixSocketPath, a.user.Uid, a.user.Gid)
+			err = os.Chown(a.unixSocketPath, int(a.user.Uid), int(a.user.Gid))
 			if err != nil {
 				a.logger.Error().Msgf("Error changing ownership of Unix socket: %v", err)
 				unixListener.Close()

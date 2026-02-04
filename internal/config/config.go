@@ -11,7 +11,7 @@ import (
 
 	"github.com/k8shell-io/common/pkg/gapi"
 	"github.com/k8shell-io/k8shelld/internal/models"
-	"github.com/k8shell-io/k8shelld/internal/system"
+	"github.com/k8shell-io/k8shelld/internal/utils"
 )
 
 // Maximum packet size for streaming data
@@ -139,7 +139,7 @@ func ParsePortForwardingRule(rule string) (PortForwardingRule, error) {
 		subnet = nil // Special case for local networks
 	}
 
-	return PortForwardingRule{Subnet: subnet, Port: system.SafeIntToUint16(port)}, nil
+	return PortForwardingRule{Subnet: subnet, Port: utils.SafeIntToUint16(port)}, nil
 }
 
 // UnsetEnvVars unsets the environment variables that match the patterns

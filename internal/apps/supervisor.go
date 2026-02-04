@@ -92,8 +92,8 @@ func (s *AppSupervisor) supervise() {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setsid: true,
 				Credential: &syscall.Credential{
-					Uid:    system.SafeIntToUint32(s.manager.user.Uid),
-					Gid:    system.SafeIntToUint32(s.manager.user.Gid),
+					Uid:    s.manager.user.Uid,
+					Gid:    s.manager.user.Gid,
 					Groups: system.GetSupplementalGroups(s.manager.user.Username),
 				},
 			}
@@ -113,10 +113,10 @@ func (s *AppSupervisor) supervise() {
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 
-		log.Info().Msg("starting app process")
+		s.log.Info().Msg("starting app process")
 		startTime := time.Now()
 		if err := cmd.Start(); err != nil {
-			log.Error().Err(err).Msg("failed to start app")
+			s.log.Error().Err(err).Msg("failed to start app")
 			if !s.manager.shouldRestart(policy, false) {
 				return
 			}
@@ -130,7 +130,7 @@ func (s *AppSupervisor) supervise() {
 		}
 
 		s.pid = cmd.Process.Pid
-		log.Info().Msgf("app process started with PID %d", s.pid)
+		s.log.Info().Msgf("app process started with PID %d", s.pid)
 
 		doneCh := make(chan error, 1)
 		go func() {
@@ -139,7 +139,7 @@ func (s *AppSupervisor) supervise() {
 
 		select {
 		case <-s.stopCh:
-			log.Info().Msg("stop requested, killing app process")
+			s.log.Info().Msg("stop requested, killing app process")
 			_ = cmd.Process.Kill()
 			<-doneCh
 			s.manager.deleteSupervisor(s.app.Name)

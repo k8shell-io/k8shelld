@@ -171,8 +171,8 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 				Setsid:    true,
 				Pdeathsig: 0,
 				Credential: &syscall.Credential{
-					Uid:    system.SafeIntToUint32(m.user.Uid),
-					Gid:    system.SafeIntToUint32(m.user.Gid),
+					Uid:    m.user.Uid,
+					Gid:    m.user.Gid,
 					Groups: system.GetSupplementalGroups(m.user.Username),
 				},
 			}
@@ -396,8 +396,8 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setsid: true,
 				Credential: &syscall.Credential{
-					Uid:    system.SafeIntToUint32(m.user.Uid),
-					Gid:    system.SafeIntToUint32(m.user.Gid),
+					Uid:    m.user.Uid,
+					Gid:    m.user.Gid,
 					Groups: system.GetSupplementalGroups(m.user.Username),
 				},
 			}

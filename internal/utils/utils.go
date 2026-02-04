@@ -1,6 +1,8 @@
-package system
+package utils
 
 import (
+	"math"
+
 	"github.com/k8shell-io/k8shelld/internal/logger"
 )
 
@@ -61,4 +63,12 @@ func SafeIntToInt32(v int) int32 {
 		return -2147483648
 	}
 	return int32(v)
+}
+
+// u32ToInt converts uint32 to int, returning false if overflow would occur.
+func Safeu32ToInt(v uint32) int {
+	if uint64(v) > uint64(math.MaxInt) {
+		return 0
+	}
+	return int(v)
 }

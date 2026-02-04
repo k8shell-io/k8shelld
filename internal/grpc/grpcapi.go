@@ -55,6 +55,7 @@ type GRPCService struct {
 	apiClientx          *apiClient.Client           // The API client to communicate with the API server
 	appManager          *apps.AppManager            // The app manager
 	CommandService      *CommandServiceServer       // The command service
+	sysInfo             *system.SystemInfo          // The system information
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -77,7 +78,7 @@ func getStatus(deleted time.Time) string {
 func NewGRPCService(user models.User, grpcConfig gapi.ServerConfig,
 	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
 	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
-	appManager *apps.AppManager) (*GRPCService, error) {
+	appManager *apps.AppManager, sysInfo *system.SystemInfo) (*GRPCService, error) {
 
 	logger := logger.NewLogger("grpc")
 
@@ -95,6 +96,7 @@ func NewGRPCService(user models.User, grpcConfig gapi.ServerConfig,
 		apiClientx:          apiClient,
 		appManager:          appManager,
 		CommandService:      NewCommandServiceServer(),
+		sysInfo:             sysInfo,
 	}, nil
 }
 

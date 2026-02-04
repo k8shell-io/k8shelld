@@ -2,12 +2,21 @@ package system
 
 import (
 	"bufio"
+	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/k8shell-io/k8shelld/internal/config"
+	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/k8shell-io/k8shelld/pkg/api"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // Paths to cgroups v2 files
@@ -23,17 +32,189 @@ const MaxCPUSamples = 100 // Maximum number of CPU samples to keep in history
 // Usage struct to hold CPU & Memory metrics
 // The metrics are collected from cgroups v2 files
 type SystemInfo struct {
-	CollectedAt        time.Time    // Time of collection
-	CPUUsageUsec       int64        // CPU usage in microseconds
-	CPUUsageMillicores float64      // CPU usage in mCPU
-	MemoryUsageMiB     float64      // Memory usage in MiB
-	CPULimitMillicores float64      // CPU limit in mCPU (if set)
-	MemLimitMiB        float64      // Memory limit in MiB (if set)
-	CPUUsageSeconds    float64      // CPU usage in seconds
-	CPUAvg1Min         float64      // CPU usage average over 1 minute
-	CPUAvg5Min         float64      // CPU usage average over 5 minutes
-	CPUAvg15Min        float64      // CPU usage average over 15 minutes
-	stats              *SystemStats // System statistics
+	CollectedAt        time.Time       // Time of collection
+	CPUUsageUsec       int64           // CPU usage in microseconds
+	CPUUsageMillicores float64         // CPU usage in mCPU
+	MemoryUsageMiB     float64         // Memory usage in MiB
+	CPULimitMillicores float64         // CPU limit in mCPU (if set)
+	MemLimitMiB        float64         // Memory limit in MiB (if set)
+	CPUUsageSeconds    float64         // CPU usage in seconds
+	CPUAvg1Min         float64         // CPU usage average over 1 minute
+	CPUAvg5Min         float64         // CPU usage average over 5 minutes
+	CPUAvg15Min        float64         // CPU usage average over 15 minutes
+	config             *config.Config  // System configuration
+	stats              *SystemStats    // System statistics
+	mu                 sync.Mutex      // Mutex for thread-safe updates
+	prevUsage          int64           // Previous CPU usage for delta calculation
+	prevTime           time.Time       // Previous time for delta calculation
+	log                *zerolog.Logger // Logger instance
+}
+
+func NewSystemInfo(config *config.Config) *SystemInfo {
+	return &SystemInfo{
+		config:   config,
+		stats:    &SystemStats{MaxSamples: MaxCPUSamples},
+		prevTime: time.Now(),
+		mu:       sync.Mutex{},
+		log:      logger.NewLogger("sysifo"),
+	}
+}
+
+func (s *SystemInfo) Collect(ctx context.Context, refreshTimeSec int) error {
+	ticker := time.NewTicker(time.Duration(refreshTimeSec) * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			err := s.refresh()
+			if err != nil {
+				s.log.Warn().Msgf("Failed to update system info: %v", err)
+				continue
+			}
+		case <-ctx.Done():
+			s.log.Info().Msg("System info updater stopped.")
+			return ctx.Err()
+		}
+	}
+}
+
+// Retrieve all usage metrics
+func (s *SystemInfo) refresh() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cpuUsage, cpuUsageSeconds, newUsage, newTime, err := getCPUUsage(s.prevUsage, s.prevTime)
+	if err != nil {
+		return err
+	}
+
+	cpuLimit, err := getCPULimits()
+	if err != nil {
+		return err
+	}
+
+	memUsage, err := getMemoryUsage()
+	if err != nil {
+		return err
+	}
+
+	memLimit, err := getMemoryLimit()
+	if err != nil {
+		return err
+	}
+
+	s.CPUUsageUsec = newUsage
+	s.CPUUsageMillicores = cpuUsage
+	s.CPULimitMillicores = cpuLimit
+	s.MemoryUsageMiB = memUsage
+	s.MemLimitMiB = memLimit
+	s.CPUUsageSeconds = cpuUsageSeconds
+	s.CollectedAt = newTime
+	// Add CPU sample and calculate averages
+	if cpuLimit > 0 {
+		s.stats.AddSample(CPUSample{Timestamp: newTime, Usage: (cpuUsage / cpuLimit) * 100})
+	} else {
+		s.stats.AddSample(CPUSample{Timestamp: newTime, Usage: 0})
+	}
+
+	s.CPUAvg1Min = s.stats.GetAverage(1 * time.Minute)
+	s.CPUAvg5Min = s.stats.GetAverage(5 * time.Minute)
+	s.CPUAvg15Min = s.stats.GetAverage(15 * time.Minute)
+
+	s.prevUsage = newUsage
+	s.prevTime = newTime
+
+	return nil
+}
+
+// GetSystemUsageSnapshot returns a snapshot of system metrics.
+func (s *SystemInfo) GetSystemUsageSnapshot() (*api.SystemUsage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	uptime, err := GetStartTimeFromProcStat()
+	if err != nil {
+		return nil, err
+	}
+
+	var users uint32 = 0
+	// s.grpcService.SessionStore.Range(func(key, value any) bool {
+	// 	record, ok := value.(*grpc.SessionData)
+	// 	if ok && record.Deleted.UTC().IsZero() {
+	// 		users += 1
+	// 	}
+	// 	return true
+	// })
+
+	return &api.SystemUsage{
+		Uptime:             uptime.Format(time.RFC3339),
+		CPUUsageMillicores: s.CPUUsageMillicores,
+		CPULimitMillicores: s.CPULimitMillicores,
+		MemoryUsageMiB:     s.MemoryUsageMiB,
+		MemLimitMiB:        s.MemLimitMiB,
+		CPUAvg1Min:         math.Round(s.CPUAvg1Min*100) / 100,
+		CPUAvg5Min:         math.Round(s.CPUAvg5Min*100) / 100,
+		CPUAvg15Min:        math.Round(s.CPUAvg15Min*100) / 100,
+		Users:              users,
+	}, nil
+}
+
+func (s *SystemInfo) GetMountUsageSnapshot() ([]api.MountUsage, error) {
+	mounts, err := GetMountUsages()
+	if err != nil {
+		return nil, err
+	}
+
+	storageMounts := []api.MountUsage{}
+	for i := range mounts {
+		m := &mounts[i]
+		for _, s := range s.config.Storages {
+			if m.MountPoint == s.Path {
+				if sz := strings.TrimSpace(s.Size); sz != "" {
+					if b, perr := ParseSizeBytes(sz); perr == nil {
+						m.DeclaredSize = b
+					} else {
+						m.DeclaredSize = 0
+						log.Err(perr).Msgf("Cannot parse declared size %q for workspace storage %q at path %q",
+							sz, s.Name, s.Path)
+					}
+				}
+				storageMounts = append(storageMounts, *m)
+			}
+		}
+	}
+
+	return storageMounts, nil
+}
+
+func (s *SystemInfo) GetDockerUsageSnapshot(ctx context.Context) (*api.DockerUsage, error) {
+	docker := s.config.Docker
+	if !docker.Enabled {
+		return nil, nil
+	}
+
+	du, err := GetDockerUsage(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting docker usage: %v", err)
+	}
+
+	for _, m := range docker.Storages {
+		if du.DockerRootDir != "" && strings.HasPrefix(du.DockerRootDir, m.Path) {
+			if sz := strings.TrimSpace(m.Size); sz != "" {
+				if b, perr := ParseSizeBytes(sz); perr == nil {
+					du.DeclaredSize = b
+				} else {
+					du.DeclaredSize = 0
+					log.Err(perr).Msgf("Cannot parse declared size %q for docker storage %q at path %q",
+						sz, m.Name, m.Path)
+				}
+			}
+			break
+		}
+	}
+
+	return du, nil
 }
 
 // CPUSample represents a CPU usage sample
@@ -220,60 +401,6 @@ func getMemoryLimit() (float64, error) {
 		return 0, err
 	}
 	return float64(memBytes) / (1024 * 1024), nil
-}
-
-// Retrieve all usage metrics
-func UpdateSystemInfo(systemInfo *SystemInfo) (*SystemInfo, error) {
-	var prevUsage int64 = 0
-	var prevTime time.Time = time.Now()
-
-	if systemInfo != nil {
-		prevUsage = systemInfo.CPUUsageUsec
-		prevTime = systemInfo.CollectedAt
-	} else {
-		systemInfo = &SystemInfo{stats: &SystemStats{MaxSamples: MaxCPUSamples}}
-	}
-
-	cpuUsage, cpuUsageSeconds, newUsage, newTime, err := getCPUUsage(prevUsage, prevTime)
-	if err != nil {
-		return nil, err
-	}
-
-	cpuLimit, err := getCPULimits()
-	if err != nil {
-		return nil, err
-	}
-
-	memUsage, err := getMemoryUsage()
-	if err != nil {
-		return nil, err
-	}
-
-	memLimit, err := getMemoryLimit()
-	if err != nil {
-		return nil, err
-	}
-
-	systemInfo.CPUUsageUsec = newUsage
-	systemInfo.CPUUsageMillicores = cpuUsage
-	systemInfo.CPULimitMillicores = cpuLimit
-	systemInfo.MemoryUsageMiB = memUsage
-	systemInfo.MemLimitMiB = memLimit
-	systemInfo.CPUUsageSeconds = cpuUsageSeconds
-	systemInfo.CollectedAt = newTime
-
-	// Add CPU sample and calculate averages
-	if cpuLimit > 0 {
-		systemInfo.stats.AddSample(CPUSample{Timestamp: newTime, Usage: (cpuUsage / cpuLimit) * 100})
-	} else {
-		systemInfo.stats.AddSample(CPUSample{Timestamp: newTime, Usage: 0})
-	}
-
-	systemInfo.CPUAvg1Min = systemInfo.stats.GetAverage(1 * time.Minute)
-	systemInfo.CPUAvg5Min = systemInfo.stats.GetAverage(5 * time.Minute)
-	systemInfo.CPUAvg15Min = systemInfo.stats.GetAverage(15 * time.Minute)
-
-	return systemInfo, nil
 }
 
 // CreateEnvVars creates new environment variables with the provided environment variables and a home directory.

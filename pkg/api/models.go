@@ -14,7 +14,7 @@ type SystemUsage struct {
 	CPUAvg1Min         float64 `json:"cpuAvg1min"`
 	CPUAvg5Min         float64 `json:"cpuAvg5min"`
 	CPUAvg15Min        float64 `json:"cpuAvg15min"`
-	Users              int     `json:"users"`
+	Users              uint32  `json:"users"`
 }
 
 type MountUsage struct {
@@ -48,7 +48,7 @@ type DockerUsage struct {
 
 type SystemInfo struct {
 	Time   string       `json:"time"`
-	System SystemUsage  `json:"system"`
+	System *SystemUsage `json:"system"`
 	Mounts []MountUsage `json:"mounts"`
 	Docker *DockerUsage `json:"docker,omitempty"`
 }
@@ -156,4 +156,108 @@ func safeIntToInt32(v int) int32 {
 		return -2147483648
 	}
 	return int32(v)
+}
+
+func SystemInfoToProto(si *SystemInfo) *k8shelldpb.SystemInfoResponse {
+	pb := &k8shelldpb.SystemInfoResponse{
+		Time: si.Time,
+		System: &k8shelldpb.SystemMetrics{
+			Uptime:             si.System.Uptime,
+			CpuUsageMillicores: si.System.CPUUsageMillicores,
+			CpuLimitMillicores: si.System.CPULimitMillicores,
+			MemoryUsageMiB:     si.System.MemoryUsageMiB,
+			MemLimitMiB:        si.System.MemLimitMiB,
+			CpuAvg1Min:         si.System.CPUAvg1Min,
+			CpuAvg5Min:         si.System.CPUAvg5Min,
+			CpuAvg15Min:        si.System.CPUAvg15Min,
+			Users:              si.System.Users,
+		},
+	}
+
+	for _, mu := range si.Mounts {
+		pb.Mounts = append(pb.Mounts, &k8shelldpb.MountUsage{
+			MountPoint:     mu.MountPoint,
+			Source:         mu.Source,
+			FsType:         mu.FSType,
+			Options:        mu.Options,
+			ReadOnly:       mu.ReadOnly,
+			IsLikelyTemp:   mu.IsLikelyTemp,
+			TotalBytes:     mu.TotalBytes,
+			UsedBytes:      mu.UsedBytes,
+			FreeBytes:      mu.FreeBytes,
+			AvailableBytes: mu.AvailableBytes,
+			TotalInodes:    mu.TotalInodes,
+			FreeInodes:     mu.FreeInodes,
+			DeclaredSize:   mu.DeclaredSize,
+		})
+	}
+
+	if si.Docker != nil {
+		pb.Docker = &k8shelldpb.DockerUsage{
+			SocketPath:            si.Docker.SocketPath,
+			ApiVersion:            si.Docker.APIVersion,
+			DockerRootDir:         si.Docker.DockerRootDir,
+			ImagesBytes:           si.Docker.ImagesBytes,
+			ContainersBytes:       si.Docker.ContainersBytes,
+			ContainersRootFsBytes: si.Docker.ContainersRootFsBytes,
+			VolumesBytes:          si.Docker.VolumesBytes,
+			BuildCacheBytes:       si.Docker.BuildCacheBytes,
+			TotalBytes:            si.Docker.TotalBytes,
+			DeclaredSize:          si.Docker.DeclaredSize,
+		}
+	}
+
+	return pb
+}
+
+func ProtoToSystemInfo(pb *k8shelldpb.SystemInfoResponse) *SystemInfo {
+	si := &SystemInfo{
+		Time: pb.GetTime(),
+		System: &SystemUsage{
+			Uptime:             pb.System.GetUptime(),
+			CPUUsageMillicores: pb.System.GetCpuUsageMillicores(),
+			CPULimitMillicores: pb.System.GetCpuLimitMillicores(),
+			MemoryUsageMiB:     pb.System.GetMemoryUsageMiB(),
+			MemLimitMiB:        pb.System.GetMemLimitMiB(),
+			CPUAvg1Min:         pb.System.GetCpuAvg1Min(),
+			CPUAvg5Min:         pb.System.GetCpuAvg5Min(),
+			CPUAvg15Min:        pb.System.GetCpuAvg15Min(),
+			Users:              pb.System.GetUsers(),
+		},
+	}
+
+	for _, mu := range pb.Mounts {
+		si.Mounts = append(si.Mounts, MountUsage{
+			MountPoint:     mu.GetMountPoint(),
+			Source:         mu.GetSource(),
+			FSType:         mu.GetFsType(),
+			Options:        mu.GetOptions(),
+			ReadOnly:       mu.GetReadOnly(),
+			IsLikelyTemp:   mu.GetIsLikelyTemp(),
+			TotalBytes:     mu.GetTotalBytes(),
+			UsedBytes:      mu.GetUsedBytes(),
+			FreeBytes:      mu.GetFreeBytes(),
+			AvailableBytes: mu.GetAvailableBytes(),
+			TotalInodes:    mu.GetTotalInodes(),
+			FreeInodes:     mu.GetFreeInodes(),
+			DeclaredSize:   mu.GetDeclaredSize(),
+		})
+	}
+
+	if pb.Docker != nil {
+		si.Docker = &DockerUsage{
+			SocketPath:            pb.Docker.GetSocketPath(),
+			APIVersion:            pb.Docker.GetApiVersion(),
+			DockerRootDir:         pb.Docker.GetDockerRootDir(),
+			ImagesBytes:           pb.Docker.GetImagesBytes(),
+			ContainersBytes:       pb.Docker.GetContainersBytes(),
+			ContainersRootFsBytes: pb.Docker.GetContainersRootFsBytes(),
+			VolumesBytes:          pb.Docker.GetVolumesBytes(),
+			BuildCacheBytes:       pb.Docker.GetBuildCacheBytes(),
+			TotalBytes:            pb.Docker.GetTotalBytes(),
+			DeclaredSize:          pb.Docker.GetDeclaredSize(),
+		}
+	}
+
+	return si
 }
