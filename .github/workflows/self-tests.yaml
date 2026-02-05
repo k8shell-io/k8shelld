@@ -3,21 +3,24 @@ name: Self-Tests
 
 on:
   push:
-    branches:
-      - "main"
-    paths:
-      - "cmd/**"
-      - "docker/**"
-      - "grpc/**"
-      - "internal/**"
-      - "pkg/**"
-      - "scripts/**"
-      - "sftp/**"
-      - "tests/**"
-      - "go.mod"
-      - "go.sum"
-      - "Makefile"
-      - ".github/workflows/self-tests.yaml"
+    tags:
+      - "v*"
+  # push:
+  #   branches:
+  #     - "main"
+  #   paths:
+  #     - "cmd/**"
+  #     - "docker/**"
+  #     - "grpc/**"
+  #     - "internal/**"
+  #     - "pkg/**"
+  #     - "scripts/**"
+  #     - "sftp/**"
+  #     - "tests/**"
+  #     - "go.mod"
+  #     - "go.sum"
+  #     - "Makefile"
+  #     - ".github/workflows/self-tests.yaml"
 
   pull_request:
     branches:

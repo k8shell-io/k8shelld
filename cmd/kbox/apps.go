@@ -25,7 +25,7 @@ var appsTableFields = []table.FieldDefinition{
 	},
 	{
 		Name:  "status",
-		Width: 10,
+		Width: 12,
 	},
 	{
 		Name:  "version",
@@ -59,8 +59,8 @@ var appsTableFields = []table.FieldDefinition{
 
 var AppsCmd = &cobra.Command{
 	Use:   "apps",
-	Short: "Manage k8shelld apps",
-	Long:  `Manage k8shelld apps.`,
+	Short: "Manage workspace apps",
+	Long:  `Manage workspace apps.`,
 }
 
 var AppsLsCmd = &cobra.Command{

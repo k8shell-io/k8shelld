@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 
@@ -49,6 +51,40 @@ func init() {
 	gitCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")
 }
 
+type dockerGetResponse struct {
+	Username string `json:"Username"`
+	Secret   string `json:"Secret"`
+}
+
+// validateDockerCredsJSON enforces what Docker expects from a credential helper "get":
+// a JSON object with non-empty Username and Secret.
+// It returns canonical JSON (marshaled from struct) to avoid forwarding API noise/extra fields.
+func validateDockerCredsJSON(body []byte) ([]byte, bool) {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil, false
+	}
+
+	// First unmarshal strictly into the expected shape.
+	var resp dockerGetResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, false
+	}
+
+	// Require both fields and non-empty values.
+	if strings.TrimSpace(resp.Username) == "" || strings.TrimSpace(resp.Secret) == "" {
+		return nil, false
+	}
+
+	// Canonicalize output: only emit the exact fields Docker uses.
+	canonical, err := json.Marshal(resp)
+	if err != nil {
+		return nil, false
+	}
+
+	return canonical, true
+}
+
 // dockerCredsHelper implements Docker credentials helper protocol
 // It reads from stdin and writes to stdout as per Docker's credentials helper protocol.
 func dockerCredsHelper(operation string) {
@@ -59,34 +95,45 @@ func dockerCredsHelper(operation string) {
 			fmt.Fprintln(os.Stderr, "No address provided.")
 			os.Exit(1)
 		}
-
 		address := strings.TrimSpace(scanner.Text())
 
-		url := fmt.Sprintf("/creds?type=docker&address=%s", address)
+		urlPath := fmt.Sprintf("/creds?type=docker&address=%s", url.QueryEscape(address))
 		headers := map[string]string{"Accept": "application/json"}
 
-		resp, err := client.MakeRequest("GET", url, headers, nil)
+		resp, err := client.MakeRequest("GET", urlPath, headers, nil)
 		if err != nil {
 			os.Exit(1)
 		}
 		defer resp.Body.Close()
 
-		err = client.CheckApplicationError(resp)
-		if err != nil {
-			os.Exit(1)
-		}
-
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			os.Exit(1)
 		}
-		fmt.Println(string(bodyBytes))
 
-	case "store":
-		fmt.Fprintln(os.Stderr, "Request to store credentials, operation not supported.")
+		switch resp.StatusCode {
+		case 200:
+			if canonical, ok := validateDockerCredsJSON(bodyBytes); ok {
+				fmt.Print(string(canonical))
+				os.Exit(0)
+			}
+			fmt.Print("{}")
+			os.Exit(0)
 
-	case "erase":
-		fmt.Fprintln(os.Stderr, "Request to erase credentials, operation not supported.")
+		case 204, 404, 401, 403:
+			fmt.Print("{}")
+			os.Exit(0)
+
+		default:
+			os.Exit(1)
+		}
+
+	case "list":
+		fmt.Print("{}")
+		os.Exit(0)
+
+	case "store", "erase":
+		os.Exit(0)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Invalid operation: %s\n", operation)
@@ -112,7 +159,7 @@ func gitCredsHelper(operation string) {
 
 	switch operation {
 	case "get":
-		url := fmt.Sprintf("/creds?type=git&address=%s", creds["host"])
+		url := fmt.Sprintf("/creds?type=git&address=%s", url.QueryEscape(creds["host"]))
 		resp, err := client.MakeRequest("GET", url, map[string]string{"Accept": "application/json"}, nil)
 		if err != nil {
 			fmt.Fprint(os.Stdout, "\n")

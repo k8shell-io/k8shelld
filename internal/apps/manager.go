@@ -585,7 +585,7 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 		status.Status = api.AppStatusRunning
 
 		if dur, err := system.GetProcessRunningTime(sup.pid); err == nil {
-			status.Age = dur.Truncate(time.Second).String()
+			status.Age = formatAge(dur)
 		}
 
 		res = append(res, status)
@@ -785,4 +785,41 @@ func (m *AppManager) InstallAndStart(ctx context.Context, name string) error {
 
 func (m *AppManager) Apps() *config.Apps {
 	return m.apps
+}
+
+func formatAge(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+
+	totalMin := int64(d / time.Minute)
+
+	const dayMin = 24 * 60
+	days := totalMin / dayMin
+	hours := (totalMin % dayMin) / 60
+	mins := totalMin % 60
+	secs := int64(d/time.Second) % 60
+
+	if days > 0 {
+		if mins == 0 {
+			return fmt.Sprintf("%dd%dh", days, hours)
+		}
+		return fmt.Sprintf("%dd%dh", days, hours)
+	}
+
+	if hours > 0 {
+		if mins == 0 {
+			return fmt.Sprintf("%dh", hours)
+		}
+		return fmt.Sprintf("%dh%dm", hours, mins)
+	}
+
+	if mins > 0 {
+		if secs == 0 {
+			return fmt.Sprintf("%dm", mins)
+		}
+		return fmt.Sprintf("%dm%ds", mins, secs)
+	}
+
+	return fmt.Sprintf("%ds", secs)
 }
