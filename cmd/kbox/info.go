@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -14,11 +15,47 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var infoJSON bool
+
+func init() {
+	InfoCmd.Flags().BoolVar(&infoJSON, "json", false, "Output raw JSON (no formatting)")
+}
+
 var InfoCmd = &cobra.Command{
 	Use:   "info",
 	Short: "Display workspace system info",
-	Long:  "Display workspace system info including CPU/memory, storage mounts, and Docker usage.",
+	Long: `Display workspace info workspace, CPU/memory, storage mounts, and Docker usage information.
+
+Workspace:
+  - Name: workspace name 
+  - Start time: workspace start time (RFC3339)
+  - Image: workspace image reference
+  - Blueprint: workspace blueprint
+  - Users: active sessions 
+
+CPU and Memory:
+  - CPU usage: used millicores / limit millicores (%)
+  - Load average: 1m, 5m, 15m
+  - Memory usage: used / limit (%)
+
+Storage:
+  - Per mount: used / limit (%), plus fs type and source when available
+
+Docker (if available):
+  - Images, containers (rw/rootfs), volumes, build cache
+  - Total: used / limit (%)`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if infoJSON {
+			raw, err := fetchSysInfoRaw()
+			if err != nil {
+				fmt.Println(err.Error())
+				return
+			}
+			// Raw JSON from the server.
+			fmt.Println(string(raw))
+			return
+		}
+
 		sysInfo, err := fetchSysInfo()
 		if err != nil {
 			fmt.Println(err.Error())
@@ -124,6 +161,24 @@ func fetchSysInfo() (*api.SystemInfo, error) {
 		return nil, fmt.Errorf("error parsing sysinfo response: %w", err)
 	}
 	return &data, nil
+}
+
+func fetchSysInfoRaw() ([]byte, error) {
+	resp, err := client.MakeRequest("GET", "/sysinfo", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching sysinfo: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if err := client.CheckApplicationError(resp); err != nil {
+		return nil, err
+	}
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading sysinfo response: %w", err)
+	}
+	return b, nil
 }
 
 func printGroup(title string, rows [][2]string) {
