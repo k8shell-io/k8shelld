@@ -59,8 +59,8 @@ var appsTableFields = []table.FieldDefinition{
 
 var AppsCmd = &cobra.Command{
 	Use:   "apps",
-	Short: "Manage k8shelld apps",
-	Long:  `Manage k8shelld apps.`,
+	Short: "Manage workspace apps",
+	Long:  `Manage workspace apps.`,
 }
 
 var AppsLsCmd = &cobra.Command{
