@@ -78,9 +78,11 @@ func dockerCredsHelper(operation string) {
 			// continue below
 		case 204, 404:
 			// no creds
+			fmt.Print("{}")
 			os.Exit(0)
 		case 401, 403:
 			// "not authorized/no creds"
+			fmt.Print("{}")
 			os.Exit(0)
 		default:
 			os.Exit(1)
@@ -92,6 +94,7 @@ func dockerCredsHelper(operation string) {
 		}
 		if len(bytes.TrimSpace(bodyBytes)) == 0 {
 			// Empty body => no creds
+			fmt.Print("{}")
 			os.Exit(0)
 		}
 
