@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,13 +19,13 @@ import (
 var infoJSON bool
 
 func init() {
-	InfoCmd.Flags().BoolVar(&infoJSON, "json", false, "Output raw JSON (no formatting)")
+	InfoCmd.Flags().BoolVar(&infoJSON, "json", false, "Output JSON (pretty-printed)")
 }
 
 var InfoCmd = &cobra.Command{
 	Use:   "info",
 	Short: "Display workspace system info",
-	Long: `Display workspace info workspace, CPU/memory, storage mounts, and Docker usage information.
+	Long: `Display workspace, CPU/memory, storage mounts, and Docker usage information.
 
 Workspace:
   - Name: workspace name 
@@ -51,8 +52,12 @@ Docker (if available):
 				fmt.Println(err.Error())
 				return
 			}
-			// Raw JSON from the server.
-			fmt.Println(string(raw))
+			var buf bytes.Buffer
+			if err := json.Indent(&buf, raw, "", "  "); err != nil {
+				fmt.Println(string(raw))
+				return
+			}
+			fmt.Println(buf.String())
 			return
 		}
 
