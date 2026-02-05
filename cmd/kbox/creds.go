@@ -51,6 +51,40 @@ func init() {
 	gitCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")
 }
 
+type dockerGetResponse struct {
+	Username string `json:"Username"`
+	Secret   string `json:"Secret"`
+}
+
+// validateDockerCredsJSON enforces what Docker expects from a credential helper "get":
+// a JSON object with non-empty Username and Secret.
+// It returns canonical JSON (marshaled from struct) to avoid forwarding API noise/extra fields.
+func validateDockerCredsJSON(body []byte) ([]byte, bool) {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil, false
+	}
+
+	// First unmarshal strictly into the expected shape.
+	var resp dockerGetResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, false
+	}
+
+	// Require both fields and non-empty values.
+	if strings.TrimSpace(resp.Username) == "" || strings.TrimSpace(resp.Secret) == "" {
+		return nil, false
+	}
+
+	// Canonicalize output: only emit the exact fields Docker uses.
+	canonical, err := json.Marshal(resp)
+	if err != nil {
+		return nil, false
+	}
+
+	return canonical, true
+}
+
 // dockerCredsHelper implements Docker credentials helper protocol
 // It reads from stdin and writes to stdout as per Docker's credentials helper protocol.
 func dockerCredsHelper(operation string) {
@@ -61,7 +95,6 @@ func dockerCredsHelper(operation string) {
 			fmt.Fprintln(os.Stderr, "No address provided.")
 			os.Exit(1)
 		}
-
 		address := strings.TrimSpace(scanner.Text())
 
 		urlPath := fmt.Sprintf("/creds?type=docker&address=%s", url.QueryEscape(address))
@@ -73,33 +106,27 @@ func dockerCredsHelper(operation string) {
 		}
 		defer resp.Body.Close()
 
-		switch resp.StatusCode {
-		case 200:
-			// continue below
-		case 204, 404:
-			// no creds
-			fmt.Print("{}")
-			os.Exit(0)
-		case 401, 403:
-			// "not authorized/no creds"
-			fmt.Print("{}")
-			os.Exit(0)
-		default:
-			os.Exit(1)
-		}
-
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			os.Exit(1)
 		}
-		if len(bytes.TrimSpace(bodyBytes)) == 0 {
-			// Empty body => no creds
+
+		switch resp.StatusCode {
+		case 200:
+			if canonical, ok := validateDockerCredsJSON(bodyBytes); ok {
+				fmt.Print(string(canonical))
+				os.Exit(0)
+			}
 			fmt.Print("{}")
 			os.Exit(0)
-		}
 
-		fmt.Print(string(bodyBytes))
-		os.Exit(0)
+		case 204, 404, 401, 403:
+			fmt.Print("{}")
+			os.Exit(0)
+
+		default:
+			os.Exit(1)
+		}
 
 	case "list":
 		fmt.Print("{}")
