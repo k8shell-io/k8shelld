@@ -26,15 +26,14 @@ var LastCmd = &cobra.Command{
 	Long: `Display last user sessions.
 
 The command displays the following fields:
-- username
-- terminal
-- client IP
-- login time
-- logout time or "still logged in"
-- duration of the session
-- bytes received
-- bytes sent
-`,
+  - username
+  - terminal
+  - client IP
+  - login time
+  - logout time or "still logged in"
+  - duration of the session
+  - bytes received
+  - bytes sent`,
 
 	Run: func(cmd *cobra.Command, args []string) {
 		resp, err := client.MakeRequest("GET", fmt.Sprintf("/sessions?num=%d", lastNumLines), nil, nil)

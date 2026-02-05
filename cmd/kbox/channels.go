@@ -63,13 +63,13 @@ var ChannelsCmd = &cobra.Command{
 	Long: `Display channels created from the k8shell proxy (shell, port-forward, exec, unix-socket, reverse-proxy).
 
 The command displays the following fields:
-- id: Channel ID
-- created: Channel creation time
-- duration: Channel duration
-- status: Channel status (ACTIVE, STOPPED)
-- bytes_in: Bytes received
-- bytes_out: Bytes sent
-- params: Channel parameters
+  - id: Channel ID
+  - created: Channel creation time
+  - duration: Channel duration
+  - status: Channel status (ACTIVE, STOPPED)
+  - bytes_in: Bytes received
+  - bytes_out: Bytes sent
+  - params: Channel parameters
 
 Use the --sort flag to sort the output by one or more fields. Prefix the field name with '-' for descending order.`,
 
