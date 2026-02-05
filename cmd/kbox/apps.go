@@ -25,7 +25,7 @@ var appsTableFields = []table.FieldDefinition{
 	},
 	{
 		Name:  "status",
-		Width: 10,
+		Width: 12,
 	},
 	{
 		Name:  "version",
