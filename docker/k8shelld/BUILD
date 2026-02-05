@@ -1,1 +1,1 @@
-k8shell-test/k8shelld
+k8shell-base/k8shelld
