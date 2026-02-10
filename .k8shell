@@ -15,3 +15,7 @@ blueprint:
         cd $HOME/$GIT_REPONAME
         GOPATH="$HOME/go" go mod tidy
 
+  apps:
+    vscode:
+      enabled: true
+      
