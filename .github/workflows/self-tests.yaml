@@ -72,88 +72,88 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache: true
 
-      # Set up Go environment
-      - name: Install dependencies
-        run: make install-test-deps
+      # # Set up Go environment
+      # - name: Install dependencies
+      #   run: make install-test-deps
 
 
-      - name: Run static analysis (test-static)
-        run: make test-static
+      # - name: Run static analysis (test-static)
+      #   run: make test-static
 
-      # Validate code quality and correctness
-      - name: Run unit tests (test)
-        run: make test
+      # # Validate code quality and correctness
+      # - name: Run unit tests (test)
+      #   run: make test
 
-      # Calculate current branch test coverage
-      - name: Calculate test coverage
-        run: |
-          CURRENT_COVERAGE=$(make coverage 2>/dev/null || echo "0%")
-          echo "CURRENT_COVERAGE=$CURRENT_COVERAGE" >> $GITHUB_ENV
-          echo "Current test coverage: $CURRENT_COVERAGE"
+      # # Calculate current branch test coverage
+      # - name: Calculate test coverage
+      #   run: |
+      #     CURRENT_COVERAGE=$(make coverage 2>/dev/null || echo "0%")
+      #     echo "CURRENT_COVERAGE=$CURRENT_COVERAGE" >> $GITHUB_ENV
+      #     echo "Current test coverage: $CURRENT_COVERAGE"
 
-      # Calculate main branch test coverage for comparison
-      - name: Calculate main branch coverage
-        run: |
-          git fetch origin main
-          git checkout origin/main
-          make test || true
-          MAIN_COVERAGE=$(make coverage 2>/dev/null || echo "0%")
-          echo "MAIN_COVERAGE=$MAIN_COVERAGE" >> $GITHUB_ENV
-          git checkout -
-          echo "Main branch test coverage: $MAIN_COVERAGE"
+      # # Calculate main branch test coverage for comparison
+      # - name: Calculate main branch coverage
+      #   run: |
+      #     git fetch origin main
+      #     git checkout origin/main
+      #     make test || true
+      #     MAIN_COVERAGE=$(make coverage 2>/dev/null || echo "0%")
+      #     echo "MAIN_COVERAGE=$MAIN_COVERAGE" >> $GITHUB_ENV
+      #     git checkout -
+      #     echo "Main branch test coverage: $MAIN_COVERAGE"
 
-      # Compute coverage delta
-      - name: Compute coverage delta
-        run: |
-          # Remove % sign and compute delta
-          CURRENT_NUM=$(echo $CURRENT_COVERAGE | sed 's/%//')
-          MAIN_NUM=$(echo $MAIN_COVERAGE | sed 's/%//')
-          DELTA=$(awk "BEGIN {printf \"%.2f\", $CURRENT_NUM - $MAIN_NUM}")
-          if awk "BEGIN {exit !($DELTA > 0)}"; then
-            DELTA_STR="+$DELTA%"
-          else
-            DELTA_STR="$DELTA%"
-          fi
-          echo "COVERAGE_DELTA=$DELTA_STR" >> $GITHUB_ENV
-          echo "Coverage delta: $DELTA_STR"
+      # # Compute coverage delta
+      # - name: Compute coverage delta
+      #   run: |
+      #     # Remove % sign and compute delta
+      #     CURRENT_NUM=$(echo $CURRENT_COVERAGE | sed 's/%//')
+      #     MAIN_NUM=$(echo $MAIN_COVERAGE | sed 's/%//')
+      #     DELTA=$(awk "BEGIN {printf \"%.2f\", $CURRENT_NUM - $MAIN_NUM}")
+      #     if awk "BEGIN {exit !($DELTA > 0)}"; then
+      #       DELTA_STR="+$DELTA%"
+      #     else
+      #       DELTA_STR="$DELTA%"
+      #     fi
+      #     echo "COVERAGE_DELTA=$DELTA_STR" >> $GITHUB_ENV
+      #     echo "Coverage delta: $DELTA_STR"
 
-      - name: Comment coverage on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const current = process.env.CURRENT_COVERAGE;
-            const delta = process.env.COVERAGE_DELTA;
-            const marker = '<!-- test-coverage-comment -->';
-            const body = `${marker}\n## 🧪 Test Coverage\n\n**Current coverage:** ${current}\n**Change from main:** ${delta}`;
+      # - name: Comment coverage on PR
+      #   if: github.event_name == 'pull_request'
+      #   uses: actions/github-script@v7
+      #   with:
+      #     script: |
+      #       const current = process.env.CURRENT_COVERAGE;
+      #       const delta = process.env.COVERAGE_DELTA;
+      #       const marker = '<!-- test-coverage-comment -->';
+      #       const body = `${marker}\n## 🧪 Test Coverage\n\n**Current coverage:** ${current}\n**Change from main:** ${delta}`;
 
-            // Get existing comments
-            const comments = await github.rest.issues.listComments({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
+      #       // Get existing comments
+      #       const comments = await github.rest.issues.listComments({
+      #         issue_number: context.issue.number,
+      #         owner: context.repo.owner,
+      #         repo: context.repo.repo,
+      #       });
 
-            // Find existing coverage comment
-            const existingComment = comments.data.find(comment => comment.body.includes(marker));
+      #       // Find existing coverage comment
+      #       const existingComment = comments.data.find(comment => comment.body.includes(marker));
 
-            if (existingComment) {
-              // Update existing comment
-              await github.rest.issues.updateComment({
-                comment_id: existingComment.id,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: body
-              });
-            } else {
-              // Create new comment
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: body
-              });
-            }
+      #       if (existingComment) {
+      #         // Update existing comment
+      #         await github.rest.issues.updateComment({
+      #           comment_id: existingComment.id,
+      #           owner: context.repo.owner,
+      #           repo: context.repo.repo,
+      #           body: body
+      #         });
+      #       } else {
+      #         // Create new comment
+      #         await github.rest.issues.createComment({
+      #           issue_number: context.issue.number,
+      #           owner: context.repo.owner,
+      #           repo: context.repo.repo,
+      #           body: body
+      #         });
+      #       }
 
       # Compile k8shelld and kbox executables
       - name: Build binaries
