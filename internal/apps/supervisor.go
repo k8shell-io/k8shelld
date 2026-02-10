@@ -3,8 +3,10 @@ package apps
 import (
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -17,10 +19,14 @@ import (
 
 // supervisorState holds the state for a supervisor
 type AppSupervisor struct {
-	manager      *AppManager
-	app          *config.AppSpec
-	log          zerolog.Logger
-	stopCh       chan struct{}
+	manager *AppManager
+	app     *config.AppSpec
+	log     zerolog.Logger
+
+	stopCh   chan struct{}
+	stopOnce sync.Once
+
+	mu           sync.Mutex
 	restartCount int
 	pid          int
 }
@@ -33,6 +39,34 @@ func NewAppSupervisor(manager *AppManager, app *config.AppSpec) *AppSupervisor {
 		log:     log,
 		stopCh:  make(chan struct{}),
 	}
+}
+
+func (s *AppSupervisor) RequestStop() {
+	s.stopOnce.Do(func() { close(s.stopCh) })
+}
+
+func (s *AppSupervisor) PID() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pid
+}
+
+func (s *AppSupervisor) setPID(pid int) {
+	s.mu.Lock()
+	s.pid = pid
+	s.mu.Unlock()
+}
+
+func (s *AppSupervisor) Restarts() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.restartCount
+}
+
+func (s *AppSupervisor) incRestarts() {
+	s.mu.Lock()
+	s.restartCount++
+	s.mu.Unlock()
 }
 
 // supervise runs the supervisor loop for the app.
@@ -59,10 +93,8 @@ func (s *AppSupervisor) supervise() {
 
 		if s.app.Listen != 0 {
 			addr := fmt.Sprintf("127.0.0.1:%d", s.app.Listen)
-			if conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond); err == nil {
-				_ = conn.Close()
-
-				s.log.Error().Msgf("port %d already in use by another process", s.app.Listen)
+			if err := waitForTCPBindable(addr, 5*time.Second); err != nil {
+				s.log.Error().Msgf("port %d still in use, cannot start: %v", s.app.Listen, err)
 				s.manager.deleteSupervisor(s.app.Name)
 				return
 			}
@@ -106,7 +138,7 @@ func (s *AppSupervisor) supervise() {
 		}
 		defer func() {
 			if err := logFile.Close(); err != nil {
-				s.log.Error().Err(err).Msg("failed to close app log file")
+				s.log.Error().Msg("failed to close app log file")
 			}
 		}()
 
@@ -117,7 +149,8 @@ func (s *AppSupervisor) supervise() {
 		startTime := time.Now()
 		if err := cmd.Start(); err != nil {
 			s.log.Error().Err(err).Msg("failed to start app")
-			if !s.manager.shouldRestart(policy, false) {
+
+			if !s.manager.shouldRestart(policy, true) {
 				return
 			}
 			time.Sleep(backoff)
@@ -129,24 +162,21 @@ func (s *AppSupervisor) supervise() {
 			s.manager.procWatcher.AddPIDIgnoreTerminate(cmd.Process.Pid)
 		}
 
-		s.pid = cmd.Process.Pid
-		s.log.Info().Msgf("app process started with PID %d", s.pid)
+		s.setPID(cmd.Process.Pid)
+		s.log.Info().Msgf("app process started with PID %d", s.PID())
 
 		doneCh := make(chan error, 1)
-		go func() {
-			doneCh <- cmd.Wait()
-		}()
+		go func() { doneCh <- cmd.Wait() }()
 
 		select {
 		case <-s.stopCh:
-			s.log.Info().Msg("stop requested, killing app process")
-			_ = cmd.Process.Kill()
-			<-doneCh
+			s.log.Info().Msg("stop requested, terminating app process group")
+			s.killApp(cmd, doneCh, 3*time.Second)
 			s.manager.deleteSupervisor(s.app.Name)
 			return
 
 		case err := <-doneCh:
-			s.pid = 0
+			s.setPID(0)
 
 			uptime := time.Since(startTime)
 			if err != nil {
@@ -163,9 +193,55 @@ func (s *AppSupervisor) supervise() {
 				log.Debug().Msgf("app will be restarted after normal exit, backoff=%v", backoff)
 			}
 
-			s.restartCount++
+			s.incRestarts()
 			time.Sleep(backoff)
 			backoff = nextBackoff(backoff, maxBackoff)
 		}
+	}
+}
+
+// killApp attempts to gracefully terminate the app process group,
+// then forcefully kills it if it doesn't exit within the grace period.
+func (s *AppSupervisor) killApp(cmd *exec.Cmd, doneCh <-chan error, grace time.Duration) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	pid := cmd.Process.Pid
+
+	if !s.manager.testMode {
+		_ = syscall.Kill(-pid, syscall.SIGTERM)
+	} else {
+		_ = cmd.Process.Signal(os.Interrupt)
+	}
+
+	select {
+	case <-time.After(grace):
+		if !s.manager.testMode {
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+		} else {
+			_ = cmd.Process.Kill()
+		}
+	case <-doneCh:
+		return
+	}
+
+	select {
+	case <-time.After(5 * time.Second):
+	case <-doneCh:
+	}
+}
+
+func waitForTCPBindable(addr string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			_ = ln.Close()
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }

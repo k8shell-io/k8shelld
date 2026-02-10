@@ -450,7 +450,9 @@ func (m *AppManager) Start(ctx context.Context, name string) error {
 		return fmt.Errorf("%w: app %s is not installed", ErrAppInvalidState, name)
 	}
 
+	m.mu.Lock()
 	installing := m.installing[name]
+	m.mu.Unlock()
 	if installing {
 		return fmt.Errorf("%w: app %s is currently installing", ErrAppInvalidState, name)
 	}
@@ -478,7 +480,8 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 		return fmt.Errorf("%w: app %s is not running", ErrAppInvalidState, name)
 	}
 
-	close(sup.stopCh)
+	sup.RequestStop()
+
 	timeout := time.After(APP_STOP_TIMEOUT)
 
 	for {
@@ -522,7 +525,7 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 
 		sup, ok := m.supervisors[name]
 		if ok {
-			status.Restarts = sup.restartCount
+			status.Restarts = sup.Restarts()
 		}
 
 		version := "N/A"
@@ -575,16 +578,16 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 			continue
 		}
 
-		if sup.pid == 0 {
+		if sup.PID() == 0 {
 			status.Status = api.AppStatusPending
 			res = append(res, status)
 			continue
 		}
 
-		status.PID = sup.pid
+		status.PID = sup.PID()
 		status.Status = api.AppStatusRunning
 
-		if dur, err := system.GetProcessRunningTime(sup.pid); err == nil {
+		if dur, err := system.GetProcessRunningTime(status.PID); err == nil {
 			status.Age = formatAge(dur)
 		}
 
@@ -610,7 +613,7 @@ func (m *AppManager) IsRunning(name string) bool {
 	if !ok {
 		return false
 	}
-	return s.pid != 0
+	return s.PID() != 0
 }
 
 // GetLogFilePath returns a new log file path for the app of the given type.
