@@ -85,9 +85,8 @@ func getOptions(version string, commit_id string) (*Options, error) {
 		fmt.Fprint(os.Stderr, "\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  --config <file>         Configuration file (default: %s)\n", options.ConfigPath)
-		fmt.Fprintf(os.Stderr, "  --socket <file>         REST API Unix socket path (default: %s)\n", options.
-			UnixSocketPath)
-		fmt.Fprint(os.Stderr, "  --port <port>           Port number for the GRPC API")
+		fmt.Fprintf(os.Stderr, "  --socket <file>         REST API Unix socket path (default: %s)\n", options.UnixSocketPath)
+		fmt.Fprint(os.Stderr, "  --port <port>           Port number for the GRPC API\n")
 		fmt.Fprint(os.Stderr, "  --cert <file>           Path to the TLS certificate file\n")
 		fmt.Fprint(os.Stderr, "  --key <file>            Path to the TLS key file\n")
 		fmt.Fprint(os.Stderr, "  --test                  Enable test mode\n")
