@@ -681,6 +681,14 @@ func (wc *K8shelld) ListApps(ctx context.Context) ([]*AppStatus, error) {
 	return apps, nil
 }
 
+func (wc *K8shelld) InstallApp(ctx context.Context, appName string) error {
+	_, err := wc.app.InstallApp(ctx, &pb.InstallAppRequest{Name: appName})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // StartApp starts an application in the k8shelld service
 func (wc *K8shelld) StartApp(ctx context.Context, appName string) error {
 	_, err := wc.app.StartApp(ctx, &pb.StartAppRequest{Name: appName})
@@ -691,6 +699,45 @@ func (wc *K8shelld) StartApp(ctx context.Context, appName string) error {
 func (wc *K8shelld) StopApp(ctx context.Context, appName string) error {
 	_, err := wc.app.StopApp(ctx, &pb.StopAppRequest{Name: appName})
 	return err
+}
+
+// GetAppLogsStream retrieves a stream of logs for the specified application from the k8shelld service
+// and returns it as an io.ReadCloser. The caller is responsible for closing the stream when done.
+func (wc *K8shelld) GetAppLogsStream(ctx context.Context, appName string) (io.ReadCloser, error) {
+	stream, err := wc.app.GetLogsStream(ctx, &pb.GetLogsStreamRequest{Name: appName})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get app logs: %w", err)
+	}
+
+	pr, pw := io.Pipe()
+
+	go func() {
+		defer pw.Close()
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				if isEOFErrorOrCanceled(err) {
+					return
+				}
+				pw.CloseWithError(fmt.Errorf("error receiving log stream: %w", err))
+				return
+			}
+			if _, werr := pw.Write([]byte(resp.GetLine())); werr != nil {
+				pw.CloseWithError(fmt.Errorf("error writing to log pipe: %w", werr))
+				return
+			}
+		}
+	}()
+
+	return pr, nil
+}
+
+func (wc *K8shelld) GetAppLogs(ctx context.Context, appName string) (string, error) {
+	logs, err := wc.app.GetLogs(ctx, &pb.GetLogsRequest{Name: appName})
+	if err != nil {
+		return "", fmt.Errorf("failed to get app logs: %w", err)
+	}
+	return logs.GetLog(), nil
 }
 
 // Close closes the gRPC client connection
