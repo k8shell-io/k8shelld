@@ -115,6 +115,7 @@ func (LogType) EnumDescriptor() ([]byte, []int) {
 	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{1}
 }
 
+// SystemInfo messages
 type SystemInfoRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -151,6 +152,7 @@ func (*SystemInfoRequest) Descriptor() ([]byte, []int) {
 	return file_pkg_api_k8shelld_proto_rawDescGZIP(), []int{0}
 }
 
+// SystemInfoResponse message
 type SystemInfoResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Time          string                 `protobuf:"bytes,1,opt,name=time,proto3" json:"time,omitempty"`
@@ -219,6 +221,7 @@ func (x *SystemInfoResponse) GetDocker() *DockerUsage {
 	return nil
 }
 
+// SystemMetrics message
 type SystemMetrics struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Uptime             string                 `protobuf:"bytes,1,opt,name=uptime,proto3" json:"uptime,omitempty"`
@@ -327,6 +330,7 @@ func (x *SystemMetrics) GetUsers() uint32 {
 	return 0
 }
 
+// MountUsage message
 type MountUsage struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	MountPoint     string                 `protobuf:"bytes,1,opt,name=mountPoint,proto3" json:"mountPoint,omitempty"`
@@ -467,6 +471,7 @@ func (x *MountUsage) GetDeclaredSize() uint64 {
 	return 0
 }
 
+// DockerUsage message
 type DockerUsage struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	SocketPath            string                 `protobuf:"bytes,1,opt,name=socketPath,proto3" json:"socketPath,omitempty"`
