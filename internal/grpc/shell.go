@@ -134,6 +134,11 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 		shell = shellReq.StartRequest.CmdShell
 	}
 
+	if _, statErr := os.Stat(shell); statErr != nil {
+		s.logger.Warn().Msgf("Shell %s not found, falling back to /bin/sh", shell)
+		shell = "/bin/sh"
+	}
+
 	session := &SessionData{
 		Id:       sessionId,
 		user:     s.grpcApi.user,
@@ -194,11 +199,11 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 // cleanUpSession cleans up the session by killing the shell process and closing the PTY
 func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
 	if session.Cmd != nil {
-		if session.Cmd.Process.Pid != 0 {
+		if session.Cmd.Process != nil && session.Cmd.Process.Pid != 0 {
 			_ = syscall.Kill(-session.Cmd.Process.Pid, syscall.SIGKILL)
 			_ = session.Cmd.Process.Kill()
-			session.Cmd = nil
 		}
+		session.Cmd = nil
 	}
 	if session.Ptmx != nil {
 		session.Ptmx.Close()
