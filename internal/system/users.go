@@ -22,8 +22,7 @@ import (
 const groupFilePath = "/etc/group"
 
 // distroProvider abstracts the OS-level user/group management commands that
-// differ across Linux distributions.  Add a new implementation file and wire
-// it up in getProvider() to support additional distributions in the future.
+// differ across Linux distributions
 type distroProvider interface {
 	// addGroup creates a new group with the given name and GID.
 	addGroup(ctx context.Context, groupName string, gid int) error
@@ -100,6 +99,8 @@ func CreateUser(user models.User) error {
 	// Add the user to the specified groups
 	if user.Groups != nil && len(*user.Groups) > 0 {
 		for _, group := range *user.Groups {
+			// GID is authoritative: check by GID first.
+			resolvedName := group.Name
 			if exists, err := groupExists(strconv.Itoa(int(group.Gid))); err != nil {
 				return fmt.Errorf("failed to check group %v: %v", group, err)
 			} else if !exists {
@@ -107,8 +108,17 @@ func CreateUser(user models.User) error {
 					return fmt.Errorf("failed to create group %v: %v", group, err)
 				}
 				log.Debug().Msgf("Group created: %v", group)
+			} else {
+				// Group already exists under this GID; resolve its actual name
+				// (may differ from the requested name) so Alpine's addgroup can
+				// reference it correctly.
+				if actual, err := groupNameByGID(int(group.Gid)); err == nil {
+					resolvedName = actual
+					log.Debug().Msgf("Group with GID %d already exists as %s; using existing group",
+						group.Gid, actual)
+				}
 			}
-			if err := provider.addUserToGroup(ctx, user.Username, group.Name, int(group.Gid)); err != nil {
+			if err := provider.addUserToGroup(ctx, user.Username, resolvedName, int(group.Gid)); err != nil {
 				return fmt.Errorf("failed to add user %s to group %v: %v", user.Username, group, err)
 			}
 			log.Debug().Msgf("User %s added to group %v", user.Username, group)
