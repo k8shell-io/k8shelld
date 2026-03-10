@@ -128,8 +128,21 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 		return status.Errorf(codes.InvalidArgument, "invalid shell request: %v", req)
 	}
 
-	// Get the login shell for the user
-	shell, err := system.GetUserLoginShell(s.grpcApi.user.Username)
+	var shellUser models.User
+	if req.GetStartRequest().AsRoot {
+		shellUser = models.User{
+			Username: "root",
+			Uid:      0,
+			Gid:      0,
+			HomeDir:  "/root",
+		}
+		s.logger.Info().Msgf("Running shell session %s as root", sessionId)
+	} else {
+		shellUser = s.grpcApi.user
+		s.logger.Info().Msgf("Running shell session %s as user %s", sessionId, shellUser.Username)
+	}
+
+	shell, err := system.GetUserLoginShell(shellUser.Username)
 	if err != nil {
 		shell = shellReq.StartRequest.CmdShell
 	}
@@ -141,7 +154,7 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 
 	session := &SessionData{
 		Id:       sessionId,
-		user:     s.grpcApi.user,
+		user:     shellUser,
 		CmdShell: shell,
 		Pid:      -1,
 		Created:  time.Now(),
