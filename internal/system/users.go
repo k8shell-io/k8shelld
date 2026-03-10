@@ -21,9 +21,48 @@ import (
 
 const groupFilePath = "/etc/group"
 
+// distroProvider abstracts the OS-level user/group management commands that
+// differ across Linux distributions.  Add a new implementation file and wire
+// it up in getProvider() to support additional distributions in the future.
+type distroProvider interface {
+	// addGroup creates a new group with the given name and GID.
+	addGroup(ctx context.Context, groupName string, gid int) error
+
+	// addUser creates a new user with the given attributes, ensures the home
+	// directory exists and applies the correct ownership + permissions.
+	addUser(ctx context.Context, username string, uid, gid int, homeDir, shell string) error
+
+	// addUserToGroup adds username to the supplemental group identified by
+	// groupName (preferred) or gid (fallback).
+	addUserToGroup(ctx context.Context, username, groupName string, gid int) error
+}
+
+// getProvider detects the running environment and returns the appropriate distroProvider implementation
+//
+//   - Alpine Linux is detected via /etc/alpine-release
+//   - BusyBox-based images are detected by the absence of useradd and the presence of adduser
+//   - All other systems (Ubuntu, Debian, CentOS, RHEL …) use the standard shadow-utils provider
+func getProvider() distroProvider {
+	// Alpine Linux always ships /etc/alpine-release
+	if _, err := os.Stat("/etc/alpine-release"); err == nil {
+		return &alpineProvider{}
+	}
+	// Generic BusyBox image without /etc/alpine-release
+	if _, err := exec.LookPath("useradd"); err != nil {
+		if _, err2 := exec.LookPath("adduser"); err2 == nil {
+			return &alpineProvider{}
+		}
+	}
+	return &standardProvider{}
+}
+
+// runCommand executes cmd under the supplied context and returns the combined
+// stdout+stderr output.  Any SysProcAttr set on cmd is forwarded to the new
+// context-aware command so that credential overrides are honoured
 func runCommand(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
-	cmd = exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
-	return cmd.CombinedOutput()
+	ctxCmd := exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
+	ctxCmd.SysProcAttr = cmd.SysProcAttr
+	return ctxCmd.CombinedOutput()
 }
 
 // CreateUser creates the user in the system.
@@ -31,29 +70,31 @@ func CreateUser(user models.User) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	logger := logger.NewLogger("user-management")
-	logger.Info().Msgf("Main user: username=%s, uid=%d, gid=%d, home=%s, shell=%s, sudo=%t, groups=%v",
+	log := logger.NewLogger("user-management")
+	log.Info().Msgf("Main user: username=%s, uid=%d, gid=%d, home=%s, shell=%s, sudo=%t, groups=%v",
 		user.Username, user.Uid, user.Gid, user.HomeDir, user.Shell, user.Sudo, user.Groups)
+
+	provider := getProvider()
 
 	// Check if the main group exists, and create it if it doesn't
 	if exists, err := groupExists(strconv.Itoa(int(user.Gid))); err != nil {
 		return fmt.Errorf("failed to check main group: %v", err)
 	} else if !exists {
-		if err := addGroup(ctx, user.Username, int(user.Gid)); err != nil {
+		if err := provider.addGroup(ctx, user.Username, int(user.Gid)); err != nil {
 			return fmt.Errorf("failed to add the user main group: %v", err)
 		}
-		logger.Info().Msgf("Main group created: %s (%d)", user.Username, user.Gid)
+		log.Info().Msgf("Main group created: %s (%d)", user.Username, user.Gid)
 	}
 
 	// Check if the user exists, and create it if it doesn't
 	if exists, err := userExists(strconv.Itoa(int(user.Uid))); err != nil {
 		return fmt.Errorf("failed to check main user: %v", err)
 	} else if !exists {
-		if err := addUser(ctx, user.Username, int(user.Uid), int(user.Gid),
+		if err := provider.addUser(ctx, user.Username, int(user.Uid), int(user.Gid),
 			fmt.Sprintf("/home/%s", user.Username), user.Shell); err != nil {
 			return fmt.Errorf("failed to add user: %v", err)
 		}
-		logger.Info().Msgf("Main user created: %s (%d)", user.Username, user.Uid)
+		log.Info().Msgf("Main user created: %s (%d)", user.Username, user.Uid)
 	}
 
 	// Add the user to the specified groups
@@ -62,17 +103,15 @@ func CreateUser(user models.User) error {
 			if exists, err := groupExists(strconv.Itoa(int(group.Gid))); err != nil {
 				return fmt.Errorf("failed to check group %v: %v", group, err)
 			} else if !exists {
-				if err := addGroup(ctx, group.Name, int(group.Gid)); err != nil {
+				if err := provider.addGroup(ctx, group.Name, int(group.Gid)); err != nil {
 					return fmt.Errorf("failed to create group %v: %v", group, err)
 				}
-				logger.Debug().Msgf("Group created: %v", group)
+				log.Debug().Msgf("Group created: %v", group)
 			}
-			cmd := exec.CommandContext(ctx, "usermod", "-aG", strconv.Itoa(int(group.Gid)), user.Username)
-			output, err := runCommand(ctx, cmd)
-			if err != nil {
-				return fmt.Errorf("failed to add user %s to group %v: %v, output: %s", user.Username, group, err, string(output))
+			if err := provider.addUserToGroup(ctx, user.Username, group.Name, int(group.Gid)); err != nil {
+				return fmt.Errorf("failed to add user %s to group %v: %v", user.Username, group, err)
 			}
-			logger.Debug().Msgf("User %s added to group %v", user.Username, group)
+			log.Debug().Msgf("User %s added to group %v", user.Username, group)
 		}
 	}
 
@@ -84,7 +123,7 @@ func CreateUser(user models.User) error {
 	// Enable passwordless sudo for the main user
 	if user.Sudo {
 		if err := enablePasswordlessSudo(ctx, user.Username); err != nil {
-			logger.Error().Msgf("Failed to enable passwordless sudo for user %s: %v", user.Username, err)
+			log.Error().Msgf("Failed to enable passwordless sudo for user %s: %v", user.Username, err)
 		}
 	}
 
@@ -122,38 +161,24 @@ func userExists(nameOrUID string) (bool, error) {
 	return false, nil
 }
 
-// createGroup creates a group with the given name and GID.
-func addGroup(ctx context.Context, groupName string, gid int) error {
-	cmd := exec.CommandContext(ctx, "groupadd", "-g", fmt.Sprintf("%d", gid), groupName)
-	output, err := runCommand(ctx, cmd)
+// groupNameByGID returns the group name for the given GID from /etc/group.
+func groupNameByGID(gid int) (string, error) {
+	data, err := os.ReadFile(groupFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to create group %s with GID %d: %v, output: %s", groupName, gid, err, string(output))
+		return "", fmt.Errorf("failed to read %s: %v", groupFilePath, err)
 	}
-	return nil
-}
-
-// createUser creates a user with the given username, UID, GID, home directory, and shell.
-func addUser(ctx context.Context, username string, uid, gid int, homeDir, shell string) error {
-	// Create the user
-	cmd := exec.CommandContext(ctx, "useradd", "-u", fmt.Sprintf("%d", uid), "-g", fmt.Sprintf("%d", gid),
-		"-d", homeDir, "-s", shell, "-m", username)
-	output, err := runCommand(ctx, cmd)
-	if err != nil {
-		return fmt.Errorf("failed to create user: %s, error: %v", string(output), err)
+	target := strconv.Itoa(gid)
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		parts := strings.Split(scanner.Text(), ":")
+		if len(parts) >= 3 && parts[2] == target {
+			return parts[0], nil
+		}
 	}
-
-	// Change the ownership of the home directory to the user
-	cmd = exec.CommandContext(ctx, "chown", fmt.Sprintf("%d:%d", uid, gid), homeDir)
-	if _, err := runCommand(ctx, cmd); err != nil {
-		return fmt.Errorf("failed to change ownership of home directory %s: %v", homeDir, err)
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("error scanning %s: %v", groupFilePath, err)
 	}
-
-	// Change the permissions of the home directory
-	cmd = exec.CommandContext(ctx, "chmod", "700", homeDir)
-	if _, err := runCommand(ctx, cmd); err != nil {
-		return fmt.Errorf("failed to change permissions of home directory %s: %v", homeDir, err)
-	}
-	return nil
+	return "", fmt.Errorf("group with GID %d not found in %s", gid, groupFilePath)
 }
 
 // enablePasswordlessSudo enables passwordless sudo for the given user.
@@ -164,10 +189,14 @@ func enablePasswordlessSudo(ctx context.Context, username string) error {
 	if err := os.WriteFile(tmpFile, []byte(content), 0440); err != nil {
 		return fmt.Errorf("failed to write sudoers temp file for %s: %v", username, err)
 	}
-	cmd := exec.Command("visudo", "-c", "-f", tmpFile)
-	_, err := runCommand(ctx, cmd)
-	if err != nil {
-		return fmt.Errorf("sudoers file validation failed for %s", username)
+	// Validate with visudo when available; skip on minimal images (e.g. Alpine)
+	// that may not have it installed.
+	if visudoPath, err := exec.LookPath("visudo"); err == nil {
+		cmd := exec.Command(visudoPath, "-c", "-f", tmpFile)
+		if _, err := runCommand(ctx, cmd); err != nil {
+			_ = os.Remove(tmpFile)
+			return fmt.Errorf("sudoers file validation failed for %s", username)
+		}
 	}
 	return os.Rename(tmpFile, sudoersFile)
 }
@@ -199,7 +228,8 @@ func copySkeletonFiles(ctx context.Context, uid, gid int, homeDir string) error 
 	}
 
 	if _, err := os.Stat("/etc/skel"); os.IsNotExist(err) {
-		return fmt.Errorf("the /etc/skel directory does not exist: %w", err)
+		// /etc/skel is absent (common on Alpine/BusyBox); skip skeleton copy.
+		return nil
 	}
 
 	cmd := exec.CommandContext(ctx, "cp", "-r", "/etc/skel/.", homeDir)
