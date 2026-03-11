@@ -130,6 +130,10 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 
 	var shellUser models.User
 	if req.GetStartRequest().AsRoot {
+		if !s.grpcApi.user.Sudo {
+			return status.Errorf(codes.PermissionDenied, "user %s is not allowed to run as root",
+				s.grpcApi.user.Username)
+		}
 		shellUser = models.User{
 			Username: "root",
 			Uid:      0,
