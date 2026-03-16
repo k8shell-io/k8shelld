@@ -279,7 +279,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 	if s.grpcApi.Config.Splash != "" {
 		_ = stream.Send(&k8shelldpb.ShellResponse{
 			Response: &k8shelldpb.ShellResponse_Data{
-				Data: []byte(s.grpcApi.Config.ExpandSplash(session.user.Username)),
+				Data: []byte("\n\r" + s.grpcApi.Config.ExpandSplash(session.user.Username) + "\n\r"),
 			},
 		})
 	}
