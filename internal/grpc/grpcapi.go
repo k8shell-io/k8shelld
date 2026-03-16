@@ -16,7 +16,6 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
-	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 
@@ -42,10 +41,9 @@ type StoreRecord struct {
 
 // GRPCApiService is the main service that handles the gRPC API
 type GRPCService struct {
-	grpcConfig          gapi.ServerConfig           // The gRPC server configuration
+	Config              *config.Config              // The main configuration
 	logger              *zerolog.Logger             // The logger
 	initScriptsDir      string                      // The directory where the init scripts are located
-	user                models.User                 // The workspace owner
 	procWatcher         *system.ProcessWatcher      // The process watcher
 	portForwardingRules []config.PortForwardingRule // The port forwarding rules that are allowed
 	ExecStore           *sync.Map                   // The store for the exec data
@@ -75,7 +73,7 @@ func getStatus(deleted time.Time) string {
 }
 
 // NewGRPCAPI creates a new GRPCApiService
-func NewGRPCService(user models.User, grpcConfig gapi.ServerConfig,
+func NewGRPCService(config *config.Config,
 	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
 	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
 	appManager *apps.AppManager, sysInfo *system.SystemInfo) (*GRPCService, error) {
@@ -85,8 +83,7 @@ func NewGRPCService(user models.User, grpcConfig gapi.ServerConfig,
 	return &GRPCService{
 		logger:              logger,
 		initScriptsDir:      initScriptsDir,
-		grpcConfig:          grpcConfig,
-		user:                user,
+		Config:              config,
 		portForwardingRules: portForwardingRules,
 		procWatcher:         procWatcher,
 		ExecStore:           &sync.Map{},
@@ -119,7 +116,7 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 
 	// create gRPC server, always stop forcibly
 	// to avoid hanging connections on existing sessions during shutdown
-	server, err := gapi.NewServer(&a.grpcConfig, false)
+	server, err := gapi.NewServer(&a.Config.System.GrpcConfig, false)
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC server: %v", err)
 	}

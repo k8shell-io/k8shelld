@@ -33,6 +33,7 @@ const (
 type Config struct {
 	System              System               `yaml:"system"`
 	User                models.User          `yaml:"user"`
+	Splash              string               `yaml:"splash"`
 	Env                 Env                  `yaml:"env"`
 	PortForwarding      []string             `yaml:"portForwarding"`
 	TerminateOrphans    TerminateOrphans     `yaml:"terminateOrphans"`

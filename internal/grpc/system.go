@@ -54,15 +54,15 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 	s.logger.Info().Msgf("Received handshake from user: %s, uid: %d, gid: %d",
 		req.User.Username, req.User.Uid, req.User.Gid)
 
-	if s.grpcApi.user.Username != req.User.Username {
+	if s.grpcApi.Config.User.Username != req.User.Username {
 		return nil, status.Error(codes.PermissionDenied, "user name mismatch")
 	}
 
-	if s.grpcApi.user.Uid != req.User.Uid {
+	if s.grpcApi.Config.User.Uid != req.User.Uid {
 		return nil, status.Error(codes.PermissionDenied, "user uid mismatch")
 	}
 
-	if s.grpcApi.user.Gid != req.User.Gid {
+	if s.grpcApi.Config.User.Gid != req.User.Gid {
 		return nil, status.Error(codes.PermissionDenied, "user gid mismatch")
 	}
 
@@ -77,14 +77,14 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 		}
 
 		s.logger.Debug().Msgf("User token received in handshake: token=***%s", tokenPreview)
-		s.grpcApi.user.UserToken = req.User.UserToken
+		s.grpcApi.Config.User.UserToken = req.User.UserToken
 		if s.grpcApi.apiClientx != nil {
 			s.grpcApi.apiClientx.UpdateToken(req.User.UserToken)
 		}
 	}
 
 	if !s.initScriptsRun {
-		err := s.RunInitScripts(ctx, s.grpcApi.initScriptsDir, s.grpcApi.user, req.EnvVars, func() {
+		err := s.RunInitScripts(ctx, s.grpcApi.Config.InitScriptsDir, s.grpcApi.Config.User, req.EnvVars, func() {
 			s.logger.Info().Msg("Init scripts finished, running auto-start apps")
 
 			appMgr := s.grpcApi.appManager
@@ -186,15 +186,15 @@ func (s *SystemServiceServer) runScriptHelper(scriptsDir, scriptPath string, fla
 // runScript executes a script
 func (s *SystemServiceServer) runScript(scriptsDir, scriptName, flagFile string, envVars []string) error {
 	cmd := exec.Command("/bin/bash", "-l", "-c", fmt.Sprintf("%s/%s", scriptsDir, scriptName))
-	cmd.Env = system.CreateEnvVars(envVars, s.grpcApi.user.HomeDir)
-	cmd.Dir = s.grpcApi.user.HomeDir
+	cmd.Env = system.CreateEnvVars(envVars, s.grpcApi.Config.User.HomeDir)
+	cmd.Dir = s.grpcApi.Config.User.HomeDir
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid:    s.grpcApi.user.Uid,
-			Gid:    s.grpcApi.user.Gid,
-			Groups: system.GetSupplementalGroups(s.grpcApi.user.Username),
+			Uid:    s.grpcApi.Config.User.Uid,
+			Gid:    s.grpcApi.Config.User.Gid,
+			Groups: system.GetSupplementalGroups(s.grpcApi.Config.User.Username),
 		},
 	}
 

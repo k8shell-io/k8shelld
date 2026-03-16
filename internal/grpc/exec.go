@@ -110,7 +110,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	newEnv := []string{}
 	for _, e := range os.Environ() {
 		if strings.HasPrefix(e, "HOME=") {
-			newEnv = append(newEnv, fmt.Sprintf("HOME=%s", s.grpcApi.user.HomeDir))
+			newEnv = append(newEnv, fmt.Sprintf("HOME=%s", s.grpcApi.Config.User.HomeDir))
 			continue
 		}
 		newEnv = append(newEnv, e)
@@ -135,12 +135,12 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	}
 
 	cmd.Env = newEnv
-	cmd.Dir = s.grpcApi.user.HomeDir
+	cmd.Dir = s.grpcApi.Config.User.HomeDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid: s.grpcApi.user.Uid,
-			Gid: s.grpcApi.user.Gid,
+			Uid: s.grpcApi.Config.User.Uid,
+			Gid: s.grpcApi.Config.User.Gid,
 		},
 	}
 

@@ -72,7 +72,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		}
 	}
 
-	s.grpcService, err = grpc.NewGRPCService(cfg.User, cfg.System.GrpcConfig, cfg.PortForwardingRules,
+	s.grpcService, err = grpc.NewGRPCService(cfg, cfg.PortForwardingRules,
 		cfg.InitScriptsDir, s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)

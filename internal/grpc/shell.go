@@ -3,11 +3,11 @@ package grpc
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -67,13 +67,6 @@ func NewShellServiceServer(grpcapi *GRPCService) *ShellServiceServer {
 		logger:  logger.NewLogger("grpc-shell"),
 	}
 }
-
-// userError marks an error whose message is safe to display directly in
-// the user's terminal.  Internal errors (e.g. UID/GID parse failures) must NOT
-// use this type; they are logged server-side only.
-type userError struct{ msg string }
-
-func (e *userError) Error() string { return e.msg }
 
 // getUserLoginShell verify if the shell is valid
 func isValidShell(shell string) bool {
@@ -138,24 +131,7 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 
 	shellUser, resolveErr := s.resolveShellUser(sessionId, req.GetStartRequest().User)
 	if resolveErr != nil {
-		var ufe *userError
-		if shellReq.StartRequest.UsePty {
-			if errors.As(resolveErr, &ufe) {
-				_ = stream.Send(&k8shelldpb.ShellResponse{
-					Response: &k8shelldpb.ShellResponse_Data{
-						Data: []byte("Error: " + resolveErr.Error() + "\r\n"),
-					},
-				})
-			} else {
-				s.logger.Error().Msgf("Shell session %s: internal error resolving user: %v", sessionId, resolveErr)
-			}
-		} else {
-			if errors.As(resolveErr, &ufe) {
-				s.logger.Warn().Msgf("Shell session %s rejected: %v", sessionId, resolveErr)
-			} else {
-				s.logger.Error().Msgf("Shell session %s: internal error resolving user: %v", sessionId, resolveErr)
-			}
-		}
+		s.logger.Error().Msgf("Shell session %s: error resolving user: %v", sessionId, resolveErr)
 		return resolveErr
 	}
 
@@ -244,17 +220,17 @@ func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
 // Priority: explicit "root" (requires sudo) > named user lookup > default user.
 func (s *ShellServiceServer) resolveShellUser(sessionId, reqUser string) (models.User, error) {
 	if reqUser == "root" {
-		if s.grpcApi.user.Sudo {
+		if s.grpcApi.Config.User.Sudo {
 			s.logger.Info().Msgf("Running shell session %s as root", sessionId)
 			return models.User{Username: "root", Uid: 0, Gid: 0, HomeDir: "/root"}, nil
 		}
-		return models.User{}, &userError{fmt.Sprintf("user %s does not have sudo privileges", s.grpcApi.user.Username)}
+		return models.User{}, fmt.Errorf("user %s does not have sudo privileges", s.grpcApi.Config.User.Username)
 	}
 
-	if reqUser != "" && reqUser != s.grpcApi.user.Username {
+	if reqUser != "" && reqUser != s.grpcApi.Config.User.Username {
 		u := system.UserExists(reqUser)
 		if u == nil {
-			return models.User{}, &userError{fmt.Sprintf("requested user %s not found", reqUser)}
+			return models.User{}, fmt.Errorf("requested user %s not found", reqUser)
 		}
 		uid, err := utils.ParseUint32(u.Uid)
 		if err != nil {
@@ -268,8 +244,8 @@ func (s *ShellServiceServer) resolveShellUser(sessionId, reqUser string) (models
 		return models.User{Username: u.Username, Uid: uid, Gid: gid, HomeDir: u.HomeDir}, nil
 	}
 
-	s.logger.Info().Msgf("Running shell session %s as user %s", sessionId, s.grpcApi.user.Username)
-	return s.grpcApi.user, nil
+	s.logger.Info().Msgf("Running shell session %s as user %s", sessionId, s.grpcApi.Config.User.Username)
+	return s.grpcApi.Config.User, nil
 }
 
 // handlePtySession handles a shell session with PTY. It creates the PTY session, sets the width and height
@@ -300,6 +276,18 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 	reqCh := make(chan *k8shelldpb.ShellRequest, 8)
 	recvErrCh := make(chan error, 1)
 	ptyDone := make(chan struct{})
+
+	if s.grpcApi.Config.Splash != "" {
+		splash := strings.ReplaceAll(s.grpcApi.Config.Splash, "\n", "\r\n")
+		if !strings.HasSuffix(splash, "\r\n") {
+			splash += "\r\n"
+		}
+		_ = stream.Send(&k8shelldpb.ShellResponse{
+			Response: &k8shelldpb.ShellResponse_Data{
+				Data: []byte(splash),
+			},
+		})
+	}
 
 	// PTY -> client
 	go func() {
