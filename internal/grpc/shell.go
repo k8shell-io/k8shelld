@@ -3,6 +3,7 @@ package grpc
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -67,6 +68,13 @@ func NewShellServiceServer(grpcapi *GRPCService) *ShellServiceServer {
 	}
 }
 
+// userError marks an error whose message is safe to display directly in
+// the user's terminal.  Internal errors (e.g. UID/GID parse failures) must NOT
+// use this type; they are logged server-side only.
+type userError struct{ msg string }
+
+func (e *userError) Error() string { return e.msg }
+
 // getUserLoginShell verify if the shell is valid
 func isValidShell(shell string) bool {
 	file, err := os.Open("/etc/shells")
@@ -128,22 +136,27 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 		return status.Errorf(codes.InvalidArgument, "invalid shell request: %v", req)
 	}
 
-	var shellUser models.User
-	if req.GetStartRequest().AsRoot && s.grpcApi.user.Sudo {
-		shellUser = models.User{
-			Username: "root",
-			Uid:      0,
-			Gid:      0,
-			HomeDir:  "/root",
+	shellUser, resolveErr := s.resolveShellUser(sessionId, req.GetStartRequest().User)
+	if resolveErr != nil {
+		var ufe *userError
+		if shellReq.StartRequest.UsePty {
+			if errors.As(resolveErr, &ufe) {
+				_ = stream.Send(&k8shelldpb.ShellResponse{
+					Response: &k8shelldpb.ShellResponse_Data{
+						Data: []byte("Error: " + resolveErr.Error() + "\r\n"),
+					},
+				})
+			} else {
+				s.logger.Error().Msgf("Shell session %s: internal error resolving user: %v", sessionId, resolveErr)
+			}
+		} else {
+			if errors.As(resolveErr, &ufe) {
+				s.logger.Warn().Msgf("Shell session %s rejected: %v", sessionId, resolveErr)
+			} else {
+				s.logger.Error().Msgf("Shell session %s: internal error resolving user: %v", sessionId, resolveErr)
+			}
 		}
-		s.logger.Info().Msgf("Running shell session %s as root", sessionId)
-	} else {
-		shellUser = s.grpcApi.user
-		if req.GetStartRequest().AsRoot {
-			s.logger.Warn().Msgf("User %s does not have sudo privileges; ignoring AsRoot flag for session %s",
-				shellUser.Username, sessionId)
-		}
-		s.logger.Info().Msgf("Running shell session %s as user %s", sessionId, shellUser.Username)
+		return resolveErr
 	}
 
 	shell, err := system.GetUserLoginShell(shellUser.Username)
@@ -227,8 +240,40 @@ func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
 	}
 }
 
-// handlePtySession handles a shell session with PTY. It creates the PTY session, sets the width and height of the terminal,
-// reads data from the PTY and sends the data back to the client and vice versa.
+// resolveShellUser determines which OS user the shell session should run as.
+// Priority: explicit "root" (requires sudo) > named user lookup > default user.
+func (s *ShellServiceServer) resolveShellUser(sessionId, reqUser string) (models.User, error) {
+	if reqUser == "root" {
+		if s.grpcApi.user.Sudo {
+			s.logger.Info().Msgf("Running shell session %s as root", sessionId)
+			return models.User{Username: "root", Uid: 0, Gid: 0, HomeDir: "/root"}, nil
+		}
+		return models.User{}, &userError{fmt.Sprintf("user %s does not have sudo privileges", s.grpcApi.user.Username)}
+	}
+
+	if reqUser != "" && reqUser != s.grpcApi.user.Username {
+		u, lookupErr := system.UserExists(reqUser)
+		if lookupErr != nil || u == nil {
+			return models.User{}, &userError{fmt.Sprintf("requested user %s not found", reqUser)}
+		}
+		uid, err := utils.ParseUint32(u.Uid)
+		if err != nil {
+			return models.User{}, fmt.Errorf("failed to parse UID for user %s: %v", u.Username, err)
+		}
+		gid, err := utils.ParseUint32(u.Gid)
+		if err != nil {
+			return models.User{}, fmt.Errorf("failed to parse GID for user %s: %v", u.Username, err)
+		}
+		s.logger.Info().Msgf("Running shell session %s as user %s", sessionId, u.Username)
+		return models.User{Username: u.Username, Uid: uid, Gid: gid, HomeDir: u.HomeDir}, nil
+	}
+
+	s.logger.Info().Msgf("Running shell session %s as user %s", sessionId, s.grpcApi.user.Username)
+	return s.grpcApi.user, nil
+}
+
+// handlePtySession handles a shell session with PTY. It creates the PTY session, sets the width and height
+// of the terminal, reads data from the PTY and sends the data back to the client and vice versa.
 func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *SessionData,
 	stream k8shelldpb.ShellService_ShellServer, width uint32, height uint32) error {
 

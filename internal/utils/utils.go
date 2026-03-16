@@ -2,6 +2,7 @@ package utils
 
 import (
 	"math"
+	"strconv"
 
 	"github.com/k8shell-io/k8shelld/internal/logger"
 )
@@ -71,4 +72,12 @@ func Safeu32ToInt(v uint32) int {
 		return 0
 	}
 	return int(v)
+}
+
+func ParseUint32(s string) (uint32, error) {
+	v, err := strconv.ParseUint(s, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(v), nil
 }

@@ -106,7 +106,7 @@ func (c *K8shelld) GetSystemInfo(ctx context.Context) (*SystemInfo, error) {
 
 // RunShell creates a PTY shell session over gRPC and bridges it with the BufferedReadWriter.
 func (c *K8shelld) RunShell(ctx context.Context, rw BufferedReadWriter, sessionId string, envVars []string,
-	width, height uint32, usePty bool, asRoot bool) error {
+	width, height uint32, usePty bool, user string) error {
 	md := metadata.Pairs(
 		"session-id", sessionId,
 	)
@@ -128,7 +128,7 @@ func (c *K8shelld) RunShell(ctx context.Context, rw BufferedReadWriter, sessionI
 				UsePty:     usePty,
 				Width:      width,
 				Height:     height,
-				AsRoot:     asRoot,
+				User:       user,
 			},
 		},
 	}

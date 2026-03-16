@@ -122,7 +122,7 @@ message ShellStartRequest {
   bool usePty = 3;                  // True to use a pseudo-terminal
   uint32 width = 4;                 // Terminal width
   uint32 height = 5;                // Terminal height
-  bool asRoot = 6;                  // True to run the shell as root (if false, runs as workspace user)
+  string user = 6;                   // User to run the shell as, empty for default user
 }
 
 // ResizeTerminalRequest message
