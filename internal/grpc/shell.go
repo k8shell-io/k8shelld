@@ -284,7 +284,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 		}
 		_ = stream.Send(&k8shelldpb.ShellResponse{
 			Response: &k8shelldpb.ShellResponse_Data{
-				Data: []byte(splash),
+				Data: []byte("\r\n" + splash + "\r\n"),
 			},
 		})
 	}
