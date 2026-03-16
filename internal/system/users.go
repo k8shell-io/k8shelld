@@ -86,9 +86,7 @@ func CreateUser(user models.User) error {
 	}
 
 	// Check if the user exists, and create it if it doesn't
-	if u, err := UserExists(strconv.Itoa(int(user.Uid))); err != nil {
-		return fmt.Errorf("failed to check main user: %v", err)
-	} else if u == nil {
+	if u := UserExists(strconv.Itoa(int(user.Uid))); u == nil {
 		if err := provider.addUser(ctx, user.Username, int(user.Uid), int(user.Gid),
 			fmt.Sprintf("/home/%s", user.Username), user.Shell); err != nil {
 			return fmt.Errorf("failed to add user: %v", err)
@@ -161,14 +159,14 @@ func groupExists(nameOrGID string) (bool, error) {
 }
 
 // userExists checks if a user with the given name or UID exists.
-func UserExists(nameOrUID string) (*user.User, error) {
+func UserExists(nameOrUID string) *user.User {
 	if u, err := user.Lookup(nameOrUID); err == nil {
-		return u, nil
+		return u
 	}
 	if u, err := user.LookupId(nameOrUID); err == nil {
-		return u, nil
+		return u
 	}
-	return nil, fmt.Errorf("user %s not found", nameOrUID)
+	return nil
 }
 
 // groupNameByGID returns the group name for the given GID from /etc/group.

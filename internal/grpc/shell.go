@@ -252,8 +252,8 @@ func (s *ShellServiceServer) resolveShellUser(sessionId, reqUser string) (models
 	}
 
 	if reqUser != "" && reqUser != s.grpcApi.user.Username {
-		u, lookupErr := system.UserExists(reqUser)
-		if lookupErr != nil || u == nil {
+		u := system.UserExists(reqUser)
+		if u == nil {
 			return models.User{}, &userError{fmt.Sprintf("requested user %s not found", reqUser)}
 		}
 		uid, err := utils.ParseUint32(u.Uid)
