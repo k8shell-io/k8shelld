@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -278,13 +277,9 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 	ptyDone := make(chan struct{})
 
 	if s.grpcApi.Config.Splash != "" {
-		splash := strings.ReplaceAll(s.grpcApi.Config.Splash, "\n", "\r\n")
-		if !strings.HasSuffix(splash, "\r\n") {
-			splash += "\r\n"
-		}
 		_ = stream.Send(&k8shelldpb.ShellResponse{
 			Response: &k8shelldpb.ShellResponse_Data{
-				Data: []byte("\r\n" + splash + "\r\n"),
+				Data: []byte(s.grpcApi.Config.ExpandSplash(session.user.Username)),
 			},
 		})
 	}
