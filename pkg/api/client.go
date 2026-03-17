@@ -79,7 +79,7 @@ func NewClient(cfg gapi.ClientConfig, counters *ConnCounters) (*K8shelld, error)
 }
 
 // Handshake performs a handshake with the k8shelld service to establish a session.
-func (c *K8shelld) Handshake(ctx context.Context, user *models.User, envVars []string) (*pb.HandshakeResponse, error) {
+func (c *K8shelld) Handshake(ctx context.Context, user *models.User) (*pb.HandshakeResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -90,7 +90,6 @@ func (c *K8shelld) Handshake(ctx context.Context, user *models.User, envVars []s
 			Gid:       user.GID,
 			UserToken: user.AccessToken,
 		},
-		EnvVars: envVars,
 	}
 
 	return c.systemClient.Handshake(ctx, req)

@@ -70,7 +70,6 @@ message DockerUsage {
 message HandshakeRequest {
   string client_version = 1;
   User user = 2;
-  repeated string env_vars = 7;
 }
 
 // User to be used to setup workspace

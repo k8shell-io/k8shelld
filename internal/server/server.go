@@ -1,12 +1,15 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -15,8 +18,13 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/rs/zerolog"
+)
+
+const (
+	FLAG_DIR_TEMPLATE = "%s/.k8shell/flags"
 )
 
 type Server struct {
@@ -73,7 +81,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	}
 
 	s.grpcService, err = grpc.NewGRPCService(cfg, cfg.PortForwardingRules,
-		cfg.InitScriptsDir, s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
+		s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
@@ -120,6 +128,36 @@ func (s *Server) initialize() error {
 			s.logger.Warn().Msgf("Docker socket symlink already exists: %s", config.DOCKER_SOCKET_SYMLINK)
 		}
 	}
+
+	err = s.runInitScripts(s.config.InitScriptsDir, s.config.User, func() {
+		s.logger.Info().Msg("Init scripts finished, running auto-start apps")
+
+		appMgr := s.appManager
+		if appMgr == nil {
+			s.logger.Warn().Msg("apps are not enabled, skipping auto-start")
+			return
+		}
+
+		if appMgr.Apps() == nil || len(*appMgr.Apps()) == 0 {
+			s.logger.Info().Msg("No apps configured, skipping auto-start")
+			return
+		}
+
+		bg := context.Background()
+		for name, app := range *appMgr.Apps() {
+			if !app.AutoStart {
+				continue
+			}
+			s.logger.Info().Msgf("Auto-starting app %s", name)
+			if err := appMgr.InstallAndStart(bg, name); err != nil {
+				s.logger.Error().Msgf("Failed to autostart app %s: %v", name, err)
+			}
+		}
+	})
+	if err != nil {
+		s.logger.Error().Msgf("Failed to run init scripts: %v", err)
+	}
+
 	return nil
 }
 
@@ -192,4 +230,130 @@ func (s *Server) Serve() {
 	wg.Wait()
 
 	s.logger.Info().Msgf("Shutdown complete.")
+}
+
+// RunInitScripts runs the initialization scripts
+func (s *Server) runInitScripts(
+	scriptsDir string,
+	user models.User,
+	onComplete func(),
+) error {
+
+	s.logger.Info().Msgf("Running init scripts, scriptsDir: %s", scriptsDir)
+	if _, err := os.Stat(scriptsDir); os.IsNotExist(err) {
+		return fmt.Errorf("invalid init scripts directory: %s", scriptsDir)
+	}
+
+	flagDir := fmt.Sprintf(FLAG_DIR_TEMPLATE, user.HomeDir)
+	if err := os.MkdirAll(flagDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create flag directory: %s", flagDir)
+	}
+
+	scripts, err := filepath.Glob(filepath.Join(scriptsDir, "__init_*"))
+	if err != nil {
+		return fmt.Errorf("failed to list init scripts: %s", scriptsDir)
+	}
+
+	s.logger.Info().Msgf("Running %d init scripts in background.", len(scripts))
+	go func() {
+		for _, scriptPath := range scripts {
+			s.logger.Info().Msgf("Running %s.", scriptPath)
+			err := s.runScriptHelper(scriptsDir, scriptPath, flagDir, []string{})
+			if err != nil {
+				s.logger.Error().Msgf("Failed to run init script %s: %v", scriptPath, err)
+			}
+		}
+		s.logger.Info().Msg("All init scripts completed.")
+		if onComplete != nil {
+			onComplete()
+		}
+	}()
+
+	return nil
+}
+
+// runScriptHelper executes a script with flag handling
+func (s *Server) runScriptHelper(scriptsDir, scriptPath string, flagDir string, envVars []string) error {
+	scriptName := filepath.Base(scriptPath)
+
+	flagFile := ""
+	if strings.Contains(scriptName, "__flag") {
+		flagFile = filepath.Join(flagDir, scriptName)
+		if _, err := os.Stat(flagFile); err == nil {
+			s.logger.Info().Msgf("Flag file exists for %s. Skipping execution.", scriptName)
+			return nil
+		}
+	}
+
+	return s.runScript(scriptsDir, scriptName, flagFile, envVars)
+}
+
+// runScript executes a script
+func (s *Server) runScript(scriptsDir, scriptName, flagFile string, envVars []string) error {
+	cmd := exec.Command("/bin/bash", "-l", "-c", fmt.Sprintf("%s/%s", scriptsDir, scriptName))
+	cmd.Env = system.CreateEnvVars(envVars, s.config.User.HomeDir)
+	cmd.Dir = s.config.User.HomeDir
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true, // create a new process group
+		Credential: &syscall.Credential{
+			Uid:    s.config.User.Uid,
+			Gid:    s.config.User.Gid,
+			Groups: system.GetSupplementalGroups(s.config.User.Username),
+		},
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stdout pipe for script %s: %w", scriptName, err)
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stderr pipe for script %s: %w", scriptName, err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start script %s: %w", scriptName, err)
+	}
+
+	s.procWatcher.AddPIDIgnoreTerminate(cmd.Process.Pid)
+
+	scannerOut := bufio.NewScanner(stdout)
+	scannerErr := bufio.NewScanner(stderr)
+
+	go func() {
+		for scannerOut.Scan() {
+			s.logger.Debug().Msgf("script=%s, msg=%s", scriptName, scannerOut.Text())
+		}
+	}()
+	go func() {
+		for scannerErr.Scan() {
+			s.logger.Debug().Msgf("script=%s, msg=%s", scriptName, scannerErr.Text())
+		}
+	}()
+
+	if err := cmd.Wait(); err != nil {
+		s.logger.Error().Msgf("Failed to wait for script %s: %v", scriptName, err)
+	}
+	s.checkScriptState(cmd, flagFile, scriptName)
+	return nil
+}
+
+// checkScriptState checks the state of a script after it has finished executing.
+func (s *Server) checkScriptState(cmd *exec.Cmd, flagFile string, scriptName string) {
+	status := cmd.ProcessState.ExitCode()
+	if status == 0 {
+		if flagFile != "" {
+			if err := os.WriteFile(flagFile, []byte{}, 0644); err == nil {
+				s.logger.Info().Msgf("The script %s completed successfully. Flag file created at %s.", scriptName, flagFile)
+			} else {
+				s.logger.Error().Msgf("Failed to create flag file for background script %s: %v", scriptName, err)
+			}
+		} else {
+			s.logger.Info().Msgf("The script %s completed successfully.", scriptName)
+		}
+	} else {
+		s.logger.Error().Msgf("The script %s failed with exit status %d.", scriptName, status)
+	}
 }

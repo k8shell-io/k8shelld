@@ -593,7 +593,6 @@ type HandshakeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ClientVersion string                 `protobuf:"bytes,1,opt,name=client_version,json=clientVersion,proto3" json:"client_version,omitempty"`
 	User          *User                  `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`
-	EnvVars       []string               `protobuf:"bytes,7,rep,name=env_vars,json=envVars,proto3" json:"env_vars,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -638,13 +637,6 @@ func (x *HandshakeRequest) GetClientVersion() string {
 func (x *HandshakeRequest) GetUser() *User {
 	if x != nil {
 		return x.User
-	}
-	return nil
-}
-
-func (x *HandshakeRequest) GetEnvVars() []string {
-	if x != nil {
-		return x.EnvVars
 	}
 	return nil
 }
@@ -2523,11 +2515,10 @@ const file_pkg_api_k8shelld_proto_rawDesc = "" +
 	"\n" +
 	"totalBytes\x18\x0f \x01(\x04R\n" +
 	"totalBytes\x12\"\n" +
-	"\fdeclaredSize\x18\x14 \x01(\x04R\fdeclaredSize\"x\n" +
+	"\fdeclaredSize\x18\x14 \x01(\x04R\fdeclaredSize\"]\n" +
 	"\x10HandshakeRequest\x12%\n" +
 	"\x0eclient_version\x18\x01 \x01(\tR\rclientVersion\x12\"\n" +
-	"\x04user\x18\x02 \x01(\v2\x0e.k8shelld.UserR\x04user\x12\x19\n" +
-	"\benv_vars\x18\a \x03(\tR\aenvVars\"\x81\x01\n" +
+	"\x04user\x18\x02 \x01(\v2\x0e.k8shelld.UserR\x04user\"\x81\x01\n" +
 	"\x04User\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
 	"\bfullname\x18\x02 \x01(\tR\bfullname\x12\x10\n" +

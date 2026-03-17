@@ -43,7 +43,6 @@ type StoreRecord struct {
 type GRPCService struct {
 	Config              *config.Config              // The main configuration
 	logger              *zerolog.Logger             // The logger
-	initScriptsDir      string                      // The directory where the init scripts are located
 	procWatcher         *system.ProcessWatcher      // The process watcher
 	portForwardingRules []config.PortForwardingRule // The port forwarding rules that are allowed
 	ExecStore           *sync.Map                   // The store for the exec data
@@ -74,7 +73,7 @@ func getStatus(deleted time.Time) string {
 
 // NewGRPCAPI creates a new GRPCApiService
 func NewGRPCService(config *config.Config,
-	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
+	portForwardingRules []config.PortForwardingRule,
 	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
 	appManager *apps.AppManager, sysInfo *system.SystemInfo) (*GRPCService, error) {
 
@@ -82,7 +81,6 @@ func NewGRPCService(config *config.Config,
 
 	return &GRPCService{
 		logger:              logger,
-		initScriptsDir:      initScriptsDir,
 		Config:              config,
 		portForwardingRules: portForwardingRules,
 		procWatcher:         procWatcher,
