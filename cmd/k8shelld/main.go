@@ -57,7 +57,16 @@ func main() {
 		cfg.System.GrpcConfig.KeyFile = opts.KeyFile
 	}
 
-	server, err := server.NewServer(cfg, opts.UnixSocketPath, opts.Test)
+	jwtVerifier, err := applyIdentityToConfig(cfg, opts.Test)
+	if err != nil {
+		logger.Fatal().Msgf("Error loading identity: %v", err)
+	}
+	if !opts.Test {
+		logger.Info().Msgf("Identity token verified for user: %s (uid=%d gid=%d)",
+			cfg.User.Username, cfg.User.Uid, cfg.User.Gid)
+	}
+
+	server, err := server.NewServer(cfg, opts.UnixSocketPath, opts.Test, jwtVerifier)
 	if err != nil {
 		logger.Fatal().Msgf("Error creating server: %v", err)
 	}

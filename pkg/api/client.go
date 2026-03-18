@@ -11,7 +11,6 @@ import (
 
 	"github.com/k8shell-io/common/pkg/gapi"
 	"github.com/k8shell-io/common/pkg/logger"
-	"github.com/k8shell-io/common/pkg/models"
 	pb "github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
@@ -79,17 +78,14 @@ func NewClient(cfg gapi.ClientConfig, counters *ConnCounters) (*K8shelld, error)
 }
 
 // Handshake performs a handshake with the k8shelld service to establish a session.
-func (c *K8shelld) Handshake(ctx context.Context, user *models.User) (*pb.HandshakeResponse, error) {
+// The caller's identity JWT (user.UserToken) is sent so the server can verify it
+// matches the workspace identity token.
+func (c *K8shelld) Handshake(ctx context.Context, userToken string) (*pb.HandshakeResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	req := &pb.HandshakeRequest{
-		User: &pb.User{
-			Username:  user.Username,
-			Uid:       user.UID,
-			Gid:       user.GID,
-			UserToken: user.AccessToken,
-		},
+		UserToken: userToken,
 	}
 
 	return c.systemClient.Handshake(ctx, req)

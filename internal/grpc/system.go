@@ -33,45 +33,33 @@ func NewSystemServiceServer(grpcapi *GRPCService) *SystemServiceServer {
 	}
 }
 
-// Handshake handles the handshake request
+// Handshake handles the handshake request.
+// The client sends its identity JWT; we verify it is non-empty and matches the
+// token the server loaded from /run/secrets/identity-token at startup.  This
+// proves the caller is the same identity that owns this workspace.
 func (s *SystemServiceServer) Handshake(ctx context.Context,
 	req *k8shelldpb.HandshakeRequest) (*k8shelldpb.HandshakeResponse, error) {
 	s.handshakeMu.Lock()
 	defer s.handshakeMu.Unlock()
 
-	s.logger.Info().Msgf("Received handshake from user: %s, uid: %d, gid: %d",
-		req.User.Username, req.User.Uid, req.User.Gid)
-
-	if s.grpcApi.Config.User.Username != req.User.Username {
-		return nil, status.Error(codes.PermissionDenied, "user name mismatch")
+	if req.UserToken == "" {
+		s.logger.Warn().Msg("Handshake rejected: empty user token")
+		return nil, status.Error(codes.PermissionDenied, "user token is required")
 	}
 
-	if s.grpcApi.Config.User.Uid != req.User.Uid {
-		return nil, status.Error(codes.PermissionDenied, "user uid mismatch")
+	workspaceToken := s.grpcApi.Config.User.UserToken
+	if workspaceToken == "" {
+		// Running in test mode or token not yet loaded — reject to be safe.
+		s.logger.Warn().Msg("Handshake rejected: workspace identity token not set")
+		return nil, status.Error(codes.PermissionDenied, "workspace identity token not available")
 	}
 
-	if s.grpcApi.Config.User.Gid != req.User.Gid {
-		return nil, status.Error(codes.PermissionDenied, "user gid mismatch")
+	if req.UserToken != workspaceToken {
+		s.logger.Warn().Msg("Handshake rejected: user token does not match workspace token")
+		return nil, status.Error(codes.PermissionDenied, "user token mismatch")
 	}
 
-	if req.User.UserToken == "" {
-		s.logger.Warn().Msg("Empty user token received in handshake")
-	} else {
-		var tokenPreview string
-		if len(req.User.UserToken) >= 4 {
-			tokenPreview = req.User.UserToken[:4]
-		} else {
-			tokenPreview = "****"
-		}
-
-		s.logger.Debug().Msgf("User token received in handshake: token=***%s", tokenPreview)
-		s.grpcApi.Config.User.UserToken = req.User.UserToken
-		if s.grpcApi.apiClientx != nil {
-			s.grpcApi.apiClientx.UpdateToken(req.User.UserToken)
-		}
-	}
-
-	s.logger.Info().Msg("Handshake successful")
+	s.logger.Info().Msgf("Handshake accepted for user: %s", s.grpcApi.Config.User.Username)
 
 	return &k8shelldpb.HandshakeResponse{
 		Accepted:      true,

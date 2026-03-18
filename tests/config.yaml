@@ -1,4 +1,10 @@
 # system settings
+# identity token and public key for JWT verification
+identity:
+  tokenPath: /run/secrets/identity-token
+  publicKeyPath: /run/secrets/identity-public-key
+  signingMethod: rs256
+
 system:
   # true to enable profiling
   # if enabled, pprof will be available at localhost:6060
@@ -21,20 +27,6 @@ system:
       - namespace: "*"
         serviceAccount: "*"
 
-# workspace user
-user:
-  username: bruckins
-  fullname: "Bruck Ins"
-  uid: 166548839 
-  gid: 166548839
-  shell: /bin/bash
-  sudo: true
-
-  # supplementary groups
-  groups:
-    - name: k8shell-docker
-      gid: 999
-      
 # port forwarding rules
 portForwarding:
   - localnetworks:0

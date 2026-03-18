@@ -71,7 +71,7 @@ func CreateUser(user models.User) error {
 
 	log := logger.NewLogger("user-management")
 	log.Info().Msgf("Main user: username=%s, uid=%d, gid=%d, home=%s, shell=%s, sudo=%t, groups=%v",
-		user.Username, user.Uid, user.Gid, user.HomeDir, user.Shell, user.Sudo, user.Groups)
+		user.Username, user.Uid, user.Gid, user.GetHomeDir(), user.GetShell(), user.Sudo, user.GetGroups())
 
 	provider := getProvider()
 
@@ -88,43 +88,41 @@ func CreateUser(user models.User) error {
 	// Check if the user exists, and create it if it doesn't
 	if u := UserExists(strconv.Itoa(int(user.Uid))); u == nil {
 		if err := provider.addUser(ctx, user.Username, int(user.Uid), int(user.Gid),
-			fmt.Sprintf("/home/%s", user.Username), user.Shell); err != nil {
+			user.GetHomeDir(), user.GetShell()); err != nil {
 			return fmt.Errorf("failed to add user: %v", err)
 		}
 		log.Info().Msgf("Main user created: %s (%d)", user.Username, user.Uid)
 	}
 
 	// Add the user to the specified groups
-	if user.Groups != nil && len(*user.Groups) > 0 {
-		for _, group := range *user.Groups {
-			// GID is authoritative: check by GID first.
-			resolvedName := group.Name
-			if exists, err := groupExists(strconv.Itoa(int(group.Gid))); err != nil {
-				return fmt.Errorf("failed to check group %v: %v", group, err)
-			} else if !exists {
-				if err := provider.addGroup(ctx, group.Name, int(group.Gid)); err != nil {
-					return fmt.Errorf("failed to create group %v: %v", group, err)
-				}
-				log.Debug().Msgf("Group created: %v", group)
-			} else {
-				// Group already exists under this GID; resolve its actual name
-				// (may differ from the requested name) so Alpine's addgroup can
-				// reference it correctly.
-				if actual, err := groupNameByGID(int(group.Gid)); err == nil {
-					resolvedName = actual
-					log.Debug().Msgf("Group with GID %d already exists as %s; using existing group",
-						group.Gid, actual)
-				}
+	for _, group := range user.GetGroups() {
+		// GID is authoritative: check by GID first.
+		resolvedName := group.Name
+		if exists, err := groupExists(strconv.Itoa(int(group.Gid))); err != nil {
+			return fmt.Errorf("failed to check group %v: %v", group, err)
+		} else if !exists {
+			if err := provider.addGroup(ctx, group.Name, int(group.Gid)); err != nil {
+				return fmt.Errorf("failed to create group %v: %v", group, err)
 			}
-			if err := provider.addUserToGroup(ctx, user.Username, resolvedName, int(group.Gid)); err != nil {
-				return fmt.Errorf("failed to add user %s to group %v: %v", user.Username, group, err)
+			log.Debug().Msgf("Group created: %v", group)
+		} else {
+			// Group already exists under this GID; resolve its actual name
+			// (may differ from the requested name) so Alpine's addgroup can
+			// reference it correctly.
+			if actual, err := groupNameByGID(int(group.Gid)); err == nil {
+				resolvedName = actual
+				log.Debug().Msgf("Group with GID %d already exists as %s; using existing group",
+					group.Gid, actual)
 			}
-			log.Debug().Msgf("User %s added to group %v", user.Username, group)
 		}
+		if err := provider.addUserToGroup(ctx, user.Username, resolvedName, int(group.Gid)); err != nil {
+			return fmt.Errorf("failed to add user %s to group %v: %v", user.Username, group, err)
+		}
+		log.Debug().Msgf("User %s added to group %v", user.Username, group)
 	}
 
 	// Copy skeleton files to the main user's home directory
-	if err := copySkeletonFiles(ctx, int(user.Uid), int(user.Gid), user.HomeDir); err != nil {
+	if err := copySkeletonFiles(ctx, int(user.Uid), int(user.Gid), user.GetHomeDir()); err != nil {
 		return fmt.Errorf("failed to copy skeleton files: %v", err)
 	}
 

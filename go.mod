@@ -8,7 +8,7 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/gorilla/mux v1.8.1
 	github.com/k8shell-io/api-server v0.12.6
-	github.com/k8shell-io/common v0.12.161
+	github.com/k8shell-io/common v0.12.167
 	github.com/k8shell-io/k8shelld/pkg/api v0.0.0-00010101000000-000000000000
 	github.com/pkg/sftp v1.13.9
 	github.com/rs/zerolog v1.34.0
@@ -27,6 +27,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.27.0 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect

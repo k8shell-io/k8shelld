@@ -159,8 +159,8 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 	session.Cmd = exec.Command(shell)
 	session.Cmd.Args[0] = "-" + session.Cmd.Args[0] // make the shell a login shell
 
-	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars, session.user.HomeDir)
-	session.Cmd.Dir = session.user.HomeDir
+	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars, session.user.GetHomeDir())
+	session.Cmd.Dir = session.user.GetHomeDir()
 
 	s.logger.Debug().Msgf("env: %v", session.Cmd.Env)
 

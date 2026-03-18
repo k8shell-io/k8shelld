@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v3.12.4
-// source: pkg/api/k8shelld.proto
+// source: k8shelld.proto
 
 package k8shelldpb
 
@@ -155,7 +155,7 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "pkg/api/k8shelld.proto",
+	Metadata: "k8shelld.proto",
 }
 
 const (
@@ -294,7 +294,7 @@ var ShellService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "pkg/api/k8shelld.proto",
+	Metadata: "k8shelld.proto",
 }
 
 const (
@@ -392,7 +392,7 @@ var PortForwardService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "pkg/api/k8shelld.proto",
+	Metadata: "k8shelld.proto",
 }
 
 const (
@@ -490,7 +490,7 @@ var ExecService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "pkg/api/k8shelld.proto",
+	Metadata: "k8shelld.proto",
 }
 
 const (
@@ -590,7 +590,7 @@ var UnixSocketService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "pkg/api/k8shelld.proto",
+	Metadata: "k8shelld.proto",
 }
 
 const (
@@ -686,7 +686,7 @@ var CommandService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "pkg/api/k8shelld.proto",
+	Metadata: "k8shelld.proto",
 }
 
 const (
@@ -994,5 +994,5 @@ var AppService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "pkg/api/k8shelld.proto",
+	Metadata: "k8shelld.proto",
 }

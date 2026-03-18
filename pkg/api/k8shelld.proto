@@ -69,16 +69,7 @@ message DockerUsage {
 // HandshakeRequest message
 message HandshakeRequest {
   string client_version = 1;
-  User user = 2;
-}
-
-// User to be used to setup workspace
-message User {
-  string username = 1;
-  string fullname = 2;
-  uint32 uid = 3;
-  uint32 gid = 4;
-  string user_token = 5;
+  string user_token = 2;
 }
 
 // HandshakeResponse message

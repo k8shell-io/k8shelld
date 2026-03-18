@@ -29,10 +29,25 @@ const (
 	DOCKER_SOCKET_SYMLINK = "/var/run/docker.sock"
 )
 
+// Identity holds the configuration required to load and verify the workspace
+// identity JWT at startup and during periodic renewal checks.
+type Identity struct {
+	// TokenPath is the path to the file containing the user JWT.
+	TokenPath string `yaml:"tokenPath"`
+
+	// PublicKeyPath is the path to the PEM-encoded public key used to verify
+	// the JWT signature.
+	PublicKeyPath string `yaml:"publicKeyPath"`
+
+	// SigningMethod is the JWT signing algorithm, e.g. "rs256" or "es256".
+	SigningMethod string `yaml:"signingMethod"`
+}
+
 // Config represents the main configuration file structure
 type Config struct {
 	System              System               `yaml:"system"`
-	User                models.User          `yaml:"user"`
+	Identity            Identity             `yaml:"identity"`
+	User                models.User          `yaml:"-"`
 	Splash              string               `yaml:"splash"`
 	Env                 Env                  `yaml:"env"`
 	PortForwarding      []string             `yaml:"portForwarding"`

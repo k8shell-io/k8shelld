@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/k8shell-io/api-server/pkg/client"
+	"github.com/k8shell-io/common/pkg/authz"
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
@@ -39,9 +40,10 @@ type Server struct {
 	pprof       bool
 	sysInfo     *system.SystemInfo
 	appManager  *apps.AppManager
+	jwtVerifier *authz.JWTVerifier
 }
 
-func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
+func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool, jwtVerifier *authz.JWTVerifier) (*Server, error) {
 
 	var apiClient *client.Client
 	if cfg.System.ApiServer.Enabled {
@@ -52,12 +54,13 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	}
 
 	s := &Server{
-		logger:     logger.NewLogger("k8shelld"),
-		testMode:   testMode,
-		config:     cfg,
-		pprof:      cfg.System.PProf,
-		sysInfo:    system.NewSystemInfo(cfg),
-		apiClientx: apiClient,
+		logger:      logger.NewLogger("k8shelld"),
+		testMode:    testMode,
+		config:      cfg,
+		pprof:       cfg.System.PProf,
+		sysInfo:     system.NewSystemInfo(cfg),
+		apiClientx:  apiClient,
+		jwtVerifier: jwtVerifier,
 	}
 
 	var err error
@@ -212,11 +215,28 @@ func (s *Server) Serve() {
 		}()
 	}
 
+	// shutdownReason receives a descriptive message from either the OS signal
+	// handler or the identity token watcher, whichever triggers first.
+	shutdownReason := make(chan string, 1)
+
+	// Identity token watcher – only active when a verifier was provided.
+	if s.jwtVerifier != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.watchIdentityToken(ctx, shutdownReason)
+		}()
+	}
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 
-	sig := <-sigChan
-	s.logger.Info().Msgf("Received signal: %s. Initiating shutdown...", sig)
+	select {
+	case sig := <-sigChan:
+		s.logger.Info().Msgf("Received signal: %s. Initiating shutdown...", sig)
+	case reason := <-shutdownReason:
+		s.logger.Warn().Msgf("Initiating shutdown: %s", reason)
+	}
 
 	if !s.testMode {
 		wg.Add(1)
@@ -244,7 +264,7 @@ func (s *Server) runInitScripts(
 		return fmt.Errorf("invalid init scripts directory: %s", scriptsDir)
 	}
 
-	flagDir := fmt.Sprintf(FLAG_DIR_TEMPLATE, user.HomeDir)
+	flagDir := fmt.Sprintf(FLAG_DIR_TEMPLATE, user.GetHomeDir())
 	if err := os.MkdirAll(flagDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create flag directory: %s", flagDir)
 	}
@@ -291,8 +311,8 @@ func (s *Server) runScriptHelper(scriptsDir, scriptPath string, flagDir string, 
 // runScript executes a script
 func (s *Server) runScript(scriptsDir, scriptName, flagFile string, envVars []string) error {
 	cmd := exec.Command("/bin/bash", "-l", "-c", fmt.Sprintf("%s/%s", scriptsDir, scriptName))
-	cmd.Env = system.CreateEnvVars(envVars, s.config.User.HomeDir)
-	cmd.Dir = s.config.User.HomeDir
+	cmd.Env = system.CreateEnvVars(envVars, s.config.User.GetHomeDir())
+	cmd.Dir = s.config.User.GetHomeDir()
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
