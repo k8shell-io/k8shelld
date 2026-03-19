@@ -55,6 +55,11 @@ type SystemInfo struct {
 	Docker *DockerUsage `json:"docker,omitempty"` // docker usage statistics
 }
 
+// SplashInfo contains the rendered splash message text.
+type SplashInfo struct {
+	Text string `json:"text"`
+}
+
 // IdentityInfo contains the human-readable JWT identity claims for the workspace user.
 type IdentityInfo struct {
 	Username     string   `json:"username"`

@@ -86,6 +86,7 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/apps/{name}/start", a.StartApp).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/apps/{name}/stop", a.StopApp).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/identity", a.GetIdentity).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/splash", a.GetSplash).Methods(http.MethodGet)
 
 	a.logRoutes(router)
 	return router
@@ -320,6 +321,19 @@ func (a *RESTService) GetIdentity(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		a.logger.Error().Msgf("Failed to encode identity response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+func (a *RESTService) GetSplash(w http.ResponseWriter, r *http.Request) {
+	expanded := a.server.config.ExpandSplash(a.user, a.user.GetUsername())
+	// ExpandSplash returns PTY-style \r\n; normalise to plain \n for terminal.
+	text := strings.ReplaceAll(expanded, "\r\n", "\n")
+
+	response := api.SplashInfo{Text: text}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		a.logger.Error().Msgf("Failed to encode splash response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
