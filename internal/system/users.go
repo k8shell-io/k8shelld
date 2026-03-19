@@ -44,15 +44,15 @@ type distroProvider interface {
 func getProvider() distroProvider {
 	// Alpine Linux always ships /etc/alpine-release
 	if _, err := os.Stat("/etc/alpine-release"); err == nil {
-		return &alpineProvider{}
+		return NewAlpineProvider()
 	}
 	// Generic BusyBox image without /etc/alpine-release
 	if _, err := exec.LookPath("useradd"); err != nil {
 		if _, err2 := exec.LookPath("adduser"); err2 == nil {
-			return &alpineProvider{}
+			return NewAlpineProvider()
 		}
 	}
-	return &standardProvider{}
+	return NewStandardProvider()
 }
 
 // runCommand executes cmd under the supplied context and returns the combined

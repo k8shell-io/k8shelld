@@ -5,11 +5,20 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+
+	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/rs/zerolog"
 )
 
 // alpineProvider implements distroProvider for Alpine Linux and BusyBox-based
 // environments, which use the adduser/addgroup applets instead of shadow-utils.
-type alpineProvider struct{}
+type alpineProvider struct {
+	log *zerolog.Logger
+}
+
+func NewAlpineProvider() *alpineProvider {
+	return &alpineProvider{log: logger.NewLogger("alpineProvider")}
+}
 
 func (p *alpineProvider) addGroup(ctx context.Context, groupName string, gid int) error {
 	cmd := exec.CommandContext(ctx, "addgroup", "-g", fmt.Sprintf("%d", gid), groupName)
@@ -50,14 +59,12 @@ func (p *alpineProvider) addUser(ctx context.Context, username string, uid, gid 
 		return fmt.Errorf("failed to create home directory %s: %v", homeDir, err)
 	}
 
-	cmd = exec.CommandContext(ctx, "chown", fmt.Sprintf("%d:%d", uid, gid), homeDir)
-	if _, err := runCommand(ctx, cmd); err != nil {
-		return fmt.Errorf("failed to change ownership of home directory %s: %v", homeDir, err)
+	if err = os.Chown(homeDir, uid, gid); err != nil {
+		p.log.Error().Err(err).Msgf("Failed to change ownership of home directory %s to UID %d and GID %d: %v", homeDir, uid, gid, err)
 	}
 
-	cmd = exec.CommandContext(ctx, "chmod", "700", homeDir)
-	if _, err := runCommand(ctx, cmd); err != nil {
-		return fmt.Errorf("failed to change permissions of home directory %s: %v", homeDir, err)
+	if err := os.Chmod(homeDir, 0700); err != nil {
+		p.log.Error().Err(err).Msgf("Failed to set permissions of home directory %s to 0700: %v", homeDir, err)
 	}
 	return nil
 }
