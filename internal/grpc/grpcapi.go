@@ -199,7 +199,7 @@ func (s *GRPCService) callerValidationInterceptor() grpc.UnaryServerInterceptor 
 			return nil, status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
 		}
 
-		if tokenStr != s.user.UserToken {
+		if tokenStr != s.user.GetUserToken() {
 			return nil, status.Errorf(codes.PermissionDenied, "invalid token: caller token does not match workspace token")
 		}
 

@@ -171,8 +171,8 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 				Setsid:    true,
 				Pdeathsig: 0,
 				Credential: &syscall.Credential{
-					Uid:    m.user.UID,
-					Gid:    m.user.GID,
+					Uid:    m.user.GetUID(),
+					Gid:    m.user.GetGID(),
 					Groups: system.GetSupplementalGroups(m.user.GetUsername()),
 				},
 			}
@@ -359,7 +359,7 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		m.mu.Unlock()
 	}()
 
-	env := system.CreateEnvVars([]string{}, m.user.HomeDir)
+	env := system.CreateEnvVars([]string{}, m.user.GetHomeDir())
 	installScript := expandEnv(app.Install, env)
 	appStateDir, err := m.ensureAppStateDir(name)
 	if err != nil {
@@ -389,15 +389,15 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		cmd.Env = os.Environ()
 		cmd.Dir = "/root"
 	} else {
-		cmd.Env = system.CreateEnvVars([]string{}, m.user.HomeDir)
-		cmd.Dir = m.user.HomeDir
+		cmd.Env = system.CreateEnvVars([]string{}, m.user.GetHomeDir())
+		cmd.Dir = m.user.GetHomeDir()
 
 		if !m.testMode {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setsid: true,
 				Credential: &syscall.Credential{
-					Uid:    m.user.UID,
-					Gid:    m.user.GID,
+					Uid:    m.user.GetUID(),
+					Gid:    m.user.GetGID(),
 					Groups: system.GetSupplementalGroups(m.user.GetUsername()),
 				},
 			}

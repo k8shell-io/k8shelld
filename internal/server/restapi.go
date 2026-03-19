@@ -589,7 +589,7 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 		}
 
 		if !a.server.testMode {
-			err = os.Chown(a.unixSocketPath, int(a.user.UID), int(a.user.GID))
+			err = os.Chown(a.unixSocketPath, int(a.user.GetUID()), int(a.user.GetGID()))
 			if err != nil {
 				a.logger.Error().Msgf("Error changing ownership of Unix socket: %v", err)
 				unixListener.Close()

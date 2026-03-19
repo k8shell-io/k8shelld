@@ -71,26 +71,27 @@ func CreateUser(user *models.User) error {
 
 	log := logger.NewLogger("user-management")
 	log.Info().Msgf("Main user: username=%s, uid=%d, gid=%d, home=%s, shell=%s, sudo=%t, groups=%v",
-		user.GetUsername(), user.UID, user.GID, user.GetHomeDir(), user.GetShell(), user.SudoEnabled(), user.GetGroups())
+		user.GetUsername(), user.GetUID(), user.GetGID(), user.GetHomeDir(), user.GetShell(), user.SudoEnabled(), user.GetGroups())
 
 	provider := getProvider()
 
 	// Check if the main group exists, and create it if it doesn't
-	if exists, err := groupExists(strconv.Itoa(int(user.GID))); err != nil {
+	if exists, err := groupExists(strconv.Itoa(int(user.GetGID()))); err != nil {
 		return fmt.Errorf("failed to check main group: %v", err)
 	} else if !exists {
-		if err := provider.addGroup(ctx, user.GetUsername(), int(user.GID)); err != nil {
+		if err := provider.addGroup(ctx, user.GetUsername(), int(user.GetGID())); err != nil {
 			return fmt.Errorf("failed to add the user main group: %v", err)
 		}
-		log.Info().Msgf("Main group created: %s (%d)", user.GetUsername(), user.GID)
+		log.Info().Msgf("Main group created: %s (%d)", user.GetUsername(), user.GetGID())
 	}
 
 	// Check if the user exists, and create it if it doesn't
-	if u := UserExists(strconv.Itoa(int(user.UID))); u == nil {
-		if err := provider.addUser(ctx, user.GetUsername(), int(user.UID), int(user.GID), user.GetHomeDir(), user.GetShell()); err != nil {
+	if u := UserExists(strconv.Itoa(int(user.GetUID()))); u == nil {
+		if err := provider.addUser(ctx, user.GetUsername(), int(user.GetUID()), int(user.GetGID()),
+			user.GetHomeDir(), user.GetShell()); err != nil {
 			return fmt.Errorf("failed to add user: %v", err)
 		}
-		log.Info().Msgf("Main user created: %s (%d)", user.GetUsername(), user.UID)
+		log.Info().Msgf("Main user created: %s (%d)", user.GetUsername(), user.GetUID())
 	}
 
 	// Add the user to the specified groups
@@ -121,7 +122,7 @@ func CreateUser(user *models.User) error {
 	}
 
 	// Copy skeleton files to the main user's home directory
-	if err := copySkeletonFiles(ctx, int(user.UID), int(user.GID), user.GetHomeDir()); err != nil {
+	if err := copySkeletonFiles(ctx, int(user.GetUID()), int(user.GetGID()), user.GetHomeDir()); err != nil {
 		return fmt.Errorf("failed to copy skeleton files: %v", err)
 	}
 

@@ -111,12 +111,12 @@ func (s *AppSupervisor) supervise() {
 		}
 		s.log.Debug().Msgf("starting app version %s", appVersion)
 
-		env := system.CreateEnvVars([]string{}, s.manager.user.HomeDir)
+		env := system.CreateEnvVars([]string{}, s.manager.user.GetHomeDir())
 		startCmd := expandEnvSlice(s.app.Start, env)
 		s.log.Debug().Msgf("starting app with command: %v", startCmd)
 		cmd := exec.Command(startCmd[0], startCmd[1:]...)
 		cmd.Env = env
-		cmd.Dir = s.manager.user.HomeDir
+		cmd.Dir = s.manager.user.GetHomeDir()
 
 		s.log.Debug().Msgf("env: %v", cmd.Env)
 
@@ -124,8 +124,8 @@ func (s *AppSupervisor) supervise() {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setsid: true,
 				Credential: &syscall.Credential{
-					Uid:    s.manager.user.UID,
-					Gid:    s.manager.user.GID,
+					Uid:    s.manager.user.GetUID(),
+					Gid:    s.manager.user.GetGID(),
 					Groups: system.GetSupplementalGroups(s.manager.user.GetUsername()),
 				},
 			}

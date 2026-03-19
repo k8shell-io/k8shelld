@@ -42,7 +42,6 @@ type Server struct {
 	sysInfo     *system.SystemInfo
 	appManager  *apps.AppManager
 	jwtVerifier *authz.JWTVerifier
-	tokenMu     sync.Mutex
 }
 
 func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
@@ -78,7 +77,6 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		sysInfo:     system.NewSystemInfo(cfg),
 		apiClientx:  apiClient,
 		jwtVerifier: jwtVerifier,
-		tokenMu:     sync.Mutex{},
 	}
 
 	err = s.loadIdentity()
@@ -335,8 +333,8 @@ func (s *Server) runScript(scriptsDir, scriptName, flagFile string, envVars []st
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid:    s.user.UID,
-			Gid:    s.user.GID,
+			Uid:    s.user.GetUID(),
+			Gid:    s.user.GetGID(),
 			Groups: system.GetSupplementalGroups(s.user.GetUsername()),
 		},
 	}

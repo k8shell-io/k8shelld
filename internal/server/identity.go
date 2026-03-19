@@ -31,8 +31,6 @@ func (s *Server) loadIdentity() error {
 		return fmt.Errorf("verify identity token: %w", err)
 	}
 
-	s.tokenMu.Lock()
-	defer s.tokenMu.Unlock()
 	s.user = models.NewUser(claims, tokenStr)
 	s.logger.Debug().Msg("Identity token loaded: " + s.user.String())
 
@@ -83,14 +81,12 @@ func (s *Server) refreshIdentity() string {
 		return ""
 	}
 
-	if tokenStr != s.user.UserToken {
-		s.tokenMu.Lock()
-		defer s.tokenMu.Unlock()
-		err := s.user.Update(token, tokenStr)
-		if err != nil {
-			return fmt.Sprintf("failed to update user information from new token: %v", err)
-		}
-		s.logger.Info().Msg("Identity token has been refreshed, will expire at: " + token.ExpiresAt.Format(time.RFC3339))
+	updated, err := s.user.Update(token, tokenStr)
+	if err != nil {
+		return fmt.Sprintf("failed to update user information from new token: %v", err)
+	}
+	if updated {
+		s.logger.Info().Msg("Identity token has been refreshed, will expire at: " + token.ExpiresAt.Time.UTC().Format(time.RFC3339))
 	}
 
 	return ""
