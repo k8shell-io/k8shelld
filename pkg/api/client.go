@@ -18,6 +18,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// ContextKey is an unexported type for context keys in this package,
+// preventing collisions with keys defined in other packages.
+type ContextKey string
+
+const TokenContextKey ContextKey = "token"
+
 // BufferedReadWriter is an interface that is used to read and write data with
 // buffer size checking and stderr support.
 type BufferedReadWriter interface {
@@ -102,7 +108,7 @@ func (c *K8shelld) GetSystemInfo(ctx context.Context) (*SystemInfo, error) {
 // RunShell creates a PTY shell session over gRPC and bridges it with the BufferedReadWriter.
 func (c *K8shelld) RunShell(ctx context.Context, rw BufferedReadWriter, sessionId string, envVars []string,
 	width, height uint32, usePty bool, user string) error {
-	token, ok := ctx.Value("token").(string)
+	token, ok := ctx.Value(TokenContextKey).(string)
 	if !ok {
 		return fmt.Errorf("missing token in context")
 	}
@@ -227,7 +233,7 @@ func (c *K8shelld) ResizeTerminal(ctx context.Context, sessionId string, width, 
 func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWriter, unixSocketId,
 	socketPath string, mode string) error {
 
-	token, ok := ctx.Value("token").(string)
+	token, ok := ctx.Value(TokenContextKey).(string)
 	if !ok {
 		return fmt.Errorf("missing token in context")
 	}
@@ -352,7 +358,7 @@ func (c *K8shelld) RunPortForward(ctx context.Context, upstream BufferedReadWrit
 		destinationIP = "localhost"
 	}
 
-	token, ok := ctx.Value("token").(string)
+	token, ok := ctx.Value(TokenContextKey).(string)
 	if !ok {
 		return fmt.Errorf("missing token in context")
 	}
@@ -449,7 +455,7 @@ func (c *K8shelld) RunPortForward(ctx context.Context, upstream BufferedReadWrit
 func (c *K8shelld) RunExec(ctx context.Context, upstream BufferedReadWriter, execID string,
 	command string, shellBinary string, envVars []string, signalChan <-chan string) (int32, error) {
 
-	token, ok := ctx.Value("token").(string)
+	token, ok := ctx.Value(TokenContextKey).(string)
 	if !ok {
 		return 1, fmt.Errorf("missing token in context")
 	}
