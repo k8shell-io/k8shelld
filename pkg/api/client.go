@@ -44,7 +44,10 @@ type K8shelld struct {
 	unixSocketClient pb.UnixSocketServiceClient
 	app              pb.AppServiceClient
 	counters         *ConnCounters
+	tokenRetrieve    TokenRetrieve
 }
+
+type TokenRetrieve func() (string, error)
 
 // ConnCounters holds counters for bytes sent and received.
 type ConnCounters struct {
@@ -63,7 +66,7 @@ func (c *ConnCounters) Snapshot() (in, out int64) {
 	return atomic.LoadInt64(&c.inTotal), atomic.LoadInt64(&c.outTotal)
 }
 
-func NewClient(cfg gapi.ClientConfig, counters *ConnCounters) (*K8shelld, error) {
+func NewClient(cfg gapi.ClientConfig, counters *ConnCounters, tokenRetrieve TokenRetrieve) (*K8shelld, error) {
 	gapiClient, err := gapi.NewClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gRPC client: %w", err)
@@ -80,6 +83,7 @@ func NewClient(cfg gapi.ClientConfig, counters *ConnCounters) (*K8shelld, error)
 		pfClient:         pb.NewPortForwardServiceClient(gapiClient.Conn),
 		unixSocketClient: pb.NewUnixSocketServiceClient(gapiClient.Conn),
 		app:              pb.NewAppServiceClient(gapiClient.Conn),
+		tokenRetrieve:    tokenRetrieve,
 	}, nil
 }
 
@@ -108,9 +112,9 @@ func (c *K8shelld) GetSystemInfo(ctx context.Context) (*SystemInfo, error) {
 // RunShell creates a PTY shell session over gRPC and bridges it with the BufferedReadWriter.
 func (c *K8shelld) RunShell(ctx context.Context, rw BufferedReadWriter, sessionId string, envVars []string,
 	width, height uint32, usePty bool, user string) error {
-	token, ok := ctx.Value(TokenContextKey).(string)
-	if !ok {
-		return fmt.Errorf("missing token in context")
+	token, err := c.tokenRetrieve()
+	if err != nil {
+		return fmt.Errorf("failed to retrieve token: %w", err)
 	}
 
 	md := metadata.Pairs(
@@ -233,9 +237,9 @@ func (c *K8shelld) ResizeTerminal(ctx context.Context, sessionId string, width, 
 func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWriter, unixSocketId,
 	socketPath string, mode string) error {
 
-	token, ok := ctx.Value(TokenContextKey).(string)
-	if !ok {
-		return fmt.Errorf("missing token in context")
+	token, err := c.tokenRetrieve()
+	if err != nil {
+		return fmt.Errorf("failed to retrieve token: %w", err)
 	}
 
 	md := metadata.Pairs(
@@ -358,9 +362,9 @@ func (c *K8shelld) RunPortForward(ctx context.Context, upstream BufferedReadWrit
 		destinationIP = "localhost"
 	}
 
-	token, ok := ctx.Value(TokenContextKey).(string)
-	if !ok {
-		return fmt.Errorf("missing token in context")
+	token, err := c.tokenRetrieve()
+	if err != nil {
+		return fmt.Errorf("failed to retrieve token: %w", err)
 	}
 
 	md := metadata.Pairs(
@@ -455,9 +459,9 @@ func (c *K8shelld) RunPortForward(ctx context.Context, upstream BufferedReadWrit
 func (c *K8shelld) RunExec(ctx context.Context, upstream BufferedReadWriter, execID string,
 	command string, shellBinary string, envVars []string, signalChan <-chan string) (int32, error) {
 
-	token, ok := ctx.Value(TokenContextKey).(string)
-	if !ok {
-		return 1, fmt.Errorf("missing token in context")
+	token, err := c.tokenRetrieve()
+	if err != nil {
+		return 1, fmt.Errorf("failed to retrieve token: %w", err)
 	}
 
 	md := metadata.Pairs("exec-id", execID, "token", token)
