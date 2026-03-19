@@ -34,6 +34,7 @@ func (s *Server) loadIdentity() error {
 	s.tokenMu.Lock()
 	defer s.tokenMu.Unlock()
 	s.user = models.NewUser(claims, tokenStr)
+	s.logger.Debug().Msg("Identity token loaded: " + s.user.String())
 
 	return nil
 }
@@ -77,7 +78,9 @@ func (s *Server) refreshIdentity() string {
 	tokenStr := strings.TrimSpace(string(data))
 	token, err := s.jwtVerifier.VerifyToken(tokenStr)
 	if err != nil {
-		return fmt.Sprintf("identity token is no longer valid: %v", err)
+		//return fmt.Sprintf("identity token is no longer valid: %v", err)
+		s.logger.Error().Err(err).Msg("Identity token is no longer valid")
+		return ""
 	}
 
 	if tokenStr != s.user.UserToken {

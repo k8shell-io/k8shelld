@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/k8shell-io/common/pkg/authz"
 	"github.com/k8shell-io/common/pkg/models"
@@ -32,6 +33,12 @@ func NewUser(claims *authz.UserClaims, token string) *User {
 		UserClaims: claims,
 		UserToken:  token,
 	}
+}
+
+// String returns a human-readable representation of the User struct, useful for logging and debugging.
+func (u User) String() string {
+	return fmt.Sprintf("User{Username: %s, UID: %d, GID: %d, Name: %s, Email: %s, Shell: %s, Sudo: %t, Roles: %v, Exp: %s}", u.GetUsername(), u.UID, u.GID, u.Name, u.Email, u.GetShell(), u.SudoEnabled(), u.Roles,
+		u.ExpiresAt.Time.UTC().Format(time.RFC3339))
 }
 
 // Update updates the user information with new claims and token.
