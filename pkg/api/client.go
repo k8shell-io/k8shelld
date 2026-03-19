@@ -80,12 +80,12 @@ func NewClient(cfg gapi.ClientConfig, counters *ConnCounters) (*K8shelld, error)
 // Handshake performs a handshake with the k8shelld service to establish a session.
 // The caller's identity JWT (user.UserToken) is sent so the server can verify it
 // matches the workspace identity token.
-func (c *K8shelld) Handshake(ctx context.Context, userToken string) (*pb.HandshakeResponse, error) {
+func (c *K8shelld) Handshake(ctx context.Context) (*pb.HandshakeResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	req := &pb.HandshakeRequest{
-		UserToken: userToken,
+		UserToken: "", // Deprecated: the server verifies the token from the context metadata instead
 	}
 
 	return c.systemClient.Handshake(ctx, req)
