@@ -11,8 +11,8 @@ import (
 
 var SplashCmd = &cobra.Command{
 	Use:   "splash",
-	Short: "Display workspace splash message",
-	Long:  "Display the splash message shown when entering the workspace shell.",
+	Short: "Display the workspace splash message",
+	Long:  "Display the workspace splash message.",
 
 	Run: func(cmd *cobra.Command, args []string) {
 		resp, err := client.MakeRequest("GET", "/splash", nil, nil)
@@ -33,6 +33,6 @@ var SplashCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Print(data.Text)
+		fmt.Println(data.Text)
 	},
 }
