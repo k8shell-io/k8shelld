@@ -165,8 +165,16 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *RESTService) Shutdown(w http.ResponseWriter, r *http.Request) {
-	a.logger.Debug().Msgf("Shutting down workspace %s", a.server.workspace)
-	_, err := a.server.grpcService.CommandService.SendCommand(r.Context(), "shutdown")
+	action := r.URL.Query().Get("action")
+	if action == "" {
+		action = "stop"
+	}
+	if action != "stop" && action != "delete" {
+		http.Error(w, "invalid action: must be 'stop' or 'delete'", http.StatusBadRequest)
+		return
+	}
+	a.logger.Debug().Msgf("Shutting down workspace %s (action=%s)", a.server.workspace, action)
+	_, err := a.server.grpcService.CommandService.SendCommand(r.Context(), "shutdown "+action)
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot shutdown workspace: %v", err)
 		http.Error(w, "Failed to shutdown workspace", http.StatusBadGateway)
