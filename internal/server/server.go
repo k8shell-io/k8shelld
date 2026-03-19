@@ -81,6 +81,11 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		tokenMu:     sync.Mutex{},
 	}
 
+	err = s.loadIdentity()
+	if err != nil {
+		return nil, fmt.Errorf("error loading identity: %v", err)
+	}
+
 	s.workspace = os.Getenv("WORKSPACE")
 	if s.workspace == "" {
 		return nil, fmt.Errorf("cannot get the workspace name from WORKSPACE environment variable")
@@ -127,12 +132,7 @@ func (s *Server) initialize() error {
 		return nil
 	}
 
-	err := s.loadIdentity()
-	if err != nil {
-		return fmt.Errorf("error loading identity: %v", err)
-	}
-
-	err = exec.Command("kbox", "tools-init").Run()
+	err := exec.Command("kbox", "tools-init").Run()
 	if err != nil {
 		s.logger.Error().Msgf("Error running kbox tools-init: %v", err)
 	}
