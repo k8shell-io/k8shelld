@@ -55,6 +55,21 @@ type SystemInfo struct {
 	Docker *DockerUsage `json:"docker,omitempty"` // docker usage statistics
 }
 
+// IdentityInfo contains the human-readable JWT identity claims for the workspace user.
+type IdentityInfo struct {
+	Username     string   `json:"username"`
+	Name         string   `json:"name,omitempty"`
+	Email        string   `json:"email,omitempty"`
+	UID          uint32   `json:"uid"`
+	GID          uint32   `json:"gid"`
+	Shell        string   `json:"shell,omitempty"`
+	Sudo         bool     `json:"sudo"`
+	Roles        []string `json:"roles,omitempty"`
+	Organization string   `json:"organization,omitempty"`
+	Source       string   `json:"source,omitempty"`
+	ExpiresAt    string   `json:"expiresAt"`
+}
+
 // AppRuntimeStatus represents the lifecycle status reported by AppManager.
 type AppRuntimeStatus string
 

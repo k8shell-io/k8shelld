@@ -85,6 +85,7 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/apps/{name}/logs", a.GetAppLogs).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/apps/{name}/start", a.StartApp).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/apps/{name}/stop", a.StopApp).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/identity", a.GetIdentity).Methods(http.MethodGet)
 
 	a.logRoutes(router)
 	return router
@@ -281,6 +282,45 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		a.logger.Error().Msgf("Failed to encode system info response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
+	}
+}
+
+func (a *RESTService) GetIdentity(w http.ResponseWriter, r *http.Request) {
+	claims := a.user.ClaimsSnapshot()
+
+	roles := make([]string, len(claims.Roles))
+	for i, role := range claims.Roles {
+		roles[i] = string(role)
+	}
+
+	expiresAt := ""
+	if claims.ExpiresAt != nil {
+		expiresAt = claims.ExpiresAt.Time.UTC().Format(time.RFC3339)
+	}
+
+	shell := claims.Shell
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+
+	response := api.IdentityInfo{
+		Username:     a.user.GetUsername(),
+		Name:         claims.Name,
+		Email:        claims.Email,
+		UID:          a.user.GetUID(),
+		GID:          a.user.GetGID(),
+		Shell:        shell,
+		Sudo:         claims.Sudo,
+		Roles:        roles,
+		Organization: claims.Organization,
+		Source:       claims.Source,
+		ExpiresAt:    expiresAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		a.logger.Error().Msgf("Failed to encode identity response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
 

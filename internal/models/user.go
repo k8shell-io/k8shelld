@@ -117,6 +117,14 @@ func (u *User) SudoEnabled() bool {
 	return u.claims.Sudo
 }
 
+// ClaimsSnapshot returns a copy of the current JWT claims under the read lock.
+// The returned value is safe to inspect without any further locking.
+func (u *User) ClaimsSnapshot() authz.UserClaims {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	return *u.claims
+}
+
 // GetUserToken returns the current raw JWT string.
 func (u *User) GetUserToken() string {
 	u.mu.RLock()
