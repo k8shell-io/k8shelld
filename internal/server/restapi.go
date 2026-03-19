@@ -29,7 +29,7 @@ const API_VERSION = "v1"
 
 type RESTService struct {
 	unixSocketPath string
-	user           models.User
+	user           *models.User
 	logger         *zerolog.Logger
 	server         *Server
 }
@@ -55,7 +55,7 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 }
 
 // NewRESTAPI creates a new REST API service
-func NewRESTService(unixSocketPath string, user models.User, server *Server) (*RESTService, error) {
+func NewRESTService(unixSocketPath string, user *models.User, server *Server) (*RESTService, error) {
 	logger := logger.NewLogger("api")
 
 	return &RESTService{
@@ -146,7 +146,7 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.logger.Debug().Msgf("Fetching last %d sessions for workspace %s", n, a.server.workspace)
-	sessions, err := a.server.apiClientx.ListUserSessions(r.Context(), a.user.Username,
+	sessions, err := a.server.apiClientx.ListUserSessions(r.Context(), a.user.GetUsername(),
 		a.server.workspace, n, 0, true)
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot retrieve workspace sessions: %v", err)
@@ -195,9 +195,9 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.logger.Debug().Msgf("Fetching %s credentials for address %s and user %s", credsType,
-		address, a.user.Username)
+		address, a.user.GetUsername())
 
-	creds, err := a.server.apiClientx.GetUserCredentials(r.Context(), a.user.Username)
+	creds, err := a.server.apiClientx.GetUserCredentials(r.Context(), a.user.GetUsername())
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot retrieve user credentials: %v", err)
 		http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
@@ -382,7 +382,7 @@ func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Reques
 		}
 
 		if compose {
-			_, err := a.server.apiClientx.ComposeBlueprint(r.Context(), a.user.Username, &k8shellFile)
+			_, err := a.server.apiClientx.ComposeBlueprint(r.Context(), a.user.GetUsername(), &k8shellFile)
 			if err != nil {
 				response.Status = "invalid"
 				response.Errors = []string{fmt.Sprintf("Failed to compose final blueprint: %v", err)}
@@ -589,7 +589,7 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 		}
 
 		if !a.server.testMode {
-			err = os.Chown(a.unixSocketPath, int(a.user.Uid), int(a.user.Gid))
+			err = os.Chown(a.unixSocketPath, int(a.user.UID), int(a.user.GID))
 			if err != nil {
 				a.logger.Error().Msgf("Error changing ownership of Unix socket: %v", err)
 				unixListener.Close()

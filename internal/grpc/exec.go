@@ -98,6 +98,12 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 		return status.Errorf(codes.InvalidArgument, "invalid command request: %v", req)
 	}
 
+	shellUser, resolveErr := s.grpcApi.resolveShellUser(cmdReq.CommandDetails.User, s.grpcApi.user)
+	if resolveErr != nil {
+		s.logger.Error().Msgf("Exec session %s: error resolving user: %v", execId, resolveErr)
+		return resolveErr
+	}
+
 	args, err := parseCommand(cmdReq.CommandDetails.Command)
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "failed to parse command: %v", err)
@@ -110,7 +116,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	newEnv := []string{}
 	for _, e := range os.Environ() {
 		if strings.HasPrefix(e, "HOME=") {
-			newEnv = append(newEnv, fmt.Sprintf("HOME=%s", s.grpcApi.Config.User.HomeDir))
+			newEnv = append(newEnv, fmt.Sprintf("HOME=%s", shellUser.HomeDir))
 			continue
 		}
 		newEnv = append(newEnv, e)
@@ -135,12 +141,12 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	}
 
 	cmd.Env = newEnv
-	cmd.Dir = s.grpcApi.Config.User.HomeDir
+	cmd.Dir = shellUser.HomeDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid: s.grpcApi.Config.User.Uid,
-			Gid: s.grpcApi.Config.User.Gid,
+			Uid: shellUser.UID,
+			Gid: shellUser.GID,
 		},
 	}
 

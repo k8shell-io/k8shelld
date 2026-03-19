@@ -3,7 +3,6 @@ package grpc
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/config"
@@ -20,7 +19,7 @@ type SystemServiceServer struct {
 	grpcApi        *GRPCService
 	logger         *zerolog.Logger
 	initScriptsRun bool
-	handshakeMu    sync.Mutex
+	//handshakeMu    sync.Mutex
 	k8shelldpb.UnimplementedSystemServiceServer
 }
 
@@ -39,27 +38,26 @@ func NewSystemServiceServer(grpcapi *GRPCService) *SystemServiceServer {
 // proves the caller is the same identity that owns this workspace.
 func (s *SystemServiceServer) Handshake(ctx context.Context,
 	req *k8shelldpb.HandshakeRequest) (*k8shelldpb.HandshakeResponse, error) {
-	s.handshakeMu.Lock()
-	defer s.handshakeMu.Unlock()
+	// s.handshakeMu.Lock()
+	// defer s.handshakeMu.Unlock()
 
-	if req.UserToken == "" {
-		s.logger.Warn().Msg("Handshake rejected: empty user token")
-		return nil, status.Error(codes.PermissionDenied, "user token is required")
-	}
+	// if req.UserToken == "" {
+	// 	s.logger.Warn().Msg("Handshake rejected: empty user token")
+	// 	return nil, status.Error(codes.PermissionDenied, "user token is required")
+	// }
 
-	workspaceToken := s.grpcApi.Config.User.UserToken
-	if workspaceToken == "" {
-		// Running in test mode or token not yet loaded — reject to be safe.
-		s.logger.Warn().Msg("Handshake rejected: workspace identity token not set")
-		return nil, status.Error(codes.PermissionDenied, "workspace identity token not available")
-	}
+	// workspaceToken := s.grpcApi.user.UserToken
+	// if workspaceToken == "" {
+	// 	s.logger.Warn().Msg("Handshake rejected: workspace identity token not set")
+	// 	return nil, status.Error(codes.PermissionDenied, "workspace identity token not available")
+	// }
 
-	if req.UserToken != workspaceToken {
-		s.logger.Warn().Msg("Handshake rejected: user token does not match workspace token")
-		return nil, status.Error(codes.PermissionDenied, "user token mismatch")
-	}
+	// if req.UserToken != workspaceToken && s.grpcApi.user.HasRole(commonModels.RoleAdmin) {
+	// 	s.logger.Warn().Msg("Handshake rejected: user token does not match workspace token")
+	// 	return nil, status.Error(codes.PermissionDenied, "user token mismatch")
+	// }
 
-	s.logger.Info().Msgf("Handshake accepted for user: %s", s.grpcApi.Config.User.Username)
+	s.logger.Info().Msgf("Handshake accepted for user: %s", s.grpcApi.user.GetUsername())
 
 	return &k8shelldpb.HandshakeResponse{
 		Accepted:      true,

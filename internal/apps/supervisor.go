@@ -124,9 +124,9 @@ func (s *AppSupervisor) supervise() {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setsid: true,
 				Credential: &syscall.Credential{
-					Uid:    s.manager.user.Uid,
-					Gid:    s.manager.user.Gid,
-					Groups: system.GetSupplementalGroups(s.manager.user.Username),
+					Uid:    s.manager.user.UID,
+					Gid:    s.manager.user.GID,
+					Groups: system.GetSupplementalGroups(s.manager.user.GetUsername()),
 				},
 			}
 		}

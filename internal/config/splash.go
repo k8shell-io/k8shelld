@@ -6,6 +6,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/k8shell-io/k8shelld/internal/models"
 )
 
 // SplashVars holds all values that can be referenced inside the splash template.
@@ -71,7 +73,7 @@ func ExpandSplash(splash, shellUsername string) string {
 
 // ExpandSplashWithConfig is a convenience wrapper that also fills Username from
 // the Config and accepts the active shell username separately.
-func (c *Config) ExpandSplash(shellUsername string) string {
+func (c *Config) ExpandSplash(user *models.User, shellUsername string) string {
 	if c.Splash == "" {
 		return ""
 	}
@@ -81,7 +83,7 @@ func (c *Config) ExpandSplash(shellUsername string) string {
 	vars := SplashVars{
 		Version:       K8SHELLD_VERSION,
 		Commit:        K8SHELLD_COMMIT,
-		Username:      c.User.Username,
+		Username:      user.GetUsername(),
 		ShellUsername: shellUsername,
 		Hostname:      hostname,
 		Date:          time.Now().Format("2006-01-02"),

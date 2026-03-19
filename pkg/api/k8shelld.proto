@@ -181,6 +181,7 @@ message CommandDetails {
   string command = 1;       // Initial command with arguments
   string shell_binary = 2;  // Optional shell binary to use (e.g., "/bin/sh"), empty for none
   repeated string env_vars = 3;   // Environment variables to be set for the command
+  string user = 4;                     // User to run the executable as, empty for default user
 }
 
 // *** UnixSocketService

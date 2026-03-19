@@ -27,7 +27,7 @@ import (
 // SessionData stores the data of a shell session.
 type SessionData struct {
 	Id       string
-	user     models.User
+	user     models.ShellUser
 	CmdShell string
 	Cmd      *exec.Cmd
 	Ptmx     *os.File
@@ -97,7 +97,7 @@ func (s *ShellServiceServer) GetSessionID(ctx context.Context) (string, error) {
 	return data[0], nil
 }
 
-// Get the port-forward data from the store. It uses the port-forward ID retrieved from the metadata
+// Get the session data from the store. It uses the session ID retrieved from the metadata
 func (s *ShellServiceServer) GetSessionData(ctx context.Context) (*SessionData, error) {
 	sid, err := s.GetSessionID(ctx)
 	if err != nil {
@@ -128,7 +128,7 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 		return status.Errorf(codes.InvalidArgument, "invalid shell request: %v", req)
 	}
 
-	shellUser, resolveErr := s.resolveShellUser(sessionId, req.GetStartRequest().User)
+	shellUser, resolveErr := s.grpcApi.resolveShellUser(req.GetStartRequest().User, s.grpcApi.user)
 	if resolveErr != nil {
 		s.logger.Error().Msgf("Shell session %s: error resolving user: %v", sessionId, resolveErr)
 		return resolveErr
@@ -159,8 +159,8 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 	session.Cmd = exec.Command(shell)
 	session.Cmd.Args[0] = "-" + session.Cmd.Args[0] // make the shell a login shell
 
-	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars, session.user.GetHomeDir())
-	session.Cmd.Dir = session.user.GetHomeDir()
+	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars, session.user.HomeDir)
+	session.Cmd.Dir = session.user.HomeDir
 
 	s.logger.Debug().Msgf("env: %v", session.Cmd.Env)
 
@@ -168,8 +168,8 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 	session.Cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid:    session.user.Uid,
-			Gid:    session.user.Gid,
+			Uid:    session.user.UID,
+			Gid:    session.user.GID,
 			Groups: system.GetSupplementalGroups(session.user.Username),
 		},
 	}
@@ -215,38 +215,6 @@ func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
 	}
 }
 
-// resolveShellUser determines which OS user the shell session should run as.
-// Priority: explicit "root" (requires sudo) > named user lookup > default user.
-func (s *ShellServiceServer) resolveShellUser(sessionId, reqUser string) (models.User, error) {
-	if reqUser == "root" {
-		if s.grpcApi.Config.User.Sudo {
-			s.logger.Info().Msgf("Running shell session %s as root", sessionId)
-			return models.User{Username: "root", Uid: 0, Gid: 0, HomeDir: "/root"}, nil
-		}
-		return models.User{}, fmt.Errorf("user %s does not have sudo privileges", s.grpcApi.Config.User.Username)
-	}
-
-	if reqUser != "" && reqUser != s.grpcApi.Config.User.Username {
-		u := system.UserExists(reqUser)
-		if u == nil {
-			return models.User{}, fmt.Errorf("requested user %s not found", reqUser)
-		}
-		uid, err := utils.ParseUint32(u.Uid)
-		if err != nil {
-			return models.User{}, fmt.Errorf("failed to parse UID for user %s: %v", u.Username, err)
-		}
-		gid, err := utils.ParseUint32(u.Gid)
-		if err != nil {
-			return models.User{}, fmt.Errorf("failed to parse GID for user %s: %v", u.Username, err)
-		}
-		s.logger.Info().Msgf("Running shell session %s as user %s", sessionId, u.Username)
-		return models.User{Username: u.Username, Uid: uid, Gid: gid, HomeDir: u.HomeDir}, nil
-	}
-
-	s.logger.Info().Msgf("Running shell session %s as user %s", sessionId, s.grpcApi.Config.User.Username)
-	return s.grpcApi.Config.User, nil
-}
-
 // handlePtySession handles a shell session with PTY. It creates the PTY session, sets the width and height
 // of the terminal, reads data from the PTY and sends the data back to the client and vice versa.
 func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *SessionData,
@@ -279,7 +247,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 	if s.grpcApi.Config.Splash != "" {
 		_ = stream.Send(&k8shelldpb.ShellResponse{
 			Response: &k8shelldpb.ShellResponse_Data{
-				Data: []byte("\n\r" + s.grpcApi.Config.ExpandSplash(session.user.Username) + "\n\r"),
+				Data: []byte("\n\r" + s.grpcApi.Config.ExpandSplash(s.grpcApi.user, session.user.Username) + "\n\r"),
 			},
 		})
 	}

@@ -102,8 +102,14 @@ func (c *K8shelld) GetSystemInfo(ctx context.Context) (*SystemInfo, error) {
 // RunShell creates a PTY shell session over gRPC and bridges it with the BufferedReadWriter.
 func (c *K8shelld) RunShell(ctx context.Context, rw BufferedReadWriter, sessionId string, envVars []string,
 	width, height uint32, usePty bool, user string) error {
+	token, ok := ctx.Value("token").(string)
+	if !ok {
+		return fmt.Errorf("missing token in context")
+	}
+
 	md := metadata.Pairs(
 		"session-id", sessionId,
+		"token", token,
 	)
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
@@ -220,8 +226,15 @@ func (c *K8shelld) ResizeTerminal(ctx context.Context, sessionId string, width, 
 // RunUnixSocket creates a Unix socket connection over gRPC and bridges it with the RW channel.
 func (c *K8shelld) RunUnixSocket(ctx context.Context, upstream BufferedReadWriter, unixSocketId,
 	socketPath string, mode string) error {
+
+	token, ok := ctx.Value("token").(string)
+	if !ok {
+		return fmt.Errorf("missing token in context")
+	}
+
 	md := metadata.Pairs(
 		"unixsocket-id", unixSocketId,
+		"token", token,
 	)
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
@@ -339,8 +352,14 @@ func (c *K8shelld) RunPortForward(ctx context.Context, upstream BufferedReadWrit
 		destinationIP = "localhost"
 	}
 
+	token, ok := ctx.Value("token").(string)
+	if !ok {
+		return fmt.Errorf("missing token in context")
+	}
+
 	md := metadata.Pairs(
 		"portforward-id", portForwardID,
+		"token", token,
 	)
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
@@ -430,7 +449,12 @@ func (c *K8shelld) RunPortForward(ctx context.Context, upstream BufferedReadWrit
 func (c *K8shelld) RunExec(ctx context.Context, upstream BufferedReadWriter, execID string,
 	command string, shellBinary string, envVars []string, signalChan <-chan string) (int32, error) {
 
-	md := metadata.Pairs("exec-id", execID)
+	token, ok := ctx.Value("token").(string)
+	if !ok {
+		return 1, fmt.Errorf("missing token in context")
+	}
+
+	md := metadata.Pairs("exec-id", execID, "token", token)
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
 	ctx, cancel := context.WithCancel(ctx)

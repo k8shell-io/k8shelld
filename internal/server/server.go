@@ -31,6 +31,7 @@ const (
 type Server struct {
 	logger      *zerolog.Logger
 	testMode    bool
+	user        *models.User
 	config      *config.Config
 	workspace   string
 	restService *RESTService
@@ -41,16 +42,32 @@ type Server struct {
 	sysInfo     *system.SystemInfo
 	appManager  *apps.AppManager
 	jwtVerifier *authz.JWTVerifier
+	tokenMu     sync.Mutex
 }
 
-func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool, jwtVerifier *authz.JWTVerifier) (*Server, error) {
+func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
 
 	var apiClient *client.Client
 	if cfg.System.ApiServer.Enabled {
 		if cfg.System.ApiServer.Address == "" {
 			return nil, fmt.Errorf("api server is enabled but address is empty")
 		}
-		apiClient = client.NewClient(cfg.System.ApiServer.Address, cfg.User.UserToken)
+		apiClient = client.NewClient(cfg.System.ApiServer.Address, "")
+	}
+
+	var jwtVerifier *authz.JWTVerifier
+	var err error
+	if !testMode {
+		if cfg.Identity.TokenPath == "" || cfg.Identity.PublicKeyPath == "" || cfg.Identity.SigningMethod == "" {
+			return nil, fmt.Errorf("identity config is incomplete: tokenPath, publicKeyPath and signingMethod are all required")
+		}
+		jwtVerifier, err = authz.NewJWTVerifier(authz.JWTVerifierConfig{
+			SigningMethod: cfg.Identity.SigningMethod,
+			PublicKeyFile: cfg.Identity.PublicKeyPath,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create JWT verifier: %w", err)
+		}
 	}
 
 	s := &Server{
@@ -61,9 +78,9 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool, 
 		sysInfo:     system.NewSystemInfo(cfg),
 		apiClientx:  apiClient,
 		jwtVerifier: jwtVerifier,
+		tokenMu:     sync.Mutex{},
 	}
 
-	var err error
 	s.workspace = os.Getenv("WORKSPACE")
 	if s.workspace == "" {
 		return nil, fmt.Errorf("cannot get the workspace name from WORKSPACE environment variable")
@@ -77,19 +94,19 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool, 
 	}
 
 	if cfg.EnableApps {
-		s.appManager, err = apps.NewAppManager(cfg.Apps, cfg.User, s.procWatcher, s.testMode)
+		s.appManager, err = apps.NewAppManager(cfg.Apps, s.user, s.procWatcher, s.testMode)
 		if err != nil {
 			return nil, fmt.Errorf("error creating App Manager: %v", err)
 		}
 	}
 
-	s.grpcService, err = grpc.NewGRPCService(cfg, cfg.PortForwardingRules,
+	s.grpcService, err = grpc.NewGRPCService(cfg, s.user, s.jwtVerifier, cfg.PortForwardingRules,
 		s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
 
-	s.restService, err = NewRESTService(restApiUnixSocketPath, cfg.User, s)
+	s.restService, err = NewRESTService(restApiUnixSocketPath, s.user, s)
 	if err != nil {
 		return nil, fmt.Errorf("error creating REST API: %v", err)
 	}
@@ -110,12 +127,17 @@ func (s *Server) initialize() error {
 		return nil
 	}
 
-	err := exec.Command("kbox", "tools-init").Run()
+	err := s.loadIdentity()
+	if err != nil {
+		return fmt.Errorf("error loading identity: %v", err)
+	}
+
+	err = exec.Command("kbox", "tools-init").Run()
 	if err != nil {
 		s.logger.Error().Msgf("Error running kbox tools-init: %v", err)
 	}
 
-	if err := system.CreateUser(s.config.User); err != nil {
+	if err := system.CreateUser(s.user); err != nil {
 		s.logger.Fatal().Msgf("Error creating user: %v", err)
 	}
 
@@ -132,7 +154,7 @@ func (s *Server) initialize() error {
 		}
 	}
 
-	err = s.runInitScripts(s.config.InitScriptsDir, s.config.User, func() {
+	err = s.runInitScripts(s.config.InitScriptsDir, s.user, func() {
 		s.logger.Info().Msg("Init scripts finished, running auto-start apps")
 
 		appMgr := s.appManager
@@ -215,16 +237,12 @@ func (s *Server) Serve() {
 		}()
 	}
 
-	// shutdownReason receives a descriptive message from either the OS signal
-	// handler or the identity token watcher, whichever triggers first.
 	shutdownReason := make(chan string, 1)
-
-	// Identity token watcher – only active when a verifier was provided.
 	if s.jwtVerifier != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.watchIdentityToken(ctx, shutdownReason)
+			s.watchIdentity(ctx, shutdownReason)
 		}()
 	}
 
@@ -255,7 +273,7 @@ func (s *Server) Serve() {
 // RunInitScripts runs the initialization scripts
 func (s *Server) runInitScripts(
 	scriptsDir string,
-	user models.User,
+	user *models.User,
 	onComplete func(),
 ) error {
 
@@ -311,15 +329,15 @@ func (s *Server) runScriptHelper(scriptsDir, scriptPath string, flagDir string, 
 // runScript executes a script
 func (s *Server) runScript(scriptsDir, scriptName, flagFile string, envVars []string) error {
 	cmd := exec.Command("/bin/bash", "-l", "-c", fmt.Sprintf("%s/%s", scriptsDir, scriptName))
-	cmd.Env = system.CreateEnvVars(envVars, s.config.User.GetHomeDir())
-	cmd.Dir = s.config.User.GetHomeDir()
+	cmd.Env = system.CreateEnvVars(envVars, s.user.GetHomeDir())
+	cmd.Dir = s.user.GetHomeDir()
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid:    s.config.User.Uid,
-			Gid:    s.config.User.Gid,
-			Groups: system.GetSupplementalGroups(s.config.User.Username),
+			Uid:    s.user.UID,
+			Gid:    s.user.GID,
+			Groups: system.GetSupplementalGroups(s.user.GetUsername()),
 		},
 	}
 

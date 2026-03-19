@@ -128,8 +128,6 @@ func LoadConfig(configPath string) (*config.Config, error) {
 		return nil, fmt.Errorf("failed to set log level: %v", err)
 	}
 
-	cfg.User.HomeDir = fmt.Sprintf("/home/%s", cfg.User.Username)
-
 	for _, rule := range cfg.PortForwarding {
 		parsedRule, err := config.ParsePortForwardingRule(rule)
 		if err != nil {

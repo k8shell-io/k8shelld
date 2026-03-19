@@ -119,7 +119,7 @@ func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string
 		return status.Errorf(codes.Internal, "failed to create Unix socket listener: %v", err)
 	}
 
-	if err := os.Chown(unixsocket.socketPath, int(s.grpcApi.Config.User.Uid), int(s.grpcApi.Config.User.Gid)); err != nil {
+	if err := os.Chown(unixsocket.socketPath, int(s.grpcApi.user.UID), int(s.grpcApi.user.GID)); err != nil {
 		return status.Errorf(codes.Internal, "failed to chown socket: %v", err)
 	}
 	if err := os.Chmod(unixsocket.socketPath, 0700); err != nil {

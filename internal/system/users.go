@@ -65,33 +65,32 @@ func runCommand(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 }
 
 // CreateUser creates the user in the system.
-func CreateUser(user models.User) error {
+func CreateUser(user *models.User) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	log := logger.NewLogger("user-management")
 	log.Info().Msgf("Main user: username=%s, uid=%d, gid=%d, home=%s, shell=%s, sudo=%t, groups=%v",
-		user.Username, user.Uid, user.Gid, user.GetHomeDir(), user.GetShell(), user.Sudo, user.GetGroups())
+		user.GetUsername(), user.UID, user.GID, user.GetHomeDir(), user.GetShell(), user.SudoEnabled(), user.GetGroups())
 
 	provider := getProvider()
 
 	// Check if the main group exists, and create it if it doesn't
-	if exists, err := groupExists(strconv.Itoa(int(user.Gid))); err != nil {
+	if exists, err := groupExists(strconv.Itoa(int(user.GID))); err != nil {
 		return fmt.Errorf("failed to check main group: %v", err)
 	} else if !exists {
-		if err := provider.addGroup(ctx, user.Username, int(user.Gid)); err != nil {
+		if err := provider.addGroup(ctx, user.GetUsername(), int(user.GID)); err != nil {
 			return fmt.Errorf("failed to add the user main group: %v", err)
 		}
-		log.Info().Msgf("Main group created: %s (%d)", user.Username, user.Gid)
+		log.Info().Msgf("Main group created: %s (%d)", user.GetUsername(), user.GID)
 	}
 
 	// Check if the user exists, and create it if it doesn't
-	if u := UserExists(strconv.Itoa(int(user.Uid))); u == nil {
-		if err := provider.addUser(ctx, user.Username, int(user.Uid), int(user.Gid),
-			user.GetHomeDir(), user.GetShell()); err != nil {
+	if u := UserExists(strconv.Itoa(int(user.UID))); u == nil {
+		if err := provider.addUser(ctx, user.GetUsername(), int(user.UID), int(user.GID), user.GetHomeDir(), user.GetShell()); err != nil {
 			return fmt.Errorf("failed to add user: %v", err)
 		}
-		log.Info().Msgf("Main user created: %s (%d)", user.Username, user.Uid)
+		log.Info().Msgf("Main user created: %s (%d)", user.GetUsername(), user.UID)
 	}
 
 	// Add the user to the specified groups
@@ -115,21 +114,21 @@ func CreateUser(user models.User) error {
 					group.Gid, actual)
 			}
 		}
-		if err := provider.addUserToGroup(ctx, user.Username, resolvedName, int(group.Gid)); err != nil {
-			return fmt.Errorf("failed to add user %s to group %v: %v", user.Username, group, err)
+		if err := provider.addUserToGroup(ctx, user.GetUsername(), resolvedName, int(group.Gid)); err != nil {
+			return fmt.Errorf("failed to add user %s to group %v: %v", user.GetUsername(), group, err)
 		}
-		log.Debug().Msgf("User %s added to group %v", user.Username, group)
+		log.Debug().Msgf("User %s added to group %v", user.GetUsername(), group)
 	}
 
 	// Copy skeleton files to the main user's home directory
-	if err := copySkeletonFiles(ctx, int(user.Uid), int(user.Gid), user.GetHomeDir()); err != nil {
+	if err := copySkeletonFiles(ctx, int(user.UID), int(user.GID), user.GetHomeDir()); err != nil {
 		return fmt.Errorf("failed to copy skeleton files: %v", err)
 	}
 
 	// Enable passwordless sudo for the main user
-	if user.Sudo {
-		if err := enablePasswordlessSudo(ctx, user.Username); err != nil {
-			log.Error().Msgf("Failed to enable passwordless sudo for user %s: %v", user.Username, err)
+	if user.SudoEnabled() {
+		if err := enablePasswordlessSudo(ctx, user.GetUsername()); err != nil {
+			log.Error().Msgf("Failed to enable passwordless sudo for user %s: %v", user.GetUsername(), err)
 		}
 	}
 
@@ -195,6 +194,7 @@ func enablePasswordlessSudo(ctx context.Context, username string) error {
 	if err := os.WriteFile(tmpFile, []byte(content), 0440); err != nil {
 		return fmt.Errorf("failed to write sudoers temp file for %s: %v", username, err)
 	}
+
 	// Validate with visudo when available; skip on minimal images (e.g. Alpine)
 	// that may not have it installed.
 	if visudoPath, err := exec.LookPath("visudo"); err == nil {

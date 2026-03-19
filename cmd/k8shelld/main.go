@@ -57,22 +57,12 @@ func main() {
 		cfg.System.GrpcConfig.KeyFile = opts.KeyFile
 	}
 
-	jwtVerifier, err := applyIdentityToConfig(cfg, opts.Test)
-	if err != nil {
-		logger.Fatal().Msgf("Error loading identity: %v", err)
-	}
-	if !opts.Test {
-		logger.Info().Msgf("Identity token verified for user: %s (uid=%d gid=%d)",
-			cfg.User.Username, cfg.User.Uid, cfg.User.Gid)
-	}
-
-	server, err := server.NewServer(cfg, opts.UnixSocketPath, opts.Test, jwtVerifier)
+	server, err := server.NewServer(cfg, opts.UnixSocketPath, opts.Test)
 	if err != nil {
 		logger.Fatal().Msgf("Error creating server: %v", err)
 	}
 
 	logger.Info().Msg("Starting k8shelld server...")
-
 	server.Serve()
 	logger.Info().Msg("Exiting k8shelld")
 }

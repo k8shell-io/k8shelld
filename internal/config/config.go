@@ -47,7 +47,6 @@ type Identity struct {
 type Config struct {
 	System              System               `yaml:"system"`
 	Identity            Identity             `yaml:"identity"`
-	User                models.User          `yaml:"-"`
 	Splash              string               `yaml:"splash"`
 	Env                 Env                  `yaml:"env"`
 	PortForwarding      []string             `yaml:"portForwarding"`

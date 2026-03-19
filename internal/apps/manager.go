@@ -35,7 +35,7 @@ var ErrAppInvalidState = fmt.Errorf("not a valid app state")
 // AppManager manages the lifecycle of applications defined in the configuration
 type AppManager struct {
 	apps        *config.Apps
-	user        models.User
+	user        *models.User
 	stateDir    string
 	logger      *zerolog.Logger
 	mu          sync.Mutex
@@ -46,7 +46,7 @@ type AppManager struct {
 }
 
 // NewAppManager creates a new AppManager instance
-func NewAppManager(apps *config.Apps, user models.User, procWatcher *system.ProcessWatcher,
+func NewAppManager(apps *config.Apps, user *models.User, procWatcher *system.ProcessWatcher,
 	testMode bool) (*AppManager, error) {
 	log := logger.NewLogger("app-manager")
 
@@ -125,7 +125,7 @@ func (m *AppManager) isAppInstalled(name string) (bool, error) {
 		return false, err
 	}
 
-	env := system.CreateEnvVars([]string{}, m.user.HomeDir)
+	env := system.CreateEnvVars([]string{}, m.user.GetHomeDir())
 	binaryPath := expandEnv(app.Binary, env)
 	if binaryPath == "" {
 		return false, fmt.Errorf("app binary not specified")
@@ -152,7 +152,7 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 		return "", fmt.Errorf("version command or version regex not configured for app %s", name)
 	}
 
-	env := system.CreateEnvVars([]string{}, m.user.HomeDir)
+	env := system.CreateEnvVars([]string{}, m.user.GetHomeDir())
 	versionCmd := expandEnvSlice(app.VersionCmd, env)
 
 	cmd := exec.CommandContext(ctx, versionCmd[0], versionCmd[1:]...)
@@ -164,16 +164,16 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 			Pdeathsig: 0,
 		}
 	} else {
-		cmd.Env = system.CreateEnvVars([]string{}, m.user.HomeDir)
-		cmd.Dir = m.user.HomeDir
+		cmd.Env = system.CreateEnvVars([]string{}, m.user.GetHomeDir())
+		cmd.Dir = m.user.GetHomeDir()
 		if !m.testMode {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setsid:    true,
 				Pdeathsig: 0,
 				Credential: &syscall.Credential{
-					Uid:    m.user.Uid,
-					Gid:    m.user.Gid,
-					Groups: system.GetSupplementalGroups(m.user.Username),
+					Uid:    m.user.UID,
+					Gid:    m.user.GID,
+					Groups: system.GetSupplementalGroups(m.user.GetUsername()),
 				},
 			}
 		}
@@ -396,9 +396,9 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setsid: true,
 				Credential: &syscall.Credential{
-					Uid:    m.user.Uid,
-					Gid:    m.user.Gid,
-					Groups: system.GetSupplementalGroups(m.user.Username),
+					Uid:    m.user.UID,
+					Gid:    m.user.GID,
+					Groups: system.GetSupplementalGroups(m.user.GetUsername()),
 				},
 			}
 		}
