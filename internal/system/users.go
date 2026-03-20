@@ -246,6 +246,41 @@ func GetUserLoginShell(username string) (string, error) {
 	return "", fmt.Errorf("user %s not found", username)
 }
 
+// ApplyShell updates the login shell for the given user in /etc/passwd.
+// It performs an atomic write so the file is never left in a partial state.
+func ApplyShell(username, shell string) error {
+	const passwdPath = "/etc/passwd"
+	data, err := os.ReadFile(passwdPath)
+	if err != nil {
+		return fmt.Errorf("failed to read /etc/passwd: %v", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	found := false
+	for i, line := range lines {
+		fields := strings.Split(line, ":")
+		if len(fields) >= 7 && fields[0] == username {
+			fields[6] = shell
+			lines[i] = strings.Join(fields, ":")
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("user %s not found in /etc/passwd", username)
+	}
+
+	tmpPath := passwdPath + ".tmp"
+	if err := os.WriteFile(tmpPath, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+		return fmt.Errorf("failed to write temporary /etc/passwd: %v", err)
+	}
+	if err := os.Rename(tmpPath, passwdPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("failed to replace /etc/passwd: %v", err)
+	}
+	return nil
+}
+
 // copySkeletonFiles copies the skeleton files to the main user's home directory.
 func copySkeletonFiles(ctx context.Context, uid, gid int, homeDir string) error {
 	if _, err := os.Stat(homeDir); os.IsNotExist(err) {
