@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/models"
+	"github.com/k8shell-io/k8shelld/internal/system"
 )
 
 const identityRefreshInterval = 15 * time.Second
@@ -81,12 +82,25 @@ func (s *Server) refreshIdentity() string {
 		return ""
 	}
 
+	oldSudo := s.user.SudoEnabled()
+
 	updated, err := s.user.Update(token, tokenStr)
 	if err != nil {
 		return fmt.Sprintf("failed to update user information from new token: %v", err)
 	}
 	if updated {
 		s.logger.Info().Msg("Identity token has been refreshed, will expire at: " + token.ExpiresAt.Time.UTC().Format(time.RFC3339))
+		if token.Sudo != oldSudo {
+			if err := system.ApplySudo(s.user.GetUsername(), token.Sudo); err != nil {
+				s.logger.Error().Msgf("Failed to apply sudo change for user %s: %v", s.user.GetUsername(), err)
+			} else {
+				action := "disabled"
+				if token.Sudo {
+					action = "enabled"
+				}
+				s.logger.Info().Msgf("Sudo %s for user %s", action, s.user.GetUsername())
+			}
+		}
 	}
 
 	return ""

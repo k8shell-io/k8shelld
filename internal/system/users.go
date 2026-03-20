@@ -187,6 +187,26 @@ func groupNameByGID(gid int) (string, error) {
 	return "", fmt.Errorf("group with GID %d not found in %s", gid, groupFilePath)
 }
 
+// disablePasswordlessSudo removes the passwordless sudo configuration for the given user.
+func disablePasswordlessSudo(username string) error {
+	sudoersFile := filepath.Join("/etc/sudoers.d", username)
+	if err := os.Remove(sudoersFile); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove sudoers file for %s: %v", username, err)
+	}
+	return nil
+}
+
+// ApplySudo enables or revokes passwordless sudo for the given user.
+// It is safe to call this function at any time, including when the sudo state has not changed.
+func ApplySudo(username string, enable bool) error {
+	if enable {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return enablePasswordlessSudo(ctx, username)
+	}
+	return disablePasswordlessSudo(username)
+}
+
 // enablePasswordlessSudo enables passwordless sudo for the given user.
 func enablePasswordlessSudo(ctx context.Context, username string) error {
 	sudoersFile := filepath.Join("/etc/sudoers.d", username)
