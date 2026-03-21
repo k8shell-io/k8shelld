@@ -159,7 +159,8 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 	session.Cmd = exec.Command(shell)
 	session.Cmd.Args[0] = "-" + session.Cmd.Args[0] // make the shell a login shell
 
-	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars, session.user.HomeDir)
+	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars,
+		session.user.HomeDir)
 	session.Cmd.Dir = session.user.HomeDir
 
 	s.logger.Debug().Msgf("env: %v", session.Cmd.Env)
@@ -182,11 +183,13 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 		s.logger.Info().Msgf("Shell session %s ended", sessionId)
 	}()
 
-	s.logger.Info().Msgf("Starting shell session %s, pty=%v", sessionId, shellReq.StartRequest.UsePty)
+	s.logger.Info().Msgf("Starting shell session %s, pty=%v",
+		sessionId, shellReq.StartRequest.UsePty)
 
 	// Start the shell
 	if shellReq.StartRequest.UsePty {
-		err = s.handlePtySession(s.logger, session, stream, shellReq.StartRequest.Width, shellReq.StartRequest.Height)
+		err = s.handlePtySession(s.logger, session, stream, shellReq.StartRequest.Width,
+			shellReq.StartRequest.Height)
 		if err != nil {
 			return fmt.Errorf("error handling PTY session: %v", err)
 		}
@@ -220,24 +223,43 @@ func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
 func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *SessionData,
 	stream k8shelldpb.ShellService_ShellServer, width uint32, height uint32) error {
 
-	var err error
-	session.Ptmx, err = pty.Start(session.Cmd)
+	ptmx, tty, err := pty.Open()
 	if err != nil {
-		return fmt.Errorf("error starting the shell with PTY: %v", err)
+		return fmt.Errorf("error opening PTY: %v", err)
 	}
+	ttyName := tty.Name()
+
+	session.Cmd.Stdin = tty
+	session.Cmd.Stdout = tty
+	session.Cmd.Stderr = tty
+	session.Cmd.SysProcAttr.Setctty = true
+	session.Cmd.SysProcAttr.Ctty = int(tty.Fd())
+
+	if err = session.Cmd.Start(); err != nil {
+		_ = ptmx.Close()
+		_ = tty.Close()
+		return fmt.Errorf("error starting shell with PTY: %v", err)
+	}
+	_ = tty.Close()
+	session.Ptmx = ptmx
 
 	s.grpcApi.procWatcher.AddPIDIgnoreTerminate(session.Cmd.Process.Pid)
 	session.Pid = session.Cmd.Process.Pid
 
 	if width > 0 && height > 0 {
-		err = pty.Setsize(session.Ptmx, &pty.Winsize{
+		if err = pty.Setsize(session.Ptmx, &pty.Winsize{
 			Rows: utils.ClampUint32ToUint16(height),
 			Cols: utils.ClampUint32ToUint16(width),
-		})
-		if err != nil {
+		}); err != nil {
 			s.logger.Error().Msgf("Failed to set PTY size: %v", err)
 		}
 	}
+
+	_ = stream.Send(&k8shelldpb.ShellResponse{
+		Response: &k8shelldpb.ShellResponse_StartResponse{
+			StartResponse: &k8shelldpb.ShellStartResponse{Pty: ttyName},
+		},
+	})
 
 	ctx := stream.Context()
 	reqCh := make(chan *k8shelldpb.ShellRequest, 8)
@@ -347,6 +369,12 @@ func (s *ShellServiceServer) handleNonPtySession(
 	}
 	s.grpcApi.procWatcher.AddPIDIgnoreTerminate(session.Cmd.Process.Pid)
 	session.Pid = session.Cmd.Process.Pid
+
+	_ = stream.Send(&k8shelldpb.ShellResponse{
+		Response: &k8shelldpb.ShellResponse_StartResponse{
+			StartResponse: &k8shelldpb.ShellStartResponse{},
+		},
+	})
 
 	defer func() {
 		if stdout != nil {

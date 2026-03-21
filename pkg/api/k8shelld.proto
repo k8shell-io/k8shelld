@@ -100,8 +100,9 @@ message ShellRequest {
 // ShellRequest message
 message ShellResponse {
   oneof response {
-    bytes data = 1; // Data to send to the shell
-    bool terminate = 2; // Terminate the shell session
+    ShellStartResponse start_response = 1; // Start shell response
+    bytes data = 2; // Data received from the shell
+    bool terminate = 3; // Terminate the shell session
   }
 }
 
@@ -113,6 +114,11 @@ message ShellStartRequest {
   uint32 width = 4;                 // Terminal width
   uint32 height = 5;                // Terminal height
   string user = 6;                   // User to run the shell as, empty for default user
+}
+
+// ShellStartResponse message
+message ShellStartResponse {
+  string pty = 1; // PTY name if a pseudo-terminal is used, empty otherwise
 }
 
 // ResizeTerminalRequest message
