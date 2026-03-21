@@ -79,7 +79,7 @@ func (s *Server) refreshIdentity() string {
 	if err != nil {
 		//return fmt.Sprintf("identity token is no longer valid: %v", err)
 		s.logger.Error().Err(err).Msg("Identity token is no longer valid")
-		return "Identity token is no longer valid"
+		return ""
 	}
 
 	oldSudo := s.user.SudoEnabled()
