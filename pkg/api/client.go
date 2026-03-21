@@ -110,8 +110,10 @@ func (c *K8shelld) GetSystemInfo(ctx context.Context) (*SystemInfo, error) {
 }
 
 // RunShell creates a PTY shell session over gRPC and bridges it with the BufferedReadWriter.
+// onStart is called once the server sends the ShellStartResponse; it receives the PTY device
+// name (e.g. "/dev/pts/3") or an empty string when no PTY was allocated. onStart may be nil.
 func (c *K8shelld) RunShell(ctx context.Context, rw BufferedReadWriter, sessionId string, envVars []string,
-	width, height uint32, usePty bool, user string) error {
+	width, height uint32, usePty bool, user string, onStart func(ptyName string)) error {
 	token, err := c.tokenRetrieve()
 	if err != nil {
 		return fmt.Errorf("failed to retrieve token: %w", err)
@@ -193,6 +195,10 @@ func (c *K8shelld) RunShell(ctx context.Context, rw BufferedReadWriter, sessionI
 			}
 
 			switch r := resp.Response.(type) {
+			case *pb.ShellResponse_StartResponse:
+				if onStart != nil {
+					onStart(r.StartResponse.GetPty())
+				}
 			case *pb.ShellResponse_Data:
 				if _, werr := rw.Write(r.Data); werr != nil {
 					errCh <- fmt.Errorf("writer write: %w", werr)
