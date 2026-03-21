@@ -233,7 +233,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 	session.Cmd.Stdout = tty
 	session.Cmd.Stderr = tty
 	session.Cmd.SysProcAttr.Setctty = true
-	session.Cmd.SysProcAttr.Ctty = int(tty.Fd())
+	session.Cmd.SysProcAttr.Ctty = 1
 
 	if err = session.Cmd.Start(); err != nil {
 		_ = ptmx.Close()
