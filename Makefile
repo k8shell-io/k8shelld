@@ -79,7 +79,7 @@ prepare-docker:  ##@ Prepare Docker build context
 	@rm -rf docker/k8shelld/files
 	@mkdir -p docker/k8shelld/files
 	@cp -r vendor docker/k8shelld/files/
-	@cp -r go.mod go.sum internal pkg cmd sftp scripts docker/k8shelld/files/
+	@cp -r go.mod go.sum internal cmd sftp scripts docker/k8shelld/files/
 	@echo "Docker context prepared!"
 
 image:  ##@ Build Docker image
