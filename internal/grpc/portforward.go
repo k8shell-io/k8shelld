@@ -14,10 +14,10 @@ import (
 	"net"
 	"time"
 
+	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/utils"
-	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
 	"google.golang.org/grpc/codes"
@@ -29,7 +29,7 @@ import (
 type PortForwardServiceServer struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
-	k8shelldpb.UnimplementedPortForwardServiceServer
+	k8shelldv1.UnimplementedPortForwardServiceServer
 }
 
 // Port-forward data structure
@@ -190,7 +190,7 @@ func (s *PortForwardServiceServer) createTCPConnection(destination string, port 
 // First request must be Destination. Then we stream bytes both ways until
 // client closes, TCP closes, context cancels, or an error occurs.
 func (s *PortForwardServiceServer) PortForward(
-	stream k8shelldpb.PortForwardService_PortForwardServer,
+	stream k8shelldv1.PortForwardService_PortForwardServer,
 ) error {
 	ctx := stream.Context()
 
@@ -203,7 +203,7 @@ func (s *PortForwardServiceServer) PortForward(
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "receive destination: %v", err)
 	}
-	dstReq, ok := first.Request.(*k8shelldpb.PortForwardRequest_Destination)
+	dstReq, ok := first.Request.(*k8shelldv1.PortForwardRequest_Destination)
 	if !ok || dstReq.Destination == nil {
 		return status.Errorf(codes.InvalidArgument, "invalid first request (need Destination)")
 	}
@@ -250,7 +250,7 @@ func (s *PortForwardServiceServer) PortForward(
 				continue
 			}
 
-			if serr := stream.Send(&k8shelldpb.PortForwardResponse{
+			if serr := stream.Send(&k8shelldv1.PortForwardResponse{
 				Data: append([]byte(nil), buf[:n]...),
 			}); serr != nil {
 				recvErrCh <- fmt.Errorf("grpc send: %w", serr)
@@ -269,7 +269,7 @@ func (s *PortForwardServiceServer) PortForward(
 				return
 			}
 			switch r := req.Request.(type) {
-			case *k8shelldpb.PortForwardRequest_Data:
+			case *k8shelldv1.PortForwardRequest_Data:
 				if len(r.Data) == 0 {
 					continue
 				}

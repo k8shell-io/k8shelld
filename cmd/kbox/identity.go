@@ -7,8 +7,8 @@ import (
 	"io"
 	"strings"
 
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	"github.com/k8shell-io/k8shelld/internal/client"
-	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/spf13/cobra"
 )
 
@@ -51,7 +51,7 @@ var IdentityCmd = &cobra.Command{
 			return
 		}
 
-		var data api.IdentityInfo
+		var data k8shelld.IdentityInfo
 		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 			fmt.Printf("Error parsing response: %v\n", err)
 			return

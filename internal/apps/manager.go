@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
-	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -500,11 +500,11 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 }
 
 // ListAppStatus returns app status including port, PID and running time, without internal state.
-func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error) {
+func (m *AppManager) ListAppStatus(ctx context.Context) ([]k8shelld.AppStatus, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var res []api.AppStatus
+	var res []k8shelld.AppStatus
 	if m.apps == nil {
 		return res, nil
 	}
@@ -512,9 +512,9 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 	for name, app := range *m.apps {
 		installing := m.installing[name]
 
-		status := api.AppStatus{
+		status := k8shelld.AppStatus{
 			Name:     name,
-			Status:   api.AppStatusUnknown,
+			Status:   k8shelld.AppStatusUnknown,
 			Version:  "",
 			Port:     app.Listen,
 			Protocol: app.Protocol,
@@ -547,13 +547,13 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 		status.Version = version
 
 		if installing {
-			status.Status = api.AppStatusInstalling
+			status.Status = k8shelld.AppStatusInstalling
 			res = append(res, status)
 			continue
 		}
 
 		if !installed {
-			status.Status = api.AppStatusNotInstalled
+			status.Status = k8shelld.AppStatusNotInstalled
 			res = append(res, status)
 			continue
 		}
@@ -562,30 +562,30 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 			pid, err := system.GetPIDListeningOnPort(app.Listen)
 			if err != nil {
 				m.logger.Warn().Msgf("Could not get PID for app %s, port %d: %v", name, app.Listen, err)
-				status.Status = api.AppStatusNotStarted
+				status.Status = k8shelld.AppStatusNotStarted
 				res = append(res, status)
 				continue
 			}
 
 			if pid != 0 {
-				status.Status = api.AppStatusInvalid
+				status.Status = k8shelld.AppStatusInvalid
 				res = append(res, status)
 				continue
 			}
 
-			status.Status = api.AppStatusNotStarted
+			status.Status = k8shelld.AppStatusNotStarted
 			res = append(res, status)
 			continue
 		}
 
 		if sup.PID() == 0 {
-			status.Status = api.AppStatusPending
+			status.Status = k8shelld.AppStatusPending
 			res = append(res, status)
 			continue
 		}
 
 		status.PID = sup.PID()
-		status.Status = api.AppStatusRunning
+		status.Status = k8shelld.AppStatusRunning
 
 		if dur, err := system.GetProcessRunningTime(status.PID); err == nil {
 			status.Age = formatAge(dur)

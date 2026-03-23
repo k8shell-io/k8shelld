@@ -17,17 +17,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/pkg/api"
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
 )
 
-func GetMountUsages() ([]api.MountUsage, error) {
+func GetMountUsages() ([]k8shelld.MountUsage, error) {
 	entries, err := readMountInfo("/proc/self/mountinfo")
 	if err != nil {
 		return nil, err
 	}
 
 	seen := make(map[string]struct{}, len(entries))
-	out := make([]api.MountUsage, 0, len(entries))
+	out := make([]k8shelld.MountUsage, 0, len(entries))
 
 	for _, e := range entries {
 		mp := e.mountPoint
@@ -64,7 +64,7 @@ func GetMountUsages() ([]api.MountUsage, error) {
 		fs := e.fsType
 		src := e.source
 
-		out = append(out, api.MountUsage{
+		out = append(out, k8shelld.MountUsage{
 			MountPoint:     mp,
 			Source:         src,
 			FSType:         fs,
@@ -157,7 +157,7 @@ func unescapeMountInfoPath(s string) string {
 	return string(b)
 }
 
-func GetDockerUsage(ctx context.Context) (*api.DockerUsage, error) {
+func GetDockerUsage(ctx context.Context) (*k8shelld.DockerUsage, error) {
 	// Avoid importing internal/config here (it imports system -> would cycle).
 	candidates := []string{
 		"/var/run/docker.sock",
@@ -218,7 +218,7 @@ func GetDockerUsage(ctx context.Context) (*api.DockerUsage, error) {
 		return json.NewDecoder(resp.Body).Decode(out)
 	}
 
-	du := &api.DockerUsage{SocketPath: sock}
+	du := &k8shelld.DockerUsage{SocketPath: sock}
 
 	{
 		var inf dockerInfo

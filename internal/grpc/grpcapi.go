@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
 	"github.com/k8shell-io/common/pkg/authz"
 	"github.com/k8shell-io/common/pkg/gapi"
 	"github.com/k8shell-io/k8shelld/internal/apps"
@@ -20,7 +21,6 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/internal/utils"
-	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 
 	apiClient "github.com/k8shell-io/api-server/pkg/client"
 	"github.com/rs/zerolog"
@@ -132,13 +132,13 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 	server.AddInterceptor(a.callerValidationInterceptor())
 
 	if err := server.RegisterService(func(s *grpc.Server) error {
-		k8shelldpb.RegisterSystemServiceServer(s, NewSystemServiceServer(a))
-		k8shelldpb.RegisterShellServiceServer(s, NewShellServiceServer(a))
-		k8shelldpb.RegisterExecServiceServer(s, NewExecServiceServer(a))
-		k8shelldpb.RegisterPortForwardServiceServer(s, NewPortForwardServiceServer(a))
-		k8shelldpb.RegisterUnixSocketServiceServer(s, NewUnixSocketServiceServer(a))
-		k8shelldpb.RegisterAppServiceServer(s, NewAppServiceServer(a.appManager))
-		k8shelldpb.RegisterCommandServiceServer(s, a.CommandService)
+		k8shelldv1.RegisterSystemServiceServer(s, NewSystemServiceServer(a))
+		k8shelldv1.RegisterShellServiceServer(s, NewShellServiceServer(a))
+		k8shelldv1.RegisterExecServiceServer(s, NewExecServiceServer(a))
+		k8shelldv1.RegisterPortForwardServiceServer(s, NewPortForwardServiceServer(a))
+		k8shelldv1.RegisterUnixSocketServiceServer(s, NewUnixSocketServiceServer(a))
+		k8shelldv1.RegisterAppServiceServer(s, NewAppServiceServer(a.appManager))
+		k8shelldv1.RegisterCommandServiceServer(s, a.CommandService)
 		a.logger.Info().Msgf("GRPC services server registered")
 		return nil
 	}); err != nil {

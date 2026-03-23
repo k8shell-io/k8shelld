@@ -16,11 +16,11 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	commonModels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
-	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
 )
@@ -279,7 +279,7 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := api.SystemInfo{
+	response := k8shelld.SystemInfo{
 		Time:   time.Now().Format(time.RFC3339),
 		System: metrics,
 		Mounts: mounts,
@@ -312,7 +312,7 @@ func (a *RESTService) GetIdentity(w http.ResponseWriter, r *http.Request) {
 		shell = "/bin/sh"
 	}
 
-	response := api.IdentityInfo{
+	response := k8shelld.IdentityInfo{
 		Username:     a.user.GetUsername(),
 		Name:         claims.Name,
 		Email:        claims.Email,
@@ -338,7 +338,7 @@ func (a *RESTService) GetSplash(w http.ResponseWriter, r *http.Request) {
 	// ExpandSplash returns PTY-style \r\n; normalise to plain \n for terminal.
 	text := strings.ReplaceAll(expanded, "\r\n", "\n")
 
-	response := api.SplashInfo{Text: text}
+	response := k8shelld.SplashInfo{Text: text}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		a.logger.Error().Msgf("Failed to encode splash response: %v", err)

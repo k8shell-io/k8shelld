@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
+	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
 	"github.com/rs/zerolog"
 
 	"github.com/google/shlex"
@@ -37,7 +37,7 @@ type ExecData struct {
 type ExecServiceServer struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
-	k8shelldpb.UnimplementedExecServiceServer
+	k8shelldv1.UnimplementedExecServiceServer
 }
 
 // NewExecServiceServer creates a new ExecServiceServer
@@ -71,7 +71,7 @@ func (s *ExecServiceServer) GetExecID(ctx context.Context) (string, error) {
 	return data[0], nil
 }
 
-func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error {
+func (s *ExecServiceServer) Exec(stream k8shelldv1.ExecService_ExecServer) error {
 	var cmd *exec.Cmd
 	var stdin io.WriteCloser
 	var stdout, stderr io.ReadCloser
@@ -93,7 +93,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 		return status.Errorf(codes.InvalidArgument, "failed to receive command: %v", err)
 	}
 
-	cmdReq, ok := req.Request.(*k8shelldpb.ExecRequest_CommandDetails)
+	cmdReq, ok := req.Request.(*k8shelldv1.ExecRequest_CommandDetails)
 	if !ok {
 		return status.Errorf(codes.InvalidArgument, "invalid command request: %v", req)
 	}
@@ -185,12 +185,12 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 		} else {
 			exitCode = 1
 		}
-		if sendErr := stream.Send(&k8shelldpb.ExecResponse{
-			Response: &k8shelldpb.ExecResponse_Stderr{Stderr: []byte(err.Error() + "\n")},
+		if sendErr := stream.Send(&k8shelldv1.ExecResponse{
+			Response: &k8shelldv1.ExecResponse_Stderr{Stderr: []byte(err.Error() + "\n")},
 		}); sendErr != nil {
 			s.logger.Error().Msgf("Failed to send stderr: %v", sendErr)
 		}
-		if sendErr := stream.Send(&k8shelldpb.ExecResponse{Response: &k8shelldpb.ExecResponse_ExitCode{ExitCode: exitCode}}); sendErr != nil {
+		if sendErr := stream.Send(&k8shelldv1.ExecResponse{Response: &k8shelldv1.ExecResponse_ExitCode{ExitCode: exitCode}}); sendErr != nil {
 			s.logger.Error().Msgf("Failed to send exit code: %v", sendErr)
 		}
 		s.logger.Error().Msgf("Failed to start command: %v, exit-code: %d", err, exitCode)
@@ -225,13 +225,13 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 			}
 
 			switch req.Request.(type) {
-			case *k8shelldpb.ExecRequest_Input:
+			case *k8shelldv1.ExecRequest_Input:
 				data := req.GetInput()
 				execData.BytesIn += uint64(len(data))
 				if _, err := stdin.Write(data); err != nil {
 					s.logger.Error().Msgf("Failed to write to stdin: %v, PID=%d", err, processPID)
 				}
-			case *k8shelldpb.ExecRequest_Signal:
+			case *k8shelldv1.ExecRequest_Signal:
 				s.logger.Debug().Msgf("Received signal %s, sending the signal to PID: %d", req.GetSignal(), processPID)
 				signal, err := system.GetSignalValue(req.GetSignal())
 				if err != nil {
@@ -283,8 +283,8 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 			}
 
 			if n > 0 {
-				streamErr := stream.Send(&k8shelldpb.ExecResponse{
-					Response: &k8shelldpb.ExecResponse_Stdout{Stdout: buf[:n]},
+				streamErr := stream.Send(&k8shelldv1.ExecResponse{
+					Response: &k8shelldv1.ExecResponse_Stdout{Stdout: buf[:n]},
 				})
 				if streamErr != nil {
 					s.logger.Debug().Msgf("Failed to send stdout data: %v, PID=%d", streamErr, processPID)
@@ -323,8 +323,8 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 			}
 
 			if n > 0 {
-				if sendErr := stream.Send(&k8shelldpb.ExecResponse{
-					Response: &k8shelldpb.ExecResponse_Stderr{Stderr: buf[:n]},
+				if sendErr := stream.Send(&k8shelldv1.ExecResponse{
+					Response: &k8shelldv1.ExecResponse_Stderr{Stderr: buf[:n]},
 				}); sendErr != nil {
 					s.logger.Error().Msgf("Failed to send stderr data: %v, PID=%d", sendErr, processPID)
 				}
@@ -356,7 +356,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	}
 
 	// Send the exit code to the client
-	if sendErr := stream.Send(&k8shelldpb.ExecResponse{Response: &k8shelldpb.ExecResponse_ExitCode{ExitCode: exitCode}}); sendErr != nil {
+	if sendErr := stream.Send(&k8shelldv1.ExecResponse{Response: &k8shelldv1.ExecResponse_ExitCode{ExitCode: exitCode}}); sendErr != nil {
 		s.logger.Error().Msgf("Failed to send exit code: %v", sendErr)
 	}
 	s.logger.Debug().Msgf("Command execution complete: %v, PID=%d, exit-code=%d, bytes-in=%d, bytes-out=%d",

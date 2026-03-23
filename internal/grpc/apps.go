@@ -8,10 +8,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
+	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/logger"
-	"github.com/k8shell-io/k8shelld/pkg/api"
-	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -19,7 +19,7 @@ import (
 
 // AppServiceServer implements the gRPC server for application management.
 type AppServiceServer struct {
-	k8shelldpb.UnimplementedAppServiceServer
+	k8shelldv1.UnimplementedAppServiceServer
 
 	appManager *apps.AppManager
 	logger     *zerolog.Logger
@@ -49,9 +49,9 @@ func (s *AppServiceServer) grpcError(err error) error {
 
 // ListApps lists the status of all applications.
 func (s *AppServiceServer) ListApps(ctx context.Context,
-	req *k8shelldpb.ListAppsRequest) (*k8shelldpb.ListAppsResponse, error) {
+	req *k8shelldv1.ListAppsRequest) (*k8shelldv1.ListAppsResponse, error) {
 	if s.appManager == nil {
-		return &k8shelldpb.ListAppsResponse{Apps: []*k8shelldpb.AppStatus{}}, nil
+		return &k8shelldv1.ListAppsResponse{Apps: []*k8shelldv1.AppStatus{}}, nil
 	}
 
 	statuses, err := s.appManager.ListAppStatus(ctx)
@@ -59,12 +59,12 @@ func (s *AppServiceServer) ListApps(ctx context.Context,
 		return nil, s.grpcError(err)
 	}
 
-	resp := &k8shelldpb.ListAppsResponse{
-		Apps: make([]*k8shelldpb.AppStatus, 0, len(statuses)),
+	resp := &k8shelldv1.ListAppsResponse{
+		Apps: make([]*k8shelldv1.AppStatus, 0, len(statuses)),
 	}
 
 	for _, st := range statuses {
-		resp.Apps = append(resp.Apps, api.AppStatusToProto(&st))
+		resp.Apps = append(resp.Apps, k8shelld.AppStatusToProto(&st))
 	}
 
 	return resp, nil
@@ -72,7 +72,7 @@ func (s *AppServiceServer) ListApps(ctx context.Context,
 
 // InstallApp installs the specified application by name.
 func (s *AppServiceServer) InstallApp(ctx context.Context,
-	req *k8shelldpb.InstallAppRequest) (*k8shelldpb.InstallAppResponse, error) {
+	req *k8shelldv1.InstallAppRequest) (*k8shelldv1.InstallAppResponse, error) {
 	if s.appManager == nil {
 		return nil, status.Errorf(codes.NotFound, "app manager not available")
 	}
@@ -86,12 +86,12 @@ func (s *AppServiceServer) InstallApp(ctx context.Context,
 		return nil, s.grpcError(err)
 	}
 
-	return &k8shelldpb.InstallAppResponse{}, nil
+	return &k8shelldv1.InstallAppResponse{}, nil
 }
 
 // StopApp stops the specified application by name.
 func (s *AppServiceServer) StartApp(ctx context.Context,
-	req *k8shelldpb.StartAppRequest) (*k8shelldpb.StartAppResponse, error) {
+	req *k8shelldv1.StartAppRequest) (*k8shelldv1.StartAppResponse, error) {
 	if s.appManager == nil {
 		return nil, status.Errorf(codes.NotFound, "app manager not available")
 	}
@@ -105,12 +105,12 @@ func (s *AppServiceServer) StartApp(ctx context.Context,
 		return nil, s.grpcError(err)
 	}
 
-	return &k8shelldpb.StartAppResponse{}, nil
+	return &k8shelldv1.StartAppResponse{}, nil
 }
 
 // StopApp stops the specified application by name.
 func (s *AppServiceServer) StopApp(ctx context.Context,
-	req *k8shelldpb.StopAppRequest) (*k8shelldpb.StopAppResponse, error) {
+	req *k8shelldv1.StopAppRequest) (*k8shelldv1.StopAppResponse, error) {
 	if s.appManager == nil {
 		return nil, status.Errorf(codes.NotFound, "app manager not available")
 	}
@@ -124,12 +124,12 @@ func (s *AppServiceServer) StopApp(ctx context.Context,
 		return nil, s.grpcError(err)
 	}
 
-	return &k8shelldpb.StopAppResponse{}, nil
+	return &k8shelldv1.StopAppResponse{}, nil
 }
 
 // GetLogs retrieves the logs of the specified type (install/app) for the given app name.
 func (s *AppServiceServer) GetLogs(ctx context.Context,
-	req *k8shelldpb.GetLogsRequest) (*k8shelldpb.GetLogsResponse, error) {
+	req *k8shelldv1.GetLogsRequest) (*k8shelldv1.GetLogsResponse, error) {
 	if s.appManager == nil {
 		return nil, status.Errorf(codes.NotFound, "app manager not available")
 	}
@@ -138,20 +138,20 @@ func (s *AppServiceServer) GetLogs(ctx context.Context,
 		return nil, status.Errorf(codes.InvalidArgument, "missing app name")
 	}
 
-	logType := api.LogTypeFromProto(req.GetType())
+	logType := k8shelld.LogTypeFromProto(req.GetType())
 	logStr, err := s.appManager.GetLastLog(name, logType)
 	if err != nil {
 		return nil, s.grpcError(err)
 	}
 
-	return &k8shelldpb.GetLogsResponse{
+	return &k8shelldv1.GetLogsResponse{
 		Log: logStr,
 	}, nil
 }
 
 // GetLogsStream streams the logs of the specified type (install/app) for the given app name.
-func (s *AppServiceServer) GetLogsStream(req *k8shelldpb.GetLogsStreamRequest,
-	stream k8shelldpb.AppService_GetLogsStreamServer) error {
+func (s *AppServiceServer) GetLogsStream(req *k8shelldv1.GetLogsStreamRequest,
+	stream k8shelldv1.AppService_GetLogsStreamServer) error {
 
 	if s.appManager == nil {
 		return status.Errorf(codes.NotFound, "app manager not available")
@@ -161,7 +161,7 @@ func (s *AppServiceServer) GetLogsStream(req *k8shelldpb.GetLogsStreamRequest,
 		return status.Errorf(codes.InvalidArgument, "missing app name")
 	}
 
-	logType := api.LogTypeFromProto(req.GetType())
+	logType := k8shelld.LogTypeFromProto(req.GetType())
 
 	logPath, err := s.appManager.GetLastLogPath(name, logType)
 	if err != nil {
@@ -185,7 +185,7 @@ func (s *AppServiceServer) GetLogsStream(req *k8shelldpb.GetLogsStreamRequest,
 				if line[len(line)-1] == '\n' {
 					line = line[:len(line)-1]
 				}
-				if sendErr := stream.Send(&k8shelldpb.GetLogsStreamResponse{Line: line}); sendErr != nil {
+				if sendErr := stream.Send(&k8shelldv1.GetLogsStreamResponse{Line: line}); sendErr != nil {
 					return status.Errorf(codes.Canceled, "client canceled")
 				}
 			}
@@ -228,7 +228,7 @@ func (s *AppServiceServer) GetLogsStream(req *k8shelldpb.GetLogsStreamRequest,
 				if line[len(line)-1] == '\n' {
 					line = line[:len(line)-1]
 				}
-				if sendErr := stream.Send(&k8shelldpb.GetLogsStreamResponse{Line: line}); sendErr != nil {
+				if sendErr := stream.Send(&k8shelldv1.GetLogsStreamResponse{Line: line}); sendErr != nil {
 					return status.Errorf(codes.Canceled, "client canceled")
 				}
 			}

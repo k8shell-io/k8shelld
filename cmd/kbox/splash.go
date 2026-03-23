@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	"github.com/k8shell-io/k8shelld/internal/client"
-	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +27,7 @@ var SplashCmd = &cobra.Command{
 			return
 		}
 
-		var data api.SplashInfo
+		var data k8shelld.SplashInfo
 		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 			fmt.Printf("Error parsing response: %v\n", err)
 			return

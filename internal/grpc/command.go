@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
+	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
 	"github.com/k8shell-io/k8shelld/internal/logger"
-	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,12 +21,12 @@ import (
 // Other parts of the server can send commands to that client via SendCommand,
 // and await the reply. Replies from the client are correlated using command_id.
 type CommandServiceServer struct {
-	k8shelldpb.UnimplementedCommandServiceServer
+	k8shelldv1.UnimplementedCommandServiceServer
 
 	logger *zerolog.Logger
 
 	mu         sync.Mutex
-	clients    map[uint64]chan *k8shelldpb.CommandMessage
+	clients    map[uint64]chan *k8shelldv1.CommandMessage
 	nextClient uint64
 	pending    map[string]chan string
 }
@@ -35,18 +35,18 @@ type CommandServiceServer struct {
 func NewCommandServiceServer() *CommandServiceServer {
 	return &CommandServiceServer{
 		logger:  logger.NewLogger("grpc-commands"),
-		clients: make(map[uint64]chan *k8shelldpb.CommandMessage),
+		clients: make(map[uint64]chan *k8shelldv1.CommandMessage),
 		pending: make(map[string]chan string),
 	}
 }
 
 // CommandListener implements the bidi streaming RPC defined in the proto.
 // Only a single active client is supported at a time; a new connection replaces any previous one.
-func (s *CommandServiceServer) CommandListener(stream k8shelldpb.CommandService_CommandListenerServer) error {
+func (s *CommandServiceServer) CommandListener(stream k8shelldv1.CommandService_CommandListenerServer) error {
 	ctx := stream.Context()
 
 	// Create a send channel dedicated to this stream instance and register client.
-	ch := make(chan *k8shelldpb.CommandMessage, 16)
+	ch := make(chan *k8shelldv1.CommandMessage, 16)
 
 	s.mu.Lock()
 	clientID := s.nextClient
@@ -87,7 +87,7 @@ func (s *CommandServiceServer) CommandListener(stream k8shelldpb.CommandService_
 
 		cmdID := in.GetCommandId()
 		switch payload := in.Payload.(type) {
-		case *k8shelldpb.CommandMessage_Reply:
+		case *k8shelldv1.CommandMessage_Reply:
 			reply := payload.Reply
 
 			s.mu.Lock()
@@ -138,7 +138,7 @@ func (s *CommandServiceServer) SendCommand(ctx context.Context, command string) 
 
 	s.mu.Lock()
 	// pick any one client (first in map) to send the command to
-	var sendCh chan *k8shelldpb.CommandMessage
+	var sendCh chan *k8shelldv1.CommandMessage
 	for _, ch := range s.clients {
 		sendCh = ch
 		break
@@ -153,9 +153,9 @@ func (s *CommandServiceServer) SendCommand(ctx context.Context, command string) 
 	s.pending[cmdID] = replyCh
 	s.mu.Unlock()
 
-	msg := &k8shelldpb.CommandMessage{
+	msg := &k8shelldv1.CommandMessage{
 		CommandId: cmdID,
-		Payload: &k8shelldpb.CommandMessage_Command{
+		Payload: &k8shelldv1.CommandMessage_Command{
 			Command: command,
 		},
 	}

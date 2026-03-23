@@ -11,11 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/internal/utils"
-	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
 	"github.com/creack/pty"
@@ -42,17 +42,17 @@ type SessionData struct {
 type ShellServiceServer struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
-	k8shelldpb.UnimplementedShellServiceServer
+	k8shelldv1.UnimplementedShellServiceServer
 }
 
 // streamWriter is a writer that sends the data to the client stream
 type streamWriter struct {
-	stream k8shelldpb.ShellService_ShellServer
+	stream k8shelldv1.ShellService_ShellServer
 }
 
 // Write writes the data to the client stream
 func (sw *streamWriter) Write(data []byte) (int, error) {
-	err := sw.stream.Send(&k8shelldpb.ShellResponse{Response: &k8shelldpb.ShellResponse_Data{Data: data}})
+	err := sw.stream.Send(&k8shelldv1.ShellResponse{Response: &k8shelldv1.ShellResponse_Data{Data: data}})
 	if err != nil {
 		return 0, err
 	}
@@ -112,7 +112,7 @@ func (s *ShellServiceServer) GetSessionData(ctx context.Context) (*SessionData, 
 
 // Shell is a gRPC method that starts a shell session. It is a bidirectional streaming RPC
 // that sends the shell output to the client and receives the client input to send to the shell.
-func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) error {
+func (s *ShellServiceServer) Shell(stream k8shelldv1.ShellService_ShellServer) error {
 	sessionId, err := s.GetSessionID(stream.Context())
 	if err != nil {
 		return fmt.Errorf("failed to get session ID: %v", err)
@@ -123,7 +123,7 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 		return fmt.Errorf("failed to receive shell request: %v", err)
 	}
 
-	shellReq, ok := req.Request.(*k8shelldpb.ShellRequest_StartRequest)
+	shellReq, ok := req.Request.(*k8shelldv1.ShellRequest_StartRequest)
 	if !ok {
 		return status.Errorf(codes.InvalidArgument, "invalid shell request: %v", req)
 	}
@@ -221,7 +221,7 @@ func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
 // handlePtySession handles a shell session with PTY. It creates the PTY session, sets the width and height
 // of the terminal, reads data from the PTY and sends the data back to the client and vice versa.
 func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *SessionData,
-	stream k8shelldpb.ShellService_ShellServer, width uint32, height uint32) error {
+	stream k8shelldv1.ShellService_ShellServer, width uint32, height uint32) error {
 
 	ptmx, tty, err := pty.Open()
 	if err != nil {
@@ -255,20 +255,20 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 		}
 	}
 
-	_ = stream.Send(&k8shelldpb.ShellResponse{
-		Response: &k8shelldpb.ShellResponse_StartResponse{
-			StartResponse: &k8shelldpb.ShellStartResponse{Pty: ttyName},
+	_ = stream.Send(&k8shelldv1.ShellResponse{
+		Response: &k8shelldv1.ShellResponse_StartResponse{
+			StartResponse: &k8shelldv1.ShellStartResponse{Pty: ttyName},
 		},
 	})
 
 	ctx := stream.Context()
-	reqCh := make(chan *k8shelldpb.ShellRequest, 8)
+	reqCh := make(chan *k8shelldv1.ShellRequest, 8)
 	recvErrCh := make(chan error, 1)
 	ptyDone := make(chan struct{})
 
 	if s.grpcApi.Config.Splash != "" {
-		_ = stream.Send(&k8shelldpb.ShellResponse{
-			Response: &k8shelldpb.ShellResponse_Data{
+		_ = stream.Send(&k8shelldv1.ShellResponse{
+			Response: &k8shelldv1.ShellResponse_Data{
 				Data: []byte("\n\r" + s.grpcApi.Config.ExpandSplash(s.grpcApi.user, session.user.Username) + "\n\r"),
 			},
 		})
@@ -284,8 +284,8 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 				return
 			}
 			if n > 0 {
-				if sendErr := stream.Send(&k8shelldpb.ShellResponse{
-					Response: &k8shelldpb.ShellResponse_Data{Data: append([]byte(nil), buf[:n]...)},
+				if sendErr := stream.Send(&k8shelldv1.ShellResponse{
+					Response: &k8shelldv1.ShellResponse_Data{Data: append([]byte(nil), buf[:n]...)},
 				}); sendErr != nil {
 					recvErrCh <- sendErr
 					return
@@ -345,7 +345,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 func (s *ShellServiceServer) handleNonPtySession(
 	logger *zerolog.Logger,
 	session *SessionData,
-	stream k8shelldpb.ShellService_ShellServer,
+	stream k8shelldv1.ShellService_ShellServer,
 ) error {
 	var (
 		stdout io.ReadCloser
@@ -370,9 +370,9 @@ func (s *ShellServiceServer) handleNonPtySession(
 	s.grpcApi.procWatcher.AddPIDIgnoreTerminate(session.Cmd.Process.Pid)
 	session.Pid = session.Cmd.Process.Pid
 
-	_ = stream.Send(&k8shelldpb.ShellResponse{
-		Response: &k8shelldpb.ShellResponse_StartResponse{
-			StartResponse: &k8shelldpb.ShellStartResponse{},
+	_ = stream.Send(&k8shelldv1.ShellResponse{
+		Response: &k8shelldv1.ShellResponse_StartResponse{
+			StartResponse: &k8shelldv1.ShellStartResponse{},
 		},
 	})
 
@@ -392,7 +392,7 @@ func (s *ShellServiceServer) handleNonPtySession(
 	ctx := stream.Context()
 
 	// Channels to coordinate
-	reqCh := make(chan *k8shelldpb.ShellRequest, 8)
+	reqCh := make(chan *k8shelldv1.ShellRequest, 8)
 	recvErrCh := make(chan error, 1)
 	clientClosed := make(chan struct{}, 1)
 	outDone := make(chan struct{})
@@ -485,7 +485,7 @@ func (s *ShellServiceServer) handleNonPtySession(
 
 // ResizeTerminal is a gRPC method that resizes the terminal of a shell session.
 func (s *ShellServiceServer) ResizeTerminal(ctx context.Context,
-	req *k8shelldpb.ResizeTerminalRequest) (*k8shelldpb.ResizeTerminalResponse, error) {
+	req *k8shelldv1.ResizeTerminalRequest) (*k8shelldv1.ResizeTerminalResponse, error) {
 	session, err := s.GetSessionData(ctx)
 	if err != nil {
 		return nil, err
@@ -500,5 +500,5 @@ func (s *ShellServiceServer) ResizeTerminal(ctx context.Context,
 	if err != nil {
 		s.logger.Error().Msgf("Failed to resize terminal: %v", err)
 	}
-	return &k8shelldpb.ResizeTerminalResponse{}, nil
+	return &k8shelldv1.ResizeTerminalResponse{}, nil
 }

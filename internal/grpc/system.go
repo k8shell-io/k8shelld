@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
+	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
-	"github.com/k8shell-io/k8shelld/pkg/api"
-	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -20,7 +20,7 @@ type SystemServiceServer struct {
 	logger         *zerolog.Logger
 	initScriptsRun bool
 	//handshakeMu    sync.Mutex
-	k8shelldpb.UnimplementedSystemServiceServer
+	k8shelldv1.UnimplementedSystemServiceServer
 }
 
 // NewSystemServiceServer creates a new SystemServiceServer
@@ -37,7 +37,7 @@ func NewSystemServiceServer(grpcapi *GRPCService) *SystemServiceServer {
 // token the server loaded from /run/secrets/identity-token at startup.  This
 // proves the caller is the same identity that owns this workspace.
 func (s *SystemServiceServer) Handshake(ctx context.Context,
-	req *k8shelldpb.HandshakeRequest) (*k8shelldpb.HandshakeResponse, error) {
+	req *k8shelldv1.HandshakeRequest) (*k8shelldv1.HandshakeResponse, error) {
 	// s.handshakeMu.Lock()
 	// defer s.handshakeMu.Unlock()
 
@@ -59,7 +59,7 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 
 	s.logger.Info().Msgf("Handshake accepted for user: %s", s.grpcApi.user.GetUsername())
 
-	return &k8shelldpb.HandshakeResponse{
+	return &k8shelldv1.HandshakeResponse{
 		Accepted:      true,
 		ServerVersion: fmt.Sprintf("%s-%s", config.K8SHELLD_VERSION, config.K8SHELLD_COMMIT),
 	}, nil
@@ -68,7 +68,7 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 // SystemInfo returns system metrics + mount usage + docker usage over gRPC.
 // Mirrors the REST /sysinfo payload.
 func (s *SystemServiceServer) SystemInfo(ctx context.Context,
-	_ *k8shelldpb.SystemInfoRequest) (*k8shelldpb.SystemInfoResponse, error) {
+	_ *k8shelldv1.SystemInfoRequest) (*k8shelldv1.SystemInfoResponse, error) {
 
 	metrics, err := s.grpcApi.sysInfo.GetSystemUsageSnapshot()
 	if err != nil {
@@ -86,12 +86,12 @@ func (s *SystemServiceServer) SystemInfo(ctx context.Context,
 		return nil, status.Errorf(codes.Internal, "failed to get docker usage: %v", err)
 	}
 
-	systemInfo := api.SystemInfo{
+	systemInfo := k8shelld.SystemInfo{
 		Time:   time.Now().Format(time.RFC3339),
 		System: metrics,
 		Mounts: mounts,
 		Docker: docker,
 	}
 
-	return api.SystemInfoToProto(&systemInfo), nil
+	return k8shelld.SystemInfoToProto(&systemInfo), nil
 }

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	"github.com/k8shell-io/k8shelld/internal/client"
-	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/spf13/cobra"
 )
 
@@ -41,7 +41,7 @@ var UptimeCmd = &cobra.Command{
 			return
 		}
 
-		var data api.SystemInfo
+		var data k8shelld.SystemInfo
 		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 			fmt.Println("Error parsing response:", err)
 			return

@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
-	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -129,7 +129,7 @@ func (s *SystemInfo) refresh() error {
 }
 
 // GetSystemUsageSnapshot returns a snapshot of system metrics.
-func (s *SystemInfo) GetSystemUsageSnapshot() (*api.SystemUsage, error) {
+func (s *SystemInfo) GetSystemUsageSnapshot() (*k8shelld.SystemUsage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -138,7 +138,7 @@ func (s *SystemInfo) GetSystemUsageSnapshot() (*api.SystemUsage, error) {
 		return nil, err
 	}
 
-	return &api.SystemUsage{
+	return &k8shelld.SystemUsage{
 		Uptime:             uptime.Format(time.RFC3339),
 		CPUUsageMillicores: s.CPUUsageMillicores,
 		CPULimitMillicores: s.CPULimitMillicores,
@@ -150,13 +150,13 @@ func (s *SystemInfo) GetSystemUsageSnapshot() (*api.SystemUsage, error) {
 	}, nil
 }
 
-func (s *SystemInfo) GetMountUsageSnapshot() ([]api.MountUsage, error) {
+func (s *SystemInfo) GetMountUsageSnapshot() ([]k8shelld.MountUsage, error) {
 	mounts, err := GetMountUsages()
 	if err != nil {
 		return nil, err
 	}
 
-	storageMounts := []api.MountUsage{}
+	storageMounts := []k8shelld.MountUsage{}
 	for i := range mounts {
 		m := &mounts[i]
 		for _, s := range s.config.Storages {
@@ -178,7 +178,7 @@ func (s *SystemInfo) GetMountUsageSnapshot() ([]api.MountUsage, error) {
 	return storageMounts, nil
 }
 
-func (s *SystemInfo) GetDockerUsageSnapshot(ctx context.Context) (*api.DockerUsage, error) {
+func (s *SystemInfo) GetDockerUsageSnapshot(ctx context.Context) (*k8shelld.DockerUsage, error) {
 	docker := s.config.Docker
 	if !docker.Enabled {
 		return nil, nil
