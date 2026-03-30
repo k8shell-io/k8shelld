@@ -194,12 +194,7 @@ func (s *GRPCService) callerValidationInterceptor() grpc.UnaryServerInterceptor 
 			return nil, status.Errorf(codes.InvalidArgument, "empty token in metadata")
 		}
 
-		_, err = s.jwtVerifier.VerifyToken(tokenStr)
-		if err != nil {
-			return nil, status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
-		}
-
-		if tokenStr != s.user.GetUserToken() {
+		if !s.user.TokenEqual(tokenStr) {
 			return nil, status.Errorf(codes.PermissionDenied, "invalid token: caller token does not match workspace token")
 		}
 

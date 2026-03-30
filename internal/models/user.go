@@ -33,8 +33,9 @@ type User struct {
 	groups   []Group
 
 	// Mutable — replaced atomically on token renewal; requires mu.
-	claims    *authz.UserClaims
-	userToken string
+	claims        *authz.UserClaims
+	userToken     string
+	previousToken string
 }
 
 // NewUser creates a User from a verified JWT claims set and the raw token string.
@@ -84,8 +85,23 @@ func (u *User) Update(claims *authz.UserClaims, token string) (bool, error) {
 	}
 
 	u.claims = claims
+	u.previousToken = u.userToken
 	u.userToken = token
 	return true, nil
+}
+
+func (u *User) TokenEqual(token string) bool {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	eq := token == u.userToken
+	if !eq && token == u.previousToken {
+		// previous token must not have expired yet to be considered equal
+		_, err := authz.ParseUnverifiedClaims(token, true)
+		if err == nil {
+			eq = true
+		}
+	}
+	return eq
 }
 
 // HasRole checks if the user has a specific role.

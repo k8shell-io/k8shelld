@@ -98,7 +98,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldv1.ExecService_ExecServer) error
 		return status.Errorf(codes.InvalidArgument, "invalid command request: %v", req)
 	}
 
-	shellUser, resolveErr := s.grpcApi.resolveShellUser(cmdReq.CommandDetails.User, s.grpcApi.user)
+	shellUser, resolveErr := s.grpcApi.resolveShellUser(s.grpcApi.user.GetUsername(), s.grpcApi.user)
 	if resolveErr != nil {
 		s.logger.Error().Msgf("Exec session %s: error resolving user: %v", execId, resolveErr)
 		return resolveErr
