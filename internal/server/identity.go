@@ -33,6 +33,7 @@ func (s *Server) loadIdentity() error {
 	}
 
 	s.user = models.NewUser(claims, tokenStr)
+	s.apiClientx.UpdateToken(tokenStr)
 	s.logger.Debug().Msg("Identity token loaded: " + s.user.String())
 
 	return nil
