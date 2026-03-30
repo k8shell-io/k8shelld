@@ -226,7 +226,7 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		if credsType == "git" && cred.ServiceName == "github" && cred.ServiceURL == address {
+		if credsType == "git" && cred.ServiceName == "git" && cred.ServiceURL == address {
 			credStr := fmt.Sprintf(`{"Username": "%s", "Password": "%s"}`,
 				cred.ExternalID, cred.ExternalToken)
 			w.Header().Set("Content-Type", "application/json")
