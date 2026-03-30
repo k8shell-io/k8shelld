@@ -83,7 +83,6 @@ func (s *Server) refreshIdentity() string {
 	}
 
 	oldSudo := s.user.SudoEnabled()
-	oldShell := s.user.GetShell()
 
 	updated, err := s.user.Update(token, tokenStr)
 	if err != nil {
@@ -102,14 +101,9 @@ func (s *Server) refreshIdentity() string {
 				s.logger.Info().Msgf("Sudo %s for user %s", action, s.user.GetUsername())
 			}
 		}
-		newShell := s.user.GetShell()
-		if newShell != oldShell {
-			if err := system.ApplyShell(s.user.GetUsername(), newShell); err != nil {
-				s.logger.Error().Msgf("Failed to apply shell change for user %s: %v", s.user.GetUsername(), err)
-			} else {
-				s.logger.Info().Msgf("Shell updated to %s for user %s", newShell, s.user.GetUsername())
-			}
-		}
+
+		// update the token in the API client to use the refreshed token for any API calls
+		s.apiClientx.UpdateToken(tokenStr)
 	}
 
 	return ""
