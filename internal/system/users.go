@@ -196,40 +196,34 @@ func disablePasswordlessSudo(username string) error {
 	return nil
 }
 
-// AddUserToDockerSocketGroup adds the given user to the group that owns the
-// Docker socket at socketPath.  The socket's GID is looked up via syscall.Stat,
-// the corresponding group name is resolved from /etc/group, and the user is
-// added using the distro-appropriate provider.  If the socket does not exist
-// the call is a no-op (Docker may not be running yet).
-func AddUserToDockerSocketGroup(username, socketPath string) error {
-	info, err := os.Stat(socketPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("docker socket not found at %s; is Docker running?", socketPath)
-		}
-		return fmt.Errorf("failed to stat docker socket %s: %v", socketPath, err)
-	}
-
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Errorf("unexpected stat type for %s", socketPath)
-	}
-	gid := int(stat.Gid)
-
-	groupName, err := groupNameByGID(gid)
-	if err != nil {
-		return fmt.Errorf("failed to resolve group name for docker socket GID %d: %v", gid, err)
-	}
+// AddUserToDockerGroup adds the given user to the group identified by dockerGID.
+// If no group with that GID exists in /etc/group, a new group named "docker" is
+// created first.  This does not require the Docker socket to be present.
+func AddUserToDockerGroup(username string, dockerGID uint32) (bool, error) {
+	gid := int(dockerGID)
+	groupCreated := false
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	provider := getProvider()
-	if err := provider.addUserToGroup(ctx, username, groupName, gid); err != nil {
-		return fmt.Errorf("failed to add user %s to docker socket group %s: %v", username, groupName, err)
+
+	groupName, err := groupNameByGID(gid)
+	if err != nil {
+		const defaultGroupName = "docker"
+		if err := provider.addGroup(ctx, defaultGroupName, gid); err != nil {
+			return false, fmt.Errorf("failed to create docker group with GID %d: %v", gid, err)
+		}
+		groupName = defaultGroupName
+		groupCreated = true
 	}
 
-	return nil
+	if err := provider.addUserToGroup(ctx, username, groupName, gid); err != nil {
+		return groupCreated, fmt.Errorf("failed to add user %s to docker group %s (%d): %v",
+			username, groupName, gid, err)
+	}
+	return groupCreated, nil
+
 }
 
 // ApplySudo enables or revokes passwordless sudo for the given user.

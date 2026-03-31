@@ -4,6 +4,7 @@ package models
 type DockerConfig struct {
 	Enabled                 bool      `yaml:"enabled"`
 	CreateDockerSockSymlink bool      `yaml:"createDockerSockSymlink"`
+	GroupId                 uint32    `yaml:"groupId"`
 	Storages                []Storage `yaml:"storages"`
 }
 
