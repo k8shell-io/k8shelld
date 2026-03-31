@@ -205,7 +205,7 @@ func AddUserToDockerSocketGroup(username, socketPath string) error {
 	info, err := os.Stat(socketPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil // socket not present yet – nothing to do
+			return fmt.Errorf("docker socket not found at %s; is Docker running?", socketPath)
 		}
 		return fmt.Errorf("failed to stat docker socket %s: %v", socketPath, err)
 	}
@@ -229,8 +229,6 @@ func AddUserToDockerSocketGroup(username, socketPath string) error {
 		return fmt.Errorf("failed to add user %s to docker socket group %s: %v", username, groupName, err)
 	}
 
-	log := logger.NewLogger("user-management")
-	log.Info().Msgf("User %s added to docker socket group %s (%d)", username, groupName, gid)
 	return nil
 }
 

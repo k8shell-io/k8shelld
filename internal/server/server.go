@@ -142,6 +142,8 @@ func (s *Server) initialize() error {
 	if s.config.Docker.Enabled {
 		if err := system.AddUserToDockerSocketGroup(s.user.GetUsername(), config.DOCKER_SOCKET_PATH); err != nil {
 			s.logger.Error().Msgf("Error adding user to docker socket group: %v", err)
+		} else {
+			s.logger.Info().Msgf("User %s added to docker socket group", s.user.GetUsername())
 		}
 	}
 
