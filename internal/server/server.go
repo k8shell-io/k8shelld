@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/k8shell-io/api-server/pkg/client"
 	"github.com/k8shell-io/common/pkg/authz"
@@ -140,11 +141,30 @@ func (s *Server) initialize() error {
 	}
 
 	if s.config.Docker.Enabled {
-		if err := system.AddUserToDockerSocketGroup(s.user.GetUsername(), config.DOCKER_SOCKET_PATH); err != nil {
-			s.logger.Error().Msgf("Error adding user to docker socket group: %v", err)
-		} else {
-			s.logger.Info().Msgf("User %s added to docker socket group", s.user.GetUsername())
-		}
+		username := s.user.GetUsername()
+		go func() {
+			const (
+				pollInterval = 1 * time.Second
+				pollTimeout  = 60 * time.Second
+			)
+			deadline := time.Now().Add(pollTimeout)
+			for {
+				if _, err := os.Stat(config.DOCKER_SOCKET_PATH); err == nil {
+					if err := system.AddUserToDockerSocketGroup(username, config.DOCKER_SOCKET_PATH); err != nil {
+						s.logger.Error().Msgf("Error adding user to docker socket group: %v", err)
+					} else {
+						s.logger.Info().Msgf("User %s added to docker socket group", username)
+					}
+					return
+				}
+				if time.Now().After(deadline) {
+					s.logger.Warn().Msgf("Docker socket not available after %v, user %s "+
+						"will not be added to docker socket group", pollTimeout, username)
+					return
+				}
+				time.Sleep(pollInterval)
+			}
+		}()
 	}
 
 	if s.config.Docker.Enabled && s.config.Docker.CreateDockerSockSymlink {
