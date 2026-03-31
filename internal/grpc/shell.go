@@ -128,7 +128,7 @@ func (s *ShellServiceServer) Shell(stream k8shelldv1.ShellService_ShellServer) e
 		return status.Errorf(codes.InvalidArgument, "invalid shell request: %v", req)
 	}
 
-	shellUser, resolveErr := s.grpcApi.resolveShellUser(s.grpcApi.user.GetUsername(), s.grpcApi.user)
+	shellUser, resolveErr := s.grpcApi.resolveShellUser(shellReq.StartRequest.AsUser, s.grpcApi.user)
 	if resolveErr != nil {
 		s.logger.Error().Msgf("Shell session %s: error resolving user: %v", sessionId, resolveErr)
 		return resolveErr
