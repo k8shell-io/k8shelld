@@ -139,6 +139,12 @@ func (s *Server) initialize() error {
 		s.logger.Fatal().Msgf("Error creating user: %v", err)
 	}
 
+	if s.config.Docker.Enabled {
+		if err := system.AddUserToDockerSocketGroup(s.user.GetUsername(), config.DOCKER_SOCKET_PATH); err != nil {
+			s.logger.Error().Msgf("Error adding user to docker socket group: %v", err)
+		}
+	}
+
 	if s.config.Docker.Enabled && s.config.Docker.CreateDockerSockSymlink {
 		if _, err := os.Lstat(config.DOCKER_SOCKET_SYMLINK); err != nil {
 			if err := os.Symlink(config.DOCKER_SOCKET_PATH, config.DOCKER_SOCKET_SYMLINK); err != nil {
