@@ -26,16 +26,18 @@ import (
 
 // SessionData stores the data of a shell session.
 type SessionData struct {
-	Id       string
-	user     models.ShellUser
-	CmdShell string
-	Cmd      *exec.Cmd
-	Ptmx     *os.File
-	Pid      int
-	Created  time.Time
-	Deleted  time.Time
-	BytesIn  uint64
-	BytesOut uint64
+	Id           string
+	user         models.ShellUser
+	CmdShell     string
+	Cmd          *exec.Cmd
+	Ptmx         *os.File
+	Pid          int
+	Created      time.Time
+	Deleted      time.Time
+	BytesIn      uint64
+	BytesOut     uint64
+	DockerExecID string    // exec ID when running inside a Docker container; empty for local shell
+	dockerClient io.Closer // *dockerclient.Client; non-nil when DockerExecID is set
 }
 
 // ShellServiceServer is the service that handles the shell GRPC service server
@@ -128,6 +130,10 @@ func (s *ShellServiceServer) Shell(stream k8shelldv1.ShellService_ShellServer) e
 		return status.Errorf(codes.InvalidArgument, "invalid shell request: %v", req)
 	}
 
+	if shellReq.StartRequest.ContainerRef != "" {
+		return s.runDockerShell(stream, sessionId, shellReq.StartRequest)
+	}
+
 	shellUser, resolveErr := s.grpcApi.resolveShellUser(shellReq.StartRequest.AsUser, s.grpcApi.user)
 	if resolveErr != nil {
 		s.logger.Error().Msgf("Shell session %s: error resolving user: %v", sessionId, resolveErr)
@@ -215,6 +221,10 @@ func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
 	}
 	if session.Ptmx != nil {
 		session.Ptmx.Close()
+	}
+	if session.dockerClient != nil {
+		_ = session.dockerClient.Close()
+		session.dockerClient = nil
 	}
 }
 
@@ -492,6 +502,13 @@ func (s *ShellServiceServer) ResizeTerminal(ctx context.Context,
 	}
 
 	s.logger.Debug().Msgf("Resizing shell session %s, cols: %d, rows: %d", session.Id, req.Width, req.Height)
+
+	if session.DockerExecID != "" {
+		if resizeErr := s.resizeDockerTerminal(ctx, session, req.Width, req.Height); resizeErr != nil {
+			s.logger.Error().Msgf("Failed to resize docker terminal: %v", resizeErr)
+		}
+		return &k8shelldv1.ResizeTerminalResponse{}, nil
+	}
 
 	err = pty.Setsize(session.Ptmx, &pty.Winsize{
 		Rows: utils.ClampUint32ToUint16(req.Height),
