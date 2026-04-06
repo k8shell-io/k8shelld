@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/k8shell-io/common/pkg/authz"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
 )
@@ -80,9 +82,23 @@ func (s *Server) refreshIdentity() string {
 	tokenStr := strings.TrimSpace(string(data))
 	token, err := s.jwtVerifier.VerifyToken(tokenStr)
 	if err != nil {
-		//return fmt.Sprintf("identity token is no longer valid: %v", err)
-		s.logger.Error().Err(err).Msg("Identity token is no longer valid")
-		return ""
+		if errors.Is(err, authz.ErrTokenInvalidSignature) {
+			err := s.jwtVerifier.ReloadPublicKey()
+			if err != nil {
+				s.logger.Error().Msg("Failed to reload public key after token signature verification failure: " + err.Error())
+				return ""
+			}
+
+			s.logger.Info().Msg("Reloaded public key after token signature verification failure")
+			token, err = s.jwtVerifier.VerifyToken(tokenStr)
+			if err != nil {
+				s.logger.Error().Msg("Identity token is still invalid after reloading public key: " + err.Error())
+				return ""
+			}
+		} else {
+			s.logger.Error().Msg("Identity token is not valid: " + err.Error())
+			return ""
+		}
 	}
 
 	oldSudo := s.user.SudoEnabled()
