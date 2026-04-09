@@ -263,6 +263,18 @@ func (a *RESTService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// repoURL builds a repository URL from GIT_ADDRESS, GIT_REPOOWNER and GIT_REPONAME env vars.
+// Returns an empty string when any of the required vars is unset.
+func repoURL() string {
+	addr := strings.TrimRight(os.Getenv("GIT_ADDRESS"), "/")
+	owner := os.Getenv("GIT_REPOOWNER")
+	name := os.Getenv("GIT_REPONAME")
+	if addr == "" || owner == "" || name == "" {
+		return ""
+	}
+	return addr + "/" + owner + "/" + name
+}
+
 func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	metrics, err := a.server.sysInfo.GetSystemUsageSnapshot()
 	if err != nil {
@@ -287,10 +299,11 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := k8shelld.SystemInfo{
-		Time:   time.Now().Format(time.RFC3339),
-		System: metrics,
-		Mounts: mounts,
-		Docker: docker,
+		Time:       time.Now().Format(time.RFC3339),
+		System:     metrics,
+		Mounts:     mounts,
+		Docker:     docker,
+		Repository: repoURL(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

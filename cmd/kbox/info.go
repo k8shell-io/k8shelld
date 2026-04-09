@@ -76,10 +76,15 @@ Docker (if available):
 		}
 		workspace := [][2]string{
 			{"Name", env("WORKSPACE", "n/a")},
-			{"Start time", startTime.Format("2006-01-02 15:04:05")},
+			{"Start time", startTime.Local().Format("2006-01-02 15:04:05 MST")},
 			{"Image", env("IMAGE", "n/a")},
 			{"Blueprint", env("BLUEPRINT", "n/a")},
 			{"Users", fmt.Sprintf("%d", system.Users)},
+		}
+		if sysInfo.Repository != "" {
+			workspace = append(workspace, [2]string{"Repository", sysInfo.Repository})
+		} else {
+			workspace = append(workspace, [2]string{"Repository", "n/a"})
 		}
 		printGroup("Workspace", workspace)
 
