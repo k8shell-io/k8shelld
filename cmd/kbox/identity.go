@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	"github.com/k8shell-io/k8shelld/internal/client"
@@ -83,7 +84,7 @@ var IdentityCmd = &cobra.Command{
 		if data.Source != "" {
 			rows = append(rows, [2]string{"Source", data.Source})
 		}
-		rows = append(rows, [2]string{"Expires", strOr(data.ExpiresAt, "n/a")})
+		rows = append(rows, [2]string{"Expires", formatLocalTime(data.ExpiresAt)})
 
 		printGroup("Identity", rows)
 	},
@@ -94,4 +95,16 @@ func strOr(s, fallback string) string {
 		return s
 	}
 	return fallback
+}
+
+// formatLocalTime parses an RFC 3339 timestamp and returns it in the local timezone.
+func formatLocalTime(s string) string {
+	if s == "" {
+		return "n/a"
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return s
+	}
+	return t.Local().Format("2006-01-02 15:04:05 MST")
 }
