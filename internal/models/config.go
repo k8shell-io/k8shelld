@@ -1,7 +1,7 @@
 package models
 
-// DockerConfig represents the configuration for the Docker feature
-type DockerConfig struct {
+// PodmanConfig represents the configuration for the Podman feature
+type PodmanConfig struct {
 	Enabled                 bool      `yaml:"enabled"`
 	CreateDockerSockSymlink bool      `yaml:"createDockerSockSymlink"`
 	GroupId                 uint32    `yaml:"groupId"`

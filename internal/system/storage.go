@@ -160,6 +160,8 @@ func unescapeMountInfoPath(s string) string {
 func GetDockerUsage(ctx context.Context) (*k8shelld.DockerUsage, error) {
 	// Avoid importing internal/config here (it imports system -> would cycle).
 	candidates := []string{
+		"/run/podman/podman.sock",
+		"/var/run/podman/podman.sock",
 		"/var/run/docker.sock",
 		"/var/run/docker/docker.sock",
 	}

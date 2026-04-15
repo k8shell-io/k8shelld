@@ -179,7 +179,7 @@ func (s *SystemInfo) GetMountUsageSnapshot() ([]k8shelld.MountUsage, error) {
 }
 
 func (s *SystemInfo) GetDockerUsageSnapshot(ctx context.Context) (*k8shelld.DockerUsage, error) {
-	docker := s.config.Docker
+	docker := s.config.Podman
 	if !docker.Enabled {
 		return nil, nil
 	}

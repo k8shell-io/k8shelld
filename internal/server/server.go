@@ -139,20 +139,20 @@ func (s *Server) initialize() error {
 		s.logger.Fatal().Msgf("Error creating user: %v", err)
 	}
 
-	if s.config.Docker.Enabled {
-		groupCreated, err := system.AddUserToDockerGroup(s.user.GetUsername(), s.config.Docker.GroupId)
+	if s.config.Podman.Enabled {
+		groupCreated, err := system.AddUserToDockerGroup(s.user.GetUsername(), s.config.Podman.GroupId)
 		if groupCreated {
-			s.logger.Info().Msgf("Docker group with GID %d created", s.config.Docker.GroupId)
+			s.logger.Info().Msgf("Podman group with GID %d created", s.config.Podman.GroupId)
 		}
 		if err != nil {
-			s.logger.Error().Msgf("Error adding user to docker group: %v", err)
+			s.logger.Error().Msgf("Error adding user to podman group: %v", err)
 		} else {
-			s.logger.Info().Msgf("User %s added to docker group (GID %d)",
-				s.user.GetUsername(), s.config.Docker.GroupId)
+			s.logger.Info().Msgf("User %s added to podman group (GID %d)",
+				s.user.GetUsername(), s.config.Podman.GroupId)
 		}
 	}
 
-	if s.config.Docker.Enabled && s.config.Docker.CreateDockerSockSymlink {
+	if s.config.Podman.Enabled && s.config.Podman.CreateDockerSockSymlink {
 		if _, err := os.Lstat(config.DOCKER_SOCKET_SYMLINK); err != nil {
 			if err := os.Symlink(config.DOCKER_SOCKET_PATH, config.DOCKER_SOCKET_SYMLINK); err != nil {
 				s.logger.Error().Msgf("Error creating docker socket symlink: %v", err)

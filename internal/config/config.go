@@ -52,7 +52,7 @@ type Config struct {
 	PortForwarding      []string             `yaml:"portForwarding"`
 	TerminateOrphans    TerminateOrphans     `yaml:"terminateOrphans"`
 	ReapZombies         ReapZombies          `yaml:"reapZombies"`
-	Docker              models.DockerConfig  `yaml:"docker"`
+	Podman              models.PodmanConfig  `yaml:"podman"`
 	PortForwardingRules []PortForwardingRule `yaml:"-"`
 	InitScriptsDir      string               `yaml:"initScriptsDir"`
 	EnableApps          bool                 `yaml:"enableApps"`
