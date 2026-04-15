@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/k8shell-io/api-server/pkg/client"
 	"github.com/k8shell-io/common/pkg/authz"
@@ -140,14 +141,29 @@ func (s *Server) initialize() error {
 	}
 
 	if s.config.Podman.Enabled {
-		if _, err := os.Lstat(config.PODMAN_SOCKET_PATH); err == nil {
-			if err := os.Chown(config.PODMAN_SOCKET_PATH, int(s.user.GetUID()), int(s.user.GetGID())); err != nil {
-				s.logger.Error().Msgf("Error chowning podman socket %s: %v", config.PODMAN_SOCKET_PATH, err)
-			} else {
-				s.logger.Info().Msgf("Podman socket %s ownership changed to UID %d GID %d",
-					config.PODMAN_SOCKET_PATH, s.user.GetUID(), s.user.GetGID())
+		uid := int(s.user.GetUID())
+		gid := int(s.user.GetGID())
+		go func() {
+			const (
+				maxWait      = 30 * time.Second
+				pollInterval = 500 * time.Millisecond
+			)
+			deadline := time.Now().Add(maxWait)
+			for time.Now().Before(deadline) {
+				if _, err := os.Lstat(config.PODMAN_SOCKET_PATH); err == nil {
+					if err := os.Chown(config.PODMAN_SOCKET_PATH, uid, gid); err != nil {
+						s.logger.Error().Msgf("Error chowning podman socket %s: %v", config.PODMAN_SOCKET_PATH, err)
+					} else {
+						s.logger.Info().Msgf("Podman socket %s ownership changed to UID %d GID %d",
+							config.PODMAN_SOCKET_PATH, uid, gid)
+					}
+					return
+				}
+				time.Sleep(pollInterval)
 			}
-		}
+			s.logger.Warn().Msgf("Podman socket %s not found after %s, skipping chown",
+				config.PODMAN_SOCKET_PATH, maxWait)
+		}()
 	}
 
 	if s.config.Podman.Enabled && s.config.Podman.CreateDockerSockSymlink {
