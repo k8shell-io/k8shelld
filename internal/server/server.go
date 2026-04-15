@@ -140,25 +140,23 @@ func (s *Server) initialize() error {
 	}
 
 	if s.config.Podman.Enabled {
-		groupCreated, err := system.AddUserToDockerGroup(s.user.GetUsername(), s.config.Podman.GroupId)
-		if groupCreated {
-			s.logger.Info().Msgf("Podman group with GID %d created", s.config.Podman.GroupId)
-		}
-		if err != nil {
-			s.logger.Error().Msgf("Error adding user to podman group: %v", err)
-		} else {
-			s.logger.Info().Msgf("User %s added to podman group (GID %d)",
-				s.user.GetUsername(), s.config.Podman.GroupId)
+		if _, err := os.Lstat(config.PODMAN_SOCKET_PATH); err == nil {
+			if err := os.Chown(config.PODMAN_SOCKET_PATH, int(s.user.GetUID()), int(s.user.GetGID())); err != nil {
+				s.logger.Error().Msgf("Error chowning podman socket %s: %v", config.PODMAN_SOCKET_PATH, err)
+			} else {
+				s.logger.Info().Msgf("Podman socket %s ownership changed to UID %d GID %d",
+					config.PODMAN_SOCKET_PATH, s.user.GetUID(), s.user.GetGID())
+			}
 		}
 	}
 
 	if s.config.Podman.Enabled && s.config.Podman.CreateDockerSockSymlink {
 		if _, err := os.Lstat(config.DOCKER_SOCKET_SYMLINK); err != nil {
-			if err := os.Symlink(config.DOCKER_SOCKET_PATH, config.DOCKER_SOCKET_SYMLINK); err != nil {
+			if err := os.Symlink(config.PODMAN_SOCKET_PATH, config.DOCKER_SOCKET_SYMLINK); err != nil {
 				s.logger.Error().Msgf("Error creating docker socket symlink: %v", err)
 			} else {
 				s.logger.Info().Msgf("Created Docker socket symlink: %s -> %s",
-					config.DOCKER_SOCKET_SYMLINK, config.DOCKER_SOCKET_PATH)
+					config.DOCKER_SOCKET_SYMLINK, config.PODMAN_SOCKET_PATH)
 			}
 		} else {
 			s.logger.Warn().Msgf("Docker socket symlink already exists: %s", config.DOCKER_SOCKET_SYMLINK)

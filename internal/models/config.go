@@ -4,7 +4,6 @@ package models
 type PodmanConfig struct {
 	Enabled                 bool      `yaml:"enabled"`
 	CreateDockerSockSymlink bool      `yaml:"createDockerSockSymlink"`
-	GroupId                 uint32    `yaml:"groupId"`
 	Storages                []Storage `yaml:"storages"`
 }
 

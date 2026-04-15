@@ -25,7 +25,7 @@ var (
 )
 
 const (
-	DOCKER_SOCKET_PATH    = "/var/run/docker/docker.sock"
+	PODMAN_SOCKET_PATH    = "/var/run/podman/podman.sock"
 	DOCKER_SOCKET_SYMLINK = "/var/run/docker.sock"
 )
 
