@@ -318,14 +318,19 @@ func (s *Server) runInitScripts(
 	}
 
 	s.logger.Info().Msgf("Running %d init scripts in background.", len(scripts))
-	go func() {
-		for _, scriptPath := range scripts {
-			s.logger.Info().Msgf("Running %s.", scriptPath)
-			err := s.runScriptHelper(scriptsDir, scriptPath, flagDir, []string{})
-			if err != nil {
-				s.logger.Error().Msgf("Failed to run init script %s: %v", scriptPath, err)
+	var wg sync.WaitGroup
+	for _, scriptPath := range scripts {
+		wg.Add(1)
+		go func(sp string) {
+			defer wg.Done()
+			s.logger.Info().Msgf("Running %s.", sp)
+			if err := s.runScriptHelper(scriptsDir, sp, flagDir, []string{}); err != nil {
+				s.logger.Error().Msgf("Failed to run init script %s: %v", sp, err)
 			}
-		}
+		}(scriptPath)
+	}
+	go func() {
+		wg.Wait()
 		s.logger.Info().Msg("All init scripts completed.")
 		if onComplete != nil {
 			onComplete()
@@ -339,22 +344,45 @@ func (s *Server) runInitScripts(
 func (s *Server) runScriptHelper(scriptsDir, scriptPath string, flagDir string, envVars []string) error {
 	scriptName := filepath.Base(scriptPath)
 
-	flagFile := ""
-	if strings.Contains(scriptName, "__flag") {
-		flagFile = filepath.Join(flagDir, scriptName)
-		if _, err := os.Stat(flagFile); err == nil {
-			s.logger.Info().Msgf("Flag file exists for %s. Skipping execution.", scriptName)
-			return nil
-		}
+	flagFile := filepath.Join(flagDir, scriptName)
+	if _, err := os.Stat(flagFile); err == nil {
+		s.logger.Info().Msgf("Flag file exists for %s. Skipping execution.", scriptName)
+		return nil
 	}
 
 	return s.runScript(scriptsDir, scriptName, flagFile, envVars)
 }
 
+// scriptInterpreter returns the interpreter for a script by reading its shebang line.
+// Falls back to "/bin/sh" when no shebang is present.
+func scriptInterpreter(scriptPath string) string {
+	f, err := os.Open(scriptPath)
+	if err != nil {
+		return "/bin/sh"
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	if scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "#!") {
+			interp := strings.TrimSpace(line[2:])
+			if interp != "" {
+				return interp
+			}
+		}
+	}
+	return "/bin/sh"
+}
+
 // runScript executes a script
 func (s *Server) runScript(scriptsDir, scriptName, flagFile string, envVars []string) error {
-	cmd := exec.Command("/bin/bash", "-l", "-c", fmt.Sprintf("%s/%s", scriptsDir, scriptName))
+	scriptPath := filepath.Join(scriptsDir, scriptName)
+
+	interp := scriptInterpreter(scriptPath)
+	cmd := exec.Command(interp, scriptPath)
 	cmd.Env = system.CreateEnvVars(envVars, s.user.GetHomeDir())
+
 	cmd.Dir = s.user.GetHomeDir()
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
