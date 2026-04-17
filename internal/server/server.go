@@ -16,6 +16,7 @@ import (
 
 	"github.com/k8shell-io/api-server/pkg/client"
 	"github.com/k8shell-io/common/pkg/authz"
+	commonmodels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
@@ -34,6 +35,7 @@ type Server struct {
 	testMode    bool
 	user        *models.User
 	config      *config.Config
+	blueprint   *commonmodels.Blueprint
 	workspace   string
 	restService *RESTService
 	grpcService *grpc.GRPCService
@@ -75,10 +77,16 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		testMode:    testMode,
 		config:      cfg,
 		pprof:       cfg.System.PProf,
-		sysInfo:     system.NewSystemInfo(cfg),
 		apiClientx:  apiClient,
 		jwtVerifier: jwtVerifier,
 	}
+
+	bp, err := config.LoadBlueprint(config.BlueprintPath)
+	if err != nil {
+		s.logger.Warn().Msgf("Failed to load blueprint from %s: %v", config.BlueprintPath, err)
+	}
+	s.blueprint = bp
+	s.sysInfo = system.NewSystemInfo(cfg, bp)
 
 	err = s.loadIdentity()
 	if err != nil {
@@ -97,14 +105,14 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		s.procWatcher = system.NewProcessWatcher(false, false, 0, nil)
 	}
 
-	if cfg.EnableApps {
-		s.appManager, err = apps.NewAppManager(cfg.Apps, s.user, s.procWatcher, s.testMode)
+	if s.blueprint != nil && s.blueprint.EnableApps {
+		s.appManager, err = apps.NewAppManager(config.BlueprintApps(s.blueprint.Apps), s.user, s.procWatcher, s.testMode)
 		if err != nil {
 			return nil, fmt.Errorf("error creating App Manager: %v", err)
 		}
 	}
 
-	s.grpcService, err = grpc.NewGRPCService(cfg, s.user, s.jwtVerifier, cfg.PortForwardingRules,
+	s.grpcService, err = grpc.NewGRPCService(cfg, s.blueprint, s.user, s.jwtVerifier,
 		s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
@@ -114,8 +122,6 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	if err != nil {
 		return nil, fmt.Errorf("error creating REST API: %v", err)
 	}
-
-	config.UnsetEnvVars(cfg.Env)
 
 	err = s.initialize()
 	if err != nil {
@@ -140,7 +146,7 @@ func (s *Server) initialize() error {
 		s.logger.Fatal().Msgf("Error creating user: %v", err)
 	}
 
-	if s.config.Podman.Enabled {
+	if s.blueprint != nil && s.blueprint.Podman.Enabled {
 		uid := int(s.user.GetUID())
 		gid := int(s.user.GetGID())
 		go func() {
@@ -166,7 +172,7 @@ func (s *Server) initialize() error {
 		}()
 	}
 
-	if s.config.Podman.Enabled && s.config.Podman.CreateDockerSockSymlink {
+	if s.blueprint != nil && s.blueprint.Podman.Enabled && s.blueprint.Podman.CreateDockerSockSymlink {
 		if _, err := os.Lstat(config.DOCKER_SOCKET_SYMLINK); err != nil {
 			if err := os.Symlink(config.PODMAN_SOCKET_PATH, config.DOCKER_SOCKET_SYMLINK); err != nil {
 				s.logger.Error().Msgf("Error creating docker socket symlink: %v", err)
@@ -188,13 +194,13 @@ func (s *Server) initialize() error {
 			return
 		}
 
-		if appMgr.Apps() == nil || len(*appMgr.Apps()) == 0 {
+		if appMgr.Apps() == nil || len(appMgr.Apps()) == 0 {
 			s.logger.Info().Msg("No apps configured, skipping auto-start")
 			return
 		}
 
 		bg := context.Background()
-		for name, app := range *appMgr.Apps() {
+		for name, app := range appMgr.Apps() {
 			if !app.AutoStart {
 				continue
 			}

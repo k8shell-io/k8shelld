@@ -19,6 +19,7 @@ import (
 	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	commonModels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apps"
+	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/rs/zerolog"
@@ -354,7 +355,11 @@ func (a *RESTService) GetIdentity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *RESTService) GetSplash(w http.ResponseWriter, r *http.Request) {
-	expanded := a.server.config.ExpandSplash(a.user, a.user.GetUsername())
+	var splash string
+	if a.server.blueprint != nil {
+		splash = a.server.blueprint.Splash
+	}
+	expanded := config.ExpandSplash(splash, a.user.GetUsername())
 	// ExpandSplash returns PTY-style \r\n; normalise to plain \n for terminal.
 	text := strings.ReplaceAll(expanded, "\r\n", "\n")
 

@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/internal/config"
+	commonmodels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/rs/zerolog"
@@ -20,7 +20,7 @@ import (
 // supervisorState holds the state for a supervisor
 type AppSupervisor struct {
 	manager *AppManager
-	app     *config.AppSpec
+	app     *commonmodels.AppSpec
 	log     zerolog.Logger
 
 	stopCh   chan struct{}
@@ -31,7 +31,7 @@ type AppSupervisor struct {
 	pid          int
 }
 
-func NewAppSupervisor(manager *AppManager, app *config.AppSpec) *AppSupervisor {
+func NewAppSupervisor(manager *AppManager, app *commonmodels.AppSpec) *AppSupervisor {
 	log := logger.NewLogger("app-supervisor").With().Str("app", app.Name).Logger()
 	return &AppSupervisor{
 		manager: manager,

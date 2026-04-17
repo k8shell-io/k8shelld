@@ -1,9 +1,7 @@
 // portforward.go, copyright 2025 the k8shell.io authors
 
 // Port-forwarding service server. It creates a new port-forwarding instance, starts the TCP connection, and
-// streams data between the client and the destination. The port forwarder is able to forward the traffic to
-// the destination only if the destination IP is in the allowed subnets. The allowed subnets are defined in the
-// port-forwarding rules.
+// streams data between the client and the destination.
 
 package grpc
 
@@ -51,52 +49,6 @@ func NewPortForwardServiceServer(grpcapi *GRPCService) *PortForwardServiceServer
 	}
 }
 
-// getLocalSubnets returns all local network subnets in the workspace
-// It collects all local subnets from the network interfaces.
-func getLocalSubnets() ([]*net.IPNet, error) {
-	var subnets []*net.IPNet
-
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get network interfaces: %v", err)
-	}
-
-	for _, iface := range interfaces {
-		// Skip interfaces that are down or not loopback
-		if iface.Flags&net.FlagUp == 0 {
-			continue
-		}
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-
-		for _, addr := range addrs {
-			_, subnet, err := net.ParseCIDR(addr.String())
-			if err == nil {
-				subnets = append(subnets, subnet)
-			}
-		}
-	}
-
-	return subnets, nil
-}
-
-// ResolveHostnameToIP resolves the hostname to IP address
-func resolveHostnameToIP(host string) (net.IP, error) {
-	ip := net.ParseIP(host)
-	if ip != nil {
-		return ip, nil
-	}
-
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve %s: %w", host, err)
-	}
-	return ips[0], nil
-}
-
 // Get the port-forward ID from the gRPC metadata "portforward-id"
 func (s *PortForwardServiceServer) GetPortForwardID(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
@@ -126,63 +78,13 @@ func (s *PortForwardServiceServer) GetPortForwardData(ctx context.Context) (*Por
 }
 
 func (s *PortForwardServiceServer) createTCPConnection(destination string, port uint16) (net.Conn, error) {
-	// Resolve the destination hostname to IP
-	destinationIP, err := resolveHostnameToIP(destination)
-	if err != nil {
-		return nil, status.Errorf(
-			codes.NotFound,
-			"failed to resolve destination IP: %v", err,
-		)
-	}
-
-	// Check if the destination IP is in the allowed subnets
-	// Collect all local subnets if the rule is "localnetworks:0"
-	localSubnets := []*net.IPNet{}
-	allowRules := make([]config.PortForwardingRule, len(s.grpcApi.portForwardingRules))
-	copy(allowRules, s.grpcApi.portForwardingRules)
-	for _, rule := range s.grpcApi.portForwardingRules {
-		if rule.Subnet == nil {
-			if len(localSubnets) == 0 {
-				localSubnets, err = getLocalSubnets()
-				if err != nil {
-					return nil, status.Errorf(
-						codes.Internal,
-						"failed to get local subnets: %v", err,
-					)
-				}
-			}
-			for _, subnet := range localSubnets {
-				allowRules = append(allowRules, config.PortForwardingRule{Subnet: subnet, Port: rule.Port})
-			}
-		}
-	}
-
-	// Evaluate the rules
-	found := false
-	for _, rule := range allowRules {
-		if rule.Subnet == nil {
-			continue
-		}
-		if rule.Subnet.Contains(destinationIP) && (rule.Port == port || rule.Port == 0) {
-			found = true
-		}
-	}
-	if !found {
-		return nil, status.Errorf(
-			codes.PermissionDenied,
-			"destination %s:%d is not in allowed networks", destinationIP, port,
-		)
-	}
-
-	var tcpConn net.Conn
-	tcpConn, err = net.Dial("tcp", net.JoinHostPort(destination, fmt.Sprintf("%d", port)))
+	tcpConn, err := net.Dial("tcp", net.JoinHostPort(destination, fmt.Sprintf("%d", port)))
 	if err != nil {
 		return nil, status.Errorf(
 			codes.Unavailable,
 			"failed to connect to %s:%d: %v", destination, port, err,
 		)
 	}
-
 	return tcpConn, nil
 }
 

@@ -6,8 +6,6 @@ import (
 	"strings"
 	"text/template"
 	"time"
-
-	"github.com/k8shell-io/k8shelld/internal/models"
 )
 
 // SplashVars holds all values that can be referenced inside the splash template.
@@ -64,42 +62,6 @@ func ExpandSplash(splash, shellUsername string) string {
 	}
 
 	result := strings.ReplaceAll(buf.String(), "\r\n", "\n") // normalise first
-	result = strings.ReplaceAll(result, "\n", "\r\n")
-	if !strings.HasSuffix(result, "\r\n") {
-		result += "\r\n"
-	}
-	return result
-}
-
-// ExpandSplashWithConfig is a convenience wrapper that also fills Username from
-// the Config and accepts the active shell username separately.
-func (c *Config) ExpandSplash(user *models.User, shellUsername string) string {
-	if c.Splash == "" {
-		return ""
-	}
-
-	hostname, _ := os.Hostname()
-
-	vars := SplashVars{
-		Version:       K8SHELLD_VERSION,
-		Commit:        K8SHELLD_COMMIT,
-		Username:      user.GetUsername(),
-		ShellUsername: shellUsername,
-		Hostname:      hostname,
-		Date:          time.Now().Format("2006-01-02"),
-	}
-
-	tmpl, err := template.New("splash").Parse(c.Splash)
-	if err != nil {
-		return c.Splash
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, vars); err != nil {
-		return c.Splash
-	}
-
-	result := strings.ReplaceAll(buf.String(), "\r\n", "\n")
 	result = strings.ReplaceAll(result, "\n", "\r\n")
 	if !strings.HasSuffix(result, "\r\n") {
 		result += "\r\n"

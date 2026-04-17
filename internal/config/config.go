@@ -1,17 +1,11 @@
 package config
 
 import (
-	"fmt"
-	"net"
 	"os"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 
-	"github.com/k8shell-io/common/pkg/gapi"
-	"github.com/k8shell-io/k8shelld/internal/models"
-	"github.com/k8shell-io/k8shelld/internal/utils"
+	k8shelld "github.com/k8shell-io/common/pkg/api/client/k8shelld"
+	commonmodels "github.com/k8shell-io/common/pkg/models"
+	"gopkg.in/yaml.v3"
 )
 
 // Maximum packet size for streaming data
@@ -27,144 +21,44 @@ var (
 const (
 	PODMAN_SOCKET_PATH    = "/var/run/podman/podman.sock"
 	DOCKER_SOCKET_SYMLINK = "/var/run/docker.sock"
+	BlueprintPath         = "/etc/k8shell/blueprint.yaml"
 )
 
-// Identity holds the configuration required to load and verify the workspace
-// identity JWT at startup and during periodic renewal checks.
-type Identity struct {
-	// TokenPath is the path to the file containing the user JWT.
-	TokenPath string `yaml:"tokenPath"`
+// Type aliases for types defined in common.
+type (
+	// Config is now identical to k8shelld.Config. Splash, Podman, EnableApps and Apps
+	// are no longer in the daemon config — they come from the blueprint.
+	Config = k8shelld.Config
+)
 
-	// PublicKeyPath is the path to the PEM-encoded public key used to verify
-	// the JWT signature.
-	PublicKeyPath string `yaml:"publicKeyPath"`
-
-	// SigningMethod is the JWT signing algorithm, e.g. "rs256" or "es256".
-	SigningMethod string `yaml:"signingMethod"`
-}
-
-// Config represents the main configuration file structure
-type Config struct {
-	System              System               `yaml:"system"`
-	Identity            Identity             `yaml:"identity"`
-	Splash              string               `yaml:"splash"`
-	Env                 Env                  `yaml:"env"`
-	PortForwarding      []string             `yaml:"portForwarding"`
-	TerminateOrphans    TerminateOrphans     `yaml:"terminateOrphans"`
-	ReapZombies         ReapZombies          `yaml:"reapZombies"`
-	Podman              models.PodmanConfig  `yaml:"podman"`
-	PortForwardingRules []PortForwardingRule `yaml:"-"`
-	InitScriptsDir      string               `yaml:"initScriptsDir"`
-	EnableApps          bool                 `yaml:"enableApps"`
-	Apps                *Apps                `yaml:"apps" json:"apps"`
-	Storages            []models.Storage     `yaml:"storages"`
-}
-
-// System represents the general system configuration
-type System struct {
-	PProf      bool              `yaml:"pprof"`
-	LogLevel   string            `yaml:"logLevel" jsonschema:"enum=debug,enum=info,enum=warn,enum=error,default=info"`
-	ApiServer  ApiServerConfig   `yaml:"apiServer"`
-	GrpcConfig gapi.ServerConfig `yaml:"grpc"`
-}
-
-type ApiServerConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Address string `yaml:"address"`
-}
-
-// TerminateOrphans represents the configuration for the terminate orphans feature of process watcher
-type TerminateOrphans struct {
-	Enabled       bool     `yaml:"enabled"`
-	CheckInterval int      `yaml:"checkInterval"`
-	Exclude       []string `yaml:"exclude"`
-}
-
-// ReapZombies represents the configuration for the reap zombies feature of process watcher
-type ReapZombies struct {
-	Enabled bool `yaml:"enabled"`
-}
-
-// Env represents the environment variables (regexp patterns) to be unset in the workspace
-type Env struct {
-	Unset         []string `yaml:"unset"`
-	UnsetPatterns []*regexp.Regexp
-}
-
-// Rule represents a parsed rule (CIDR and Port)
-type PortForwardingRule struct {
-	Subnet *net.IPNet
-	Port   uint16
-}
-
-// Apps represents a map of application specifications
-type Apps map[string]*AppSpec
-
-// AppSpec represents the specification for an application
-type AppSpec struct {
-	Name              string        `yaml:"name"`
-	Binary            string        `yaml:"binary"`
-	VersionCmd        []string      `yaml:"versionCmd,omitempty"`
-	VersionRegex      string        `yaml:"versionRegex,omitempty"`
-	Install           string        `yaml:"install"`
-	Start             []string      `yaml:"start"`
-	Listen            int           `yaml:"listen"`
-	RestartPolicy     string        `yaml:"restartPolicy"`
-	MaxRestartBackoff time.Duration `yaml:"maxRestartBackoff"`
-	InstallAsRoot     bool          `yaml:"installAsRoot"`
-	AutoStart         bool          `yaml:"autoStart"`
-	Protocol          string        `yaml:"protocol"`
-}
-
-// parsePortForwardingRule converts a rule into a PortForwardingRule struct
-// The rule format is: localnetworks[:<port>], localhost or <cidr>[:<port>]
-// When the port is not specified, it defaults to 0 (all ports)
-func ParsePortForwardingRule(rule string) (PortForwardingRule, error) {
-	parts := strings.Split(rule, ":")
-	cidr := parts[0]
-	port := 0 // Default to all ports
-
-	if len(parts) == 2 {
-		var err error
-		port, err = strconv.Atoi(parts[1])
-		if err != nil {
-			return PortForwardingRule{}, fmt.Errorf("invalid port in rule: %s", rule)
-		}
-	} else if len(parts) > 2 {
-		return PortForwardingRule{}, fmt.Errorf("invalid rule format: %s", rule)
+// LoadBlueprint reads and unmarshals the blueprint YAML at the given path.
+// The file is expected to have the structure:
+//
+//	metadata: ...
+//	blueprint:
+//	  <blueprint fields>
+func LoadBlueprint(path string) (*commonmodels.Blueprint, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
 	}
-
-	var subnet *net.IPNet
-	var err error
-	if cidr != "localnetworks" {
-		if cidr == "localhost" {
-			cidr = "127.0.0.1"
-		}
-		if cidr == "0.0.0.0" {
-			cidr = "0.0.0.0/0"
-		}
-		if !strings.Contains(cidr, "/") {
-			cidr = cidr + "/32"
-		}
-		_, subnet, err = net.ParseCIDR(cidr)
-		if err != nil {
-			return PortForwardingRule{}, fmt.Errorf("invalid CIDR in rule: %s", rule)
-		}
-	} else {
-		subnet = nil // Special case for local networks
+	var wrapper struct {
+		Blueprint commonmodels.Blueprint `yaml:"blueprint"`
 	}
-
-	return PortForwardingRule{Subnet: subnet, Port: utils.SafeIntToUint16(port)}, nil
+	if err := yaml.Unmarshal(data, &wrapper); err != nil {
+		return nil, err
+	}
+	return &wrapper.Blueprint, nil
 }
 
-// UnsetEnvVars unsets the environment variables that match the patterns
-func UnsetEnvVars(env Env) {
-	for _, pattern := range env.UnsetPatterns {
-		for _, e := range os.Environ() {
-			pair := strings.SplitN(e, "=", 2)
-			if pattern.MatchString(pair[0]) {
-				os.Unsetenv(pair[0])
-			}
-		}
+// BlueprintApps converts the blueprint's value-map of AppSpec to the pointer-map
+// used internally by AppManager. It also sets the Name field from the map key.
+func BlueprintApps(bpApps map[string]commonmodels.AppSpec) map[string]*commonmodels.AppSpec {
+	result := make(map[string]*commonmodels.AppSpec, len(bpApps))
+	for name, spec := range bpApps {
+		s := spec
+		s.Name = name
+		result[name] = &s
 	}
+	return result
 }

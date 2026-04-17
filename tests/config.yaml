@@ -27,10 +27,6 @@ system:
       - namespace: "*"
         serviceAccount: "*"
 
-# port forwarding rules
-portForwarding:
-  - localnetworks:0
-
 # reap zombie processes
 reapZombies:
   enabled: true
@@ -46,41 +42,4 @@ terminateOrphans:
 docker:
   enabled: true
   createDockerSockSymlink: true
-  storages:
-    - name: graphdb
-      path: /var/lib/docker
-      readonly: false
-      size: 5Gi
       
-storages:
-  - name: home
-    path: /home/vitvatom
-    readonly: false
-    size: 10Gi
-  - name: shared
-    path: /opt/shared
-    readonly: false
-    size: 50Gi
-
-enableApps: true
-
-apps:
-  vscode:
-    listen: 8080
-    binary: "/usr/bin/code-server"
-    versionCmd: ["/usr/bin/code-server", "--version"]
-    versionRegex: "^([0-9]+\\.[0-9]+\\.[0-9]+)"  
-    install: |
-      curl -fsSL https://code-server.dev/install.sh | sh
-    start: ["/usr/bin/code-server", "--auth=none", "--bind-addr=127.0.0.1:8080", "."]
-    restartPolicy: always
-    
-  jupyter:
-    listen: 8888
-    binary: "${HOME}/.local/bin/jupyter-lab"
-    versionCmd: ["${HOME}/.local/bin/jupyter-lab", "--version"]
-    versionRegex: "^([0-9]+\\.[0-9]+\\.[0-9]+)"
-    install: |
-      pip install jupyter
-    start: ["${HOME}/.local/bin/jupyter-lab", "--ip=0.0.0.0", "--port=8888", "--no-browser"]
-    restartPolicy: always

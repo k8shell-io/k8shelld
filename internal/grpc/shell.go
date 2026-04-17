@@ -12,6 +12,7 @@ import (
 	"time"
 
 	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
+	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
@@ -266,10 +267,10 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 	recvErrCh := make(chan error, 1)
 	ptyDone := make(chan struct{})
 
-	if s.grpcApi.Config.Splash != "" {
+	if s.grpcApi.blueprint != nil && s.grpcApi.blueprint.Splash != "" {
 		_ = stream.Send(&k8shelldv1.ShellResponse{
 			Response: &k8shelldv1.ShellResponse_Data{
-				Data: []byte("\n\r" + s.grpcApi.Config.ExpandSplash(s.grpcApi.user, session.user.Username) + "\n\r"),
+				Data: []byte("\n\r" + config.ExpandSplash(s.grpcApi.blueprint.Splash, session.user.Username) + "\n\r"),
 			},
 		})
 	}

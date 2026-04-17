@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
-	"github.com/k8shell-io/k8shelld/internal/config"
+	commonmodels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
@@ -34,7 +34,7 @@ var ErrAppInvalidState = fmt.Errorf("not a valid app state")
 
 // AppManager manages the lifecycle of applications defined in the configuration
 type AppManager struct {
-	apps        *config.Apps
+	apps        map[string]*commonmodels.AppSpec
 	user        *models.User
 	stateDir    string
 	logger      *zerolog.Logger
@@ -46,7 +46,7 @@ type AppManager struct {
 }
 
 // NewAppManager creates a new AppManager instance
-func NewAppManager(apps *config.Apps, user *models.User, procWatcher *system.ProcessWatcher,
+func NewAppManager(apps map[string]*commonmodels.AppSpec, user *models.User, procWatcher *system.ProcessWatcher,
 	testMode bool) (*AppManager, error) {
 	log := logger.NewLogger("app-manager")
 
@@ -54,11 +54,9 @@ func NewAppManager(apps *config.Apps, user *models.User, procWatcher *system.Pro
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
 
-	if apps != nil {
-		// The app struct does not have the Name field set from the config
-		for name, app := range *apps {
-			app.Name = name
-		}
+	// The app struct does not have the Name field set from the config
+	for name, app := range apps {
+		app.Name = name
 	}
 
 	return &AppManager{
@@ -74,7 +72,7 @@ func NewAppManager(apps *config.Apps, user *models.User, procWatcher *system.Pro
 }
 
 // newSupervisor creates a new AppSupervisor for the given app and adds it to the manager.
-func (m *AppManager) newSupervisor(app *config.AppSpec) *AppSupervisor {
+func (m *AppManager) newSupervisor(app *commonmodels.AppSpec) *AppSupervisor {
 	s := NewAppSupervisor(m, app)
 	m.mu.Lock()
 	m.supervisors[app.Name] = s
@@ -107,11 +105,11 @@ func (m *AppManager) ensureAppStateDir(name string) (string, error) {
 }
 
 // GetApp retrieves the app specification by name.
-func (m *AppManager) GetApp(name string) (*config.AppSpec, error) {
+func (m *AppManager) GetApp(name string) (*commonmodels.AppSpec, error) {
 	if m.apps == nil {
 		return nil, ErrNoAppsConfigured
 	}
-	app, ok := (*m.apps)[name]
+	app, ok := m.apps[name]
 	if !ok {
 		return nil, fmt.Errorf("app %s %w", name, ErrAppNotFound)
 	}
@@ -509,7 +507,7 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]k8shelld.AppStatus, e
 		return res, nil
 	}
 
-	for name, app := range *m.apps {
+	for name, app := range m.apps {
 		installing := m.installing[name]
 
 		status := k8shelld.AppStatus{
@@ -786,7 +784,7 @@ func (m *AppManager) InstallAndStart(ctx context.Context, name string) error {
 	return nil
 }
 
-func (m *AppManager) Apps() *config.Apps {
+func (m *AppManager) Apps() map[string]*commonmodels.AppSpec {
 	return m.apps
 }
 

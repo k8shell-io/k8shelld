@@ -15,6 +15,7 @@ import (
 	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
 	"github.com/k8shell-io/common/pkg/authz"
 	"github.com/k8shell-io/common/pkg/gapi"
+	commonmodels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
@@ -47,20 +48,20 @@ type StoreRecord struct {
 
 // GRPCApiService is the main service that handles the gRPC API
 type GRPCService struct {
-	Config              *config.Config              // The main configuration
-	user                *models.User                // The user information loaded from the identity token
-	logger              *zerolog.Logger             // The logger
-	procWatcher         *system.ProcessWatcher      // The process watcher
-	portForwardingRules []config.PortForwardingRule // The port forwarding rules that are allowed
-	ExecStore           *sync.Map                   // The store for the exec data
-	PortForwardStore    *sync.Map                   // The store for the port forwarding data
-	SessionStore        *sync.Map                   // The store for the session data
-	UnixSocketStore     *sync.Map                   // The store for the unix socket data
-	apiClientx          *apiClient.Client           // The API client to communicate with the API server
-	appManager          *apps.AppManager            // The app manager
-	CommandService      *CommandServiceServer       // The command service
-	sysInfo             *system.SystemInfo          // The system information
-	jwtVerifier         *authz.JWTVerifier          // The JWT verifier for the identity token
+	Config           *config.Config          // The main configuration
+	blueprint        *commonmodels.Blueprint // The workspace blueprint
+	user             *models.User            // The user information loaded from the identity token
+	logger           *zerolog.Logger         // The logger
+	procWatcher      *system.ProcessWatcher  // The process watcher
+	ExecStore        *sync.Map               // The store for the exec data
+	PortForwardStore *sync.Map               // The store for the port forwarding data
+	SessionStore     *sync.Map               // The store for the session data
+	UnixSocketStore  *sync.Map               // The store for the unix socket data
+	apiClientx       *apiClient.Client       // The API client to communicate with the API server
+	appManager       *apps.AppManager        // The app manager
+	CommandService   *CommandServiceServer   // The command service
+	sysInfo          *system.SystemInfo      // The system information
+	jwtVerifier      *authz.JWTVerifier      // The JWT verifier for the identity token
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -80,28 +81,27 @@ func getStatus(deleted time.Time) string {
 }
 
 // NewGRPCAPI creates a new GRPCApiService
-func NewGRPCService(config *config.Config, user *models.User, jwtVerifier *authz.JWTVerifier,
-	portForwardingRules []config.PortForwardingRule,
+func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, user *models.User, jwtVerifier *authz.JWTVerifier,
 	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
 	appManager *apps.AppManager, sysInfo *system.SystemInfo) (*GRPCService, error) {
 
 	logger := logger.NewLogger("grpc")
 
 	return &GRPCService{
-		logger:              logger,
-		Config:              config,
-		user:                user,
-		portForwardingRules: portForwardingRules,
-		procWatcher:         procWatcher,
-		ExecStore:           &sync.Map{},
-		PortForwardStore:    &sync.Map{},
-		SessionStore:        &sync.Map{},
-		UnixSocketStore:     &sync.Map{},
-		apiClientx:          apiClient,
-		appManager:          appManager,
-		CommandService:      NewCommandServiceServer(),
-		sysInfo:             sysInfo,
-		jwtVerifier:         jwtVerifier,
+		logger:           logger,
+		Config:           config,
+		blueprint:        blueprint,
+		user:             user,
+		procWatcher:      procWatcher,
+		ExecStore:        &sync.Map{},
+		PortForwardStore: &sync.Map{},
+		SessionStore:     &sync.Map{},
+		UnixSocketStore:  &sync.Map{},
+		apiClientx:       apiClient,
+		appManager:       appManager,
+		CommandService:   NewCommandServiceServer(),
+		sysInfo:          sysInfo,
+		jwtVerifier:      jwtVerifier,
 	}, nil
 }
 
