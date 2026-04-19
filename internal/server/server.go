@@ -185,7 +185,7 @@ func (s *Server) initialize() error {
 		}
 	}
 
-	err = s.runInitScripts(s.config.InitScriptsDir, s.user, func() {
+	err = s.runInitScripts(config.InitScriptsDir, s.user, func() {
 		s.logger.Info().Msg("Init scripts finished, running auto-start apps")
 
 		appMgr := s.appManager

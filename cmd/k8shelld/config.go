@@ -47,7 +47,6 @@ var (
 		ReapZombies: config.ReapZombies{
 			Enabled: true,
 		},
-		InitScriptsDir: "/usr/local/k8shell/system",
 	}
 )
 

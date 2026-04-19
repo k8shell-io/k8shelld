@@ -22,6 +22,7 @@ const (
 	PODMAN_SOCKET_PATH    = "/var/run/podman/podman.sock"
 	DOCKER_SOCKET_SYMLINK = "/var/run/docker.sock"
 	BlueprintPath         = "/etc/k8shell/blueprint.yaml"
+	InitScriptsDir        = "/usr/local/k8shell/system"
 )
 
 // Type aliases for types defined in common.
