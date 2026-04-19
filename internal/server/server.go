@@ -137,10 +137,6 @@ func (s *Server) initialize() error {
 		return nil
 	}
 
-	if err := system.CheckSecurityContext(); err != nil {
-		return fmt.Errorf("security context check failed: %w", err)
-	}
-
 	err := exec.Command("kbox", "tools-init").Run()
 	if err != nil {
 		s.logger.Error().Msgf("Error running kbox tools-init: %v", err)
