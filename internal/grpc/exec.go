@@ -18,6 +18,7 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/internal/utils"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -37,7 +38,6 @@ type ExecData struct {
 type ExecServiceServer struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
-	k8shelldv1.UnimplementedExecServiceServer
 }
 
 // NewExecServiceServer creates a new ExecServiceServer
@@ -71,7 +71,7 @@ func (s *ExecServiceServer) GetExecID(ctx context.Context) (string, error) {
 	return data[0], nil
 }
 
-func (s *ExecServiceServer) Exec(stream k8shelldv1.ExecService_ExecServer) error {
+func (s *ExecServiceServer) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecRequest, k8shelldv1.ExecResponse]) error {
 	var cmd *exec.Cmd
 	var stdin io.WriteCloser
 	var stdout, stderr io.ReadCloser

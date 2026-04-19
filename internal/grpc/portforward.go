@@ -18,6 +18,7 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/utils"
 	"github.com/rs/zerolog"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -27,7 +28,6 @@ import (
 type PortForwardServiceServer struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
-	k8shelldv1.UnimplementedPortForwardServiceServer
 }
 
 // Port-forward data structure
@@ -92,7 +92,7 @@ func (s *PortForwardServiceServer) createTCPConnection(destination string, port 
 // First request must be Destination. Then we stream bytes both ways until
 // client closes, TCP closes, context cancels, or an error occurs.
 func (s *PortForwardServiceServer) PortForward(
-	stream k8shelldv1.PortForwardService_PortForwardServer,
+	stream grpc.BidiStreamingServer[k8shelldv1.PortForwardRequest, k8shelldv1.PortForwardResponse],
 ) error {
 	ctx := stream.Context()
 

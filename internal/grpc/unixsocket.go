@@ -14,6 +14,7 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/utils"
 	"github.com/rs/zerolog"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -33,7 +34,6 @@ type unixSocketData struct {
 type UnixSocketServiceServer struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
-	k8shelldv1.UnimplementedUnixSocketServiceServer
 }
 
 // NewUnixSocketServiceServer creates a new UnixSocketServiceServer
@@ -72,7 +72,7 @@ func (s *UnixSocketServiceServer) GetUnixSocketData(ctx context.Context) (*Sessi
 	return value.(*SessionData), nil
 }
 
-func (s *UnixSocketServiceServer) UnixSocket(stream k8shelldv1.UnixSocketService_UnixSocketServer) error {
+func (s *UnixSocketServiceServer) UnixSocket(stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
 	uxid, err := s.GetUnixSocketID(stream.Context())
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "failed to get unixsocket-id: %v", err)
@@ -101,7 +101,7 @@ func (s *UnixSocketServiceServer) UnixSocket(stream k8shelldv1.UnixSocketService
 
 // startListenerAndBridge starts a Unix socket listener and bridges gRPC <-> conn
 func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string,
-	stream k8shelldv1.UnixSocketService_UnixSocketServer) error {
+	stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
 
 	unixsocket := &unixSocketData{
 		Id:         uxid,
@@ -139,7 +139,7 @@ func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string
 
 // dialAndBridge dials a Unix socket and bridges gRPC <-> conn
 func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
-	stream k8shelldv1.UnixSocketService_UnixSocketServer) error {
+	stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
 
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
@@ -220,7 +220,7 @@ func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
 }
 
 func (s *UnixSocketServiceServer) communicate(uxListener *net.UnixListener, unixsocket *unixSocketData,
-	stream k8shelldv1.UnixSocketService_UnixSocketServer) error {
+	stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
 	buf := make([]byte, 1024)
 	stop := make(chan struct{})
 	defer close(stop)

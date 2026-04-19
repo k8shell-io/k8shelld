@@ -133,10 +133,7 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 
 	if err := server.RegisterService(func(s *grpc.Server) error {
 		k8shelldv1.RegisterSystemServiceServer(s, NewSystemServiceServer(a))
-		k8shelldv1.RegisterShellServiceServer(s, NewShellServiceServer(a))
-		k8shelldv1.RegisterExecServiceServer(s, NewExecServiceServer(a))
-		k8shelldv1.RegisterPortForwardServiceServer(s, NewPortForwardServiceServer(a))
-		k8shelldv1.RegisterUnixSocketServiceServer(s, NewUnixSocketServiceServer(a))
+		k8shelldv1.RegisterSshServiceServer(s, NewSshServiceServer(a))
 		k8shelldv1.RegisterAppServiceServer(s, NewAppServiceServer(a.appManager))
 		k8shelldv1.RegisterCommandServiceServer(s, a.CommandService)
 		a.logger.Info().Msgf("GRPC services server registered")

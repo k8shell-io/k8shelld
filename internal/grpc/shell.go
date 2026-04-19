@@ -20,6 +20,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/creack/pty"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -43,12 +44,11 @@ type SessionData struct {
 type ShellServiceServer struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
-	k8shelldv1.UnimplementedShellServiceServer
 }
 
 // streamWriter is a writer that sends the data to the client stream
 type streamWriter struct {
-	stream k8shelldv1.ShellService_ShellServer
+	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse]
 }
 
 // Write writes the data to the client stream
@@ -113,7 +113,7 @@ func (s *ShellServiceServer) GetSessionData(ctx context.Context) (*SessionData, 
 
 // Shell is a gRPC method that starts a shell session. It is a bidirectional streaming RPC
 // that sends the shell output to the client and receives the client input to send to the shell.
-func (s *ShellServiceServer) Shell(stream k8shelldv1.ShellService_ShellServer) error {
+func (s *ShellServiceServer) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse]) error {
 	sessionId, err := s.GetSessionID(stream.Context())
 	if err != nil {
 		return fmt.Errorf("failed to get session ID: %v", err)
@@ -222,7 +222,7 @@ func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
 // handlePtySession handles a shell session with PTY. It creates the PTY session, sets the width and height
 // of the terminal, reads data from the PTY and sends the data back to the client and vice versa.
 func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *SessionData,
-	stream k8shelldv1.ShellService_ShellServer, width uint32, height uint32) error {
+	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse], width uint32, height uint32) error {
 
 	ptmx, tty, err := pty.Open()
 	if err != nil {
@@ -346,7 +346,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 func (s *ShellServiceServer) handleNonPtySession(
 	logger *zerolog.Logger,
 	session *SessionData,
-	stream k8shelldv1.ShellService_ShellServer,
+	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
 ) error {
 	var (
 		stdout io.ReadCloser
