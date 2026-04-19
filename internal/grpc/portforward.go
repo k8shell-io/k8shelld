@@ -24,8 +24,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// PortForwardServiceServer is the service that handles the port-forwarding GRPC service server
-type PortForwardServiceServer struct {
+// PortForwardHandler is the service that handles the port-forwarding GRPC service server
+type PortForwardHandler struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
 }
@@ -41,16 +41,16 @@ type PortForwardData struct {
 	BytesOut    uint64
 }
 
-// NewPortForwardServiceServer creates a new PortForwardServiceServer
-func NewPortForwardServiceServer(grpcapi *GRPCService) *PortForwardServiceServer {
-	return &PortForwardServiceServer{
+// newPortForwardHandler creates a new PortForwardHandler
+func newPortForwardHandler(grpcapi *GRPCService) *PortForwardHandler {
+	return &PortForwardHandler{
 		grpcApi: grpcapi,
 		logger:  logger.NewLogger("grpc-portforward"),
 	}
 }
 
 // Get the port-forward ID from the gRPC metadata "portforward-id"
-func (s *PortForwardServiceServer) GetPortForwardID(ctx context.Context) (string, error) {
+func (s *PortForwardHandler) GetPortForwardID(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Errorf(codes.InvalidArgument, "missing metadata")
@@ -65,7 +65,7 @@ func (s *PortForwardServiceServer) GetPortForwardID(ctx context.Context) (string
 }
 
 // Get the port-forward data from the store. It uses the port-forward ID retrieved from the metadata
-func (s *PortForwardServiceServer) GetPortForwardData(ctx context.Context) (*PortForwardData, error) {
+func (s *PortForwardHandler) GetPortForwardData(ctx context.Context) (*PortForwardData, error) {
 	pfID, err := s.GetPortForwardID(ctx)
 	if err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func (s *PortForwardServiceServer) GetPortForwardData(ctx context.Context) (*Por
 	return value.(*PortForwardData), nil
 }
 
-func (s *PortForwardServiceServer) createTCPConnection(destination string, port uint16) (net.Conn, error) {
+func (s *PortForwardHandler) createTCPConnection(destination string, port uint16) (net.Conn, error) {
 	tcpConn, err := net.Dial("tcp", net.JoinHostPort(destination, fmt.Sprintf("%d", port)))
 	if err != nil {
 		return nil, status.Errorf(
@@ -91,7 +91,7 @@ func (s *PortForwardServiceServer) createTCPConnection(destination string, port 
 // PortForward sets up a TCP <-> gRPC bidi bridge.
 // First request must be Destination. Then we stream bytes both ways until
 // client closes, TCP closes, context cancels, or an error occurs.
-func (s *PortForwardServiceServer) PortForward(
+func (s *PortForwardHandler) PortForward(
 	stream grpc.BidiStreamingServer[k8shelldv1.PortForwardRequest, k8shelldv1.PortForwardResponse],
 ) error {
 	ctx := stream.Context()

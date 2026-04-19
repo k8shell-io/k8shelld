@@ -30,22 +30,22 @@ type unixSocketData struct {
 	Mode       string
 }
 
-// UnixSocketServiceServer is the service that handles the shell GRPC service server
-type UnixSocketServiceServer struct {
+// UnixSocketHandler is the service that handles the shell GRPC service server
+type UnixSocketHandler struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
 }
 
-// NewUnixSocketServiceServer creates a new UnixSocketServiceServer
-func NewUnixSocketServiceServer(grpcapi *GRPCService) *UnixSocketServiceServer {
-	return &UnixSocketServiceServer{
+// newUnixSocketHandler creates a new UnixSocketHandler
+func newUnixSocketHandler(grpcapi *GRPCService) *UnixSocketHandler {
+	return &UnixSocketHandler{
 		grpcApi: grpcapi,
 		logger:  logger.NewLogger("grpc-unixsocket"),
 	}
 }
 
 // Get the unix socket ID from the gRPC metadata "unixsocket-id"
-func (s *UnixSocketServiceServer) GetUnixSocketID(ctx context.Context) (string, error) {
+func (s *UnixSocketHandler) GetUnixSocketID(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Errorf(codes.InvalidArgument, "missing metadata")
@@ -60,7 +60,7 @@ func (s *UnixSocketServiceServer) GetUnixSocketID(ctx context.Context) (string, 
 }
 
 // Get the unix socket data from the store. It uses the unix socket ID retrieved from the metadata
-func (s *UnixSocketServiceServer) GetUnixSocketData(ctx context.Context) (*SessionData, error) {
+func (s *UnixSocketHandler) GetUnixSocketData(ctx context.Context) (*SessionData, error) {
 	sid, err := s.GetUnixSocketID(ctx)
 	if err != nil {
 		return nil, err
@@ -72,7 +72,7 @@ func (s *UnixSocketServiceServer) GetUnixSocketData(ctx context.Context) (*Sessi
 	return value.(*SessionData), nil
 }
 
-func (s *UnixSocketServiceServer) UnixSocket(stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
+func (s *UnixSocketHandler) UnixSocket(stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
 	uxid, err := s.GetUnixSocketID(stream.Context())
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "failed to get unixsocket-id: %v", err)
@@ -100,7 +100,7 @@ func (s *UnixSocketServiceServer) UnixSocket(stream grpc.BidiStreamingServer[k8s
 }
 
 // startListenerAndBridge starts a Unix socket listener and bridges gRPC <-> conn
-func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string,
+func (s *UnixSocketHandler) startListenerAndBridge(uxid, socketPath string,
 	stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
 
 	unixsocket := &unixSocketData{
@@ -138,7 +138,7 @@ func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string
 }
 
 // dialAndBridge dials a Unix socket and bridges gRPC <-> conn
-func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
+func (s *UnixSocketHandler) dialAndBridge(uxid, socketPath string,
 	stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
 
 	conn, err := net.Dial("unix", socketPath)
@@ -219,7 +219,7 @@ func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
 	return nil
 }
 
-func (s *UnixSocketServiceServer) communicate(uxListener *net.UnixListener, unixsocket *unixSocketData,
+func (s *UnixSocketHandler) communicate(uxListener *net.UnixListener, unixsocket *unixSocketData,
 	stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
 	buf := make([]byte, 1024)
 	stop := make(chan struct{})

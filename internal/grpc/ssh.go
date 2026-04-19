@@ -10,20 +10,20 @@ import (
 // SshServiceServer implements k8shelldv1.SshServiceServer by composing the
 // individual service implementations.
 type SshServiceServer struct {
-	shell      *ShellServiceServer
-	exec       *ExecServiceServer
-	portfwd    *PortForwardServiceServer
-	unixsocket *UnixSocketServiceServer
+	shell      *ShellHandler
+	exec       *ExecHandler
+	portfwd    *PortForwardHandler
+	unixsocket *UnixSocketHandler
 	k8shelldv1.UnimplementedSshServiceServer
 }
 
 // NewSshServiceServer creates a new SshServiceServer.
 func NewSshServiceServer(grpcapi *GRPCService) *SshServiceServer {
 	return &SshServiceServer{
-		shell:      NewShellServiceServer(grpcapi),
-		exec:       NewExecServiceServer(grpcapi),
-		portfwd:    NewPortForwardServiceServer(grpcapi),
-		unixsocket: NewUnixSocketServiceServer(grpcapi),
+		shell:      newShellHandler(grpcapi),
+		exec:       newExecHandler(grpcapi),
+		portfwd:    newPortForwardHandler(grpcapi),
+		unixsocket: newUnixSocketHandler(grpcapi),
 	}
 }
 

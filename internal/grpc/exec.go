@@ -34,15 +34,15 @@ type ExecData struct {
 	BytesOut uint64
 }
 
-// ExecServiceServer is the service that handles the exec GRPC service server
-type ExecServiceServer struct {
+// ExecHandler is the service that handles the exec GRPC service server
+type ExecHandler struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
 }
 
-// NewExecServiceServer creates a new ExecServiceServer
-func NewExecServiceServer(grpcapi *GRPCService) *ExecServiceServer {
-	return &ExecServiceServer{
+// newExecHandler creates a new ExecHandler
+func newExecHandler(grpcapi *GRPCService) *ExecHandler {
+	return &ExecHandler{
 		grpcApi: grpcapi,
 		logger:  logger.NewLogger("grpc-exec"),
 	}
@@ -57,7 +57,7 @@ func parseCommand(cmdStr string) ([]string, error) {
 }
 
 // Get the exec ID from the gRPC metadata "exec-id"
-func (s *ExecServiceServer) GetExecID(ctx context.Context) (string, error) {
+func (s *ExecHandler) GetExecID(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Errorf(codes.InvalidArgument, "missing metadata")
@@ -71,7 +71,7 @@ func (s *ExecServiceServer) GetExecID(ctx context.Context) (string, error) {
 	return data[0], nil
 }
 
-func (s *ExecServiceServer) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecRequest, k8shelldv1.ExecResponse]) error {
+func (s *ExecHandler) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecRequest, k8shelldv1.ExecResponse]) error {
 	var cmd *exec.Cmd
 	var stdin io.WriteCloser
 	var stdout, stderr io.ReadCloser

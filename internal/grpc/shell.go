@@ -40,8 +40,8 @@ type SessionData struct {
 	BytesOut uint64
 }
 
-// ShellServiceServer is the service that handles the shell GRPC service server
-type ShellServiceServer struct {
+// ShellHandler is the service that handles the shell GRPC service server
+type ShellHandler struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
 }
@@ -60,9 +60,9 @@ func (sw *streamWriter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-// NewShellServiceServer creates a new ShellServiceServer
-func NewShellServiceServer(grpcapi *GRPCService) *ShellServiceServer {
-	return &ShellServiceServer{
+// newShellHandler creates a new ShellHandler
+func newShellHandler(grpcapi *GRPCService) *ShellHandler {
+	return &ShellHandler{
 		grpcApi: grpcapi,
 		logger:  logger.NewLogger("grpc-shell"),
 	}
@@ -84,7 +84,7 @@ func isValidShell(shell string) bool {
 }
 
 // Get the port-forward ID from the gRPC metadata "portforward-id"
-func (s *ShellServiceServer) GetSessionID(ctx context.Context) (string, error) {
+func (s *ShellHandler) GetSessionID(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Errorf(codes.InvalidArgument, "missing metadata")
@@ -99,7 +99,7 @@ func (s *ShellServiceServer) GetSessionID(ctx context.Context) (string, error) {
 }
 
 // Get the session data from the store. It uses the session ID retrieved from the metadata
-func (s *ShellServiceServer) GetSessionData(ctx context.Context) (*SessionData, error) {
+func (s *ShellHandler) GetSessionData(ctx context.Context) (*SessionData, error) {
 	sid, err := s.GetSessionID(ctx)
 	if err != nil {
 		return nil, err
@@ -113,7 +113,7 @@ func (s *ShellServiceServer) GetSessionData(ctx context.Context) (*SessionData, 
 
 // Shell is a gRPC method that starts a shell session. It is a bidirectional streaming RPC
 // that sends the shell output to the client and receives the client input to send to the shell.
-func (s *ShellServiceServer) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse]) error {
+func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse]) error {
 	sessionId, err := s.GetSessionID(stream.Context())
 	if err != nil {
 		return fmt.Errorf("failed to get session ID: %v", err)
@@ -206,7 +206,7 @@ func (s *ShellServiceServer) Shell(stream grpc.BidiStreamingServer[k8shelldv1.Sh
 }
 
 // cleanUpSession cleans up the session by killing the shell process and closing the PTY
-func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
+func (s *ShellHandler) cleanUpSession(session *SessionData) {
 	if session.Cmd != nil {
 		if session.Cmd.Process != nil && session.Cmd.Process.Pid != 0 {
 			_ = syscall.Kill(-session.Cmd.Process.Pid, syscall.SIGKILL)
@@ -221,7 +221,7 @@ func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
 
 // handlePtySession handles a shell session with PTY. It creates the PTY session, sets the width and height
 // of the terminal, reads data from the PTY and sends the data back to the client and vice versa.
-func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *SessionData,
+func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *SessionData,
 	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse], width uint32, height uint32) error {
 
 	ptmx, tty, err := pty.Open()
@@ -343,7 +343,7 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 
 // handleNonPtySession handles a shell session without PTY. It creates pipes for the stdin, stdout and stderr of the
 // shell process, reads data from the pipes and sends the data back to the client and vice versa.
-func (s *ShellServiceServer) handleNonPtySession(
+func (s *ShellHandler) handleNonPtySession(
 	logger *zerolog.Logger,
 	session *SessionData,
 	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
@@ -485,7 +485,7 @@ func (s *ShellServiceServer) handleNonPtySession(
 }
 
 // ResizeTerminal is a gRPC method that resizes the terminal of a shell session.
-func (s *ShellServiceServer) ResizeTerminal(ctx context.Context,
+func (s *ShellHandler) ResizeTerminal(ctx context.Context,
 	req *k8shelldv1.ResizeTerminalRequest) (*k8shelldv1.ResizeTerminalResponse, error) {
 	session, err := s.GetSessionData(ctx)
 	if err != nil {

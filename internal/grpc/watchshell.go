@@ -15,7 +15,7 @@ const cwdPollInterval = 500 * time.Millisecond
 // WatchShell streams CWD and filesystem notifications for a running shell session.
 // The client subscribes to specific event types via the request; events are delivered
 // until the stream context is cancelled or the shell process exits.
-func (s *ShellServiceServer) WatchShell(req *k8shelldv1.WatchShellRequest, stream grpc.ServerStreamingServer[k8shelldv1.WatchShellEvent]) error {
+func (s *ShellHandler) WatchShell(req *k8shelldv1.WatchShellRequest, stream grpc.ServerStreamingServer[k8shelldv1.WatchShellEvent]) error {
 	ctx := stream.Context()
 
 	session, err := s.GetSessionData(ctx)
