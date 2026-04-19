@@ -34,16 +34,7 @@ func NewSystemServiceServer(grpcapi *GRPCService) *SystemServiceServer {
 	}
 }
 
-// Handshake validates the client's token and version compatibility.
-// It is the first call clients must make to establish that they can
-// communicate with this daemon. The call:
-//  1. Verifies the supplied user token is cryptographically valid and
-//     belongs to this workspace's identity.
-//  2. Checks that the client's major version matches the server's, so
-//     clients and daemon built against incompatible API generations are
-//     rejected early with a clear message rather than failing later with
-//     confusing proto errors.
-//
+// Handshake validates version compatibility.
 // Returns the server version and Accepted=true on success; returns a
 // descriptive Message and Accepted=false (not a gRPC error) for version
 // mismatches so the caller can surface a helpful message to the user.
@@ -52,23 +43,6 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 
 	serverVersion := fmt.Sprintf("%s-%s", config.K8SHELLD_VERSION, config.K8SHELLD_COMMIT)
 
-	// 1. Token validation.
-	if req.UserToken == "" {
-		s.logger.Warn().Msg("Handshake rejected: empty user token")
-		return nil, status.Error(codes.PermissionDenied, "user token is required")
-	}
-
-	if _, err := s.grpcApi.jwtVerifier.VerifyToken(req.UserToken); err != nil {
-		s.logger.Warn().Msgf("Handshake rejected: token verification failed: %v", err)
-		return nil, status.Errorf(codes.PermissionDenied, "invalid token: %v", err)
-	}
-
-	if !s.grpcApi.user.TokenEqual(req.UserToken) {
-		s.logger.Warn().Msg("Handshake rejected: token does not match workspace identity")
-		return nil, status.Error(codes.PermissionDenied, "token does not match workspace identity")
-	}
-
-	// 2. Version compatibility: require matching major version.
 	if req.ClientVersion != "" {
 		if !majorVersionsMatch(config.K8SHELLD_VERSION, req.ClientVersion) {
 			msg := fmt.Sprintf(
