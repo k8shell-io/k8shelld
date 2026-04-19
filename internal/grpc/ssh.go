@@ -7,6 +7,9 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Ensure SshServiceServer satisfies the interface at compile time.
+var _ k8shelldv1.SshServiceServer = (*SshServiceServer)(nil)
+
 // SshServiceServer implements k8shelldv1.SshServiceServer by composing the
 // individual service implementations.
 type SshServiceServer struct {
@@ -35,8 +38,8 @@ func (s *SshServiceServer) ResizeTerminal(ctx context.Context, req *k8shelldv1.R
 	return s.shell.ResizeTerminal(ctx, req)
 }
 
-func (s *SshServiceServer) WatchShell(req *k8shelldv1.WatchShellRequest, stream grpc.ServerStreamingServer[k8shelldv1.WatchShellEvent]) error {
-	return s.shell.WatchShell(req, stream)
+func (s *SshServiceServer) GetCWD(ctx context.Context, req *k8shelldv1.GetCWDRequest) (*k8shelldv1.GetCWDResponse, error) {
+	return s.shell.GetCWD(ctx, req)
 }
 
 func (s *SshServiceServer) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecRequest, k8shelldv1.ExecResponse]) error {

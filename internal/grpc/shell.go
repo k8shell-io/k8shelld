@@ -503,3 +503,31 @@ func (s *ShellHandler) ResizeTerminal(ctx context.Context,
 	}
 	return &k8shelldv1.ResizeTerminalResponse{}, nil
 }
+
+// GetCWD returns the current working directory of the shell process identified
+// by the shell_id in the request. The CWD is resolved by reading the
+// /proc/<pid>/cwd symlink of the shell process.
+func (s *ShellHandler) GetCWD(_ context.Context, req *k8shelldv1.GetCWDRequest) (*k8shelldv1.GetCWDResponse, error) {
+	if req.GetShellId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "shell_id is required")
+	}
+
+	value, ok := s.grpcApi.SessionStore.Load(req.GetShellId())
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "shell session %s not found", req.GetShellId())
+	}
+
+	session := value.(*SessionData)
+	if session.Pid <= 0 {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"shell session %s has no running process", req.GetShellId())
+	}
+
+	cwd, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", session.Pid))
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read CWD for shell %s: %v",
+			req.GetShellId(), err)
+	}
+
+	return &k8shelldv1.GetCWDResponse{Path: cwd}, nil
+}
