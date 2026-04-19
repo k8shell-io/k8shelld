@@ -3,6 +3,8 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
@@ -32,37 +34,86 @@ func NewSystemServiceServer(grpcapi *GRPCService) *SystemServiceServer {
 	}
 }
 
-// Handshake handles the handshake request.
-// The client sends its identity JWT; we verify it is non-empty and matches the
-// token the server loaded from /run/secrets/identity-token at startup.  This
-// proves the caller is the same identity that owns this workspace.
+// Handshake validates the client's token and version compatibility.
+// It is the first call clients must make to establish that they can
+// communicate with this daemon. The call:
+//  1. Verifies the supplied user token is cryptographically valid and
+//     belongs to this workspace's identity.
+//  2. Checks that the client's major version matches the server's, so
+//     clients and daemon built against incompatible API generations are
+//     rejected early with a clear message rather than failing later with
+//     confusing proto errors.
+//
+// Returns the server version and Accepted=true on success; returns a
+// descriptive Message and Accepted=false (not a gRPC error) for version
+// mismatches so the caller can surface a helpful message to the user.
 func (s *SystemServiceServer) Handshake(ctx context.Context,
 	req *k8shelldv1.HandshakeRequest) (*k8shelldv1.HandshakeResponse, error) {
-	// s.handshakeMu.Lock()
-	// defer s.handshakeMu.Unlock()
 
-	// if req.UserToken == "" {
-	// 	s.logger.Warn().Msg("Handshake rejected: empty user token")
-	// 	return nil, status.Error(codes.PermissionDenied, "user token is required")
-	// }
+	serverVersion := fmt.Sprintf("%s-%s", config.K8SHELLD_VERSION, config.K8SHELLD_COMMIT)
 
-	// workspaceToken := s.grpcApi.user.UserToken
-	// if workspaceToken == "" {
-	// 	s.logger.Warn().Msg("Handshake rejected: workspace identity token not set")
-	// 	return nil, status.Error(codes.PermissionDenied, "workspace identity token not available")
-	// }
+	// 1. Token validation.
+	if req.UserToken == "" {
+		s.logger.Warn().Msg("Handshake rejected: empty user token")
+		return nil, status.Error(codes.PermissionDenied, "user token is required")
+	}
 
-	// if req.UserToken != workspaceToken && s.grpcApi.user.HasRole(commonModels.RoleAdmin) {
-	// 	s.logger.Warn().Msg("Handshake rejected: user token does not match workspace token")
-	// 	return nil, status.Error(codes.PermissionDenied, "user token mismatch")
-	// }
+	if _, err := s.grpcApi.jwtVerifier.VerifyToken(req.UserToken); err != nil {
+		s.logger.Warn().Msgf("Handshake rejected: token verification failed: %v", err)
+		return nil, status.Errorf(codes.PermissionDenied, "invalid token: %v", err)
+	}
 
-	s.logger.Info().Msgf("Handshake accepted for user: %s", s.grpcApi.user.GetUsername())
+	if !s.grpcApi.user.TokenEqual(req.UserToken) {
+		s.logger.Warn().Msg("Handshake rejected: token does not match workspace identity")
+		return nil, status.Error(codes.PermissionDenied, "token does not match workspace identity")
+	}
+
+	// 2. Version compatibility: require matching major version.
+	if req.ClientVersion != "" {
+		if !majorVersionsMatch(config.K8SHELLD_VERSION, req.ClientVersion) {
+			msg := fmt.Sprintf(
+				"client version %s is not compatible with server version %s (major version mismatch)",
+				req.ClientVersion, config.K8SHELLD_VERSION,
+			)
+			s.logger.Warn().Msg("Handshake rejected: " + msg)
+			return &k8shelldv1.HandshakeResponse{
+				Accepted:      false,
+				ServerVersion: serverVersion,
+				Message:       msg,
+			}, nil
+		}
+	}
+
+	s.logger.Info().Msgf("Handshake accepted for user %s (client version: %s, server version: %s)",
+		s.grpcApi.user.GetUsername(), req.ClientVersion, serverVersion)
 
 	return &k8shelldv1.HandshakeResponse{
 		Accepted:      true,
-		ServerVersion: fmt.Sprintf("%s-%s", config.K8SHELLD_VERSION, config.K8SHELLD_COMMIT),
+		ServerVersion: serverVersion,
 	}, nil
+}
+
+// majorVersionsMatch returns true when the major component of two semver
+// strings (e.g. "1.2.3" or "1.2.3-abc") are equal.  If either string cannot
+// be parsed the check is skipped and true is returned so that dev / snapshot
+// builds ("0.0.0") are never incorrectly blocked.
+func majorVersionsMatch(serverVer, clientVer string) bool {
+	serverMajor, err := parseMajor(serverVer)
+	if err != nil {
+		return true
+	}
+	clientMajor, err := parseMajor(clientVer)
+	if err != nil {
+		return true
+	}
+	return serverMajor == clientMajor
+}
+
+func parseMajor(ver string) (int, error) {
+	// Strip build metadata or pre-release suffixes after the first '-'.
+	core := strings.SplitN(ver, "-", 2)[0]
+	parts := strings.SplitN(core, ".", 2)
+	return strconv.Atoi(parts[0])
 }
 
 // SystemInfo returns system metrics + mount usage + docker usage over gRPC.
