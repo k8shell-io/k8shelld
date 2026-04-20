@@ -66,7 +66,7 @@ func runCommand(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 
 // CreateUser creates the user in the system.
 func CreateUser(user *models.User) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	log := logger.NewLogger("user-management")
