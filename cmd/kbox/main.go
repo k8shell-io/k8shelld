@@ -30,7 +30,7 @@ func init() {
 		Hidden: true,
 	})
 
-	kboxCmd.AddCommand(CredsCmd)
+	kboxCmd.AddCommand(CredentialsCmd)
 	kboxCmd.AddCommand(ToolsInitCmd)
 	kboxCmd.AddCommand(UptimeCmd)
 	kboxCmd.AddCommand(InfoCmd)
@@ -40,6 +40,9 @@ func init() {
 	kboxCmd.AddCommand(ShutdownCmd)
 	kboxCmd.AddCommand(ValidateCmd)
 	kboxCmd.AddCommand(AppsCmd)
+	kboxCmd.AddCommand(IdentityCmd)
+	kboxCmd.AddCommand(SplashCmd)
+	kboxCmd.AddCommand(UserCmd)
 
 	kboxCmd.PersistentFlags().StringVar(&socketPath, "socket", models.RESTAPIUnixSocket,
 		"k8shelld unix socket path")

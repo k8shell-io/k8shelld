@@ -63,7 +63,6 @@ func main() {
 	}
 
 	logger.Info().Msg("Starting k8shelld server...")
-
 	server.Serve()
 	logger.Info().Msg("Exiting k8shelld")
 }

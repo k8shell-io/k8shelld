@@ -11,13 +11,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
+	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
 	"github.com/rs/zerolog"
 
 	"github.com/google/shlex"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/internal/utils"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -33,16 +34,15 @@ type ExecData struct {
 	BytesOut uint64
 }
 
-// ExecServiceServer is the service that handles the exec GRPC service server
-type ExecServiceServer struct {
+// ExecHandler is the service that handles the exec GRPC service server
+type ExecHandler struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
-	k8shelldpb.UnimplementedExecServiceServer
 }
 
-// NewExecServiceServer creates a new ExecServiceServer
-func NewExecServiceServer(grpcapi *GRPCService) *ExecServiceServer {
-	return &ExecServiceServer{
+// newExecHandler creates a new ExecHandler
+func newExecHandler(grpcapi *GRPCService) *ExecHandler {
+	return &ExecHandler{
 		grpcApi: grpcapi,
 		logger:  logger.NewLogger("grpc-exec"),
 	}
@@ -57,7 +57,7 @@ func parseCommand(cmdStr string) ([]string, error) {
 }
 
 // Get the exec ID from the gRPC metadata "exec-id"
-func (s *ExecServiceServer) GetExecID(ctx context.Context) (string, error) {
+func (s *ExecHandler) GetExecID(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Errorf(codes.InvalidArgument, "missing metadata")
@@ -71,7 +71,7 @@ func (s *ExecServiceServer) GetExecID(ctx context.Context) (string, error) {
 	return data[0], nil
 }
 
-func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error {
+func (s *ExecHandler) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecRequest, k8shelldv1.ExecResponse]) error {
 	var cmd *exec.Cmd
 	var stdin io.WriteCloser
 	var stdout, stderr io.ReadCloser
@@ -93,9 +93,15 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 		return status.Errorf(codes.InvalidArgument, "failed to receive command: %v", err)
 	}
 
-	cmdReq, ok := req.Request.(*k8shelldpb.ExecRequest_CommandDetails)
+	cmdReq, ok := req.Request.(*k8shelldv1.ExecRequest_CommandDetails)
 	if !ok {
 		return status.Errorf(codes.InvalidArgument, "invalid command request: %v", req)
+	}
+
+	shellUser, resolveErr := s.grpcApi.resolveShellUser(cmdReq.CommandDetails.AsUser, s.grpcApi.user)
+	if resolveErr != nil {
+		s.logger.Error().Msgf("Exec session %s: error resolving user: %v", execId, resolveErr)
+		return resolveErr
 	}
 
 	args, err := parseCommand(cmdReq.CommandDetails.Command)
@@ -110,7 +116,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	newEnv := []string{}
 	for _, e := range os.Environ() {
 		if strings.HasPrefix(e, "HOME=") {
-			newEnv = append(newEnv, fmt.Sprintf("HOME=%s", s.grpcApi.user.HomeDir))
+			newEnv = append(newEnv, fmt.Sprintf("HOME=%s", shellUser.HomeDir))
 			continue
 		}
 		newEnv = append(newEnv, e)
@@ -135,12 +141,12 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	}
 
 	cmd.Env = newEnv
-	cmd.Dir = s.grpcApi.user.HomeDir
+	cmd.Dir = shellUser.HomeDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid: s.grpcApi.user.Uid,
-			Gid: s.grpcApi.user.Gid,
+			Uid: shellUser.UID,
+			Gid: shellUser.GID,
 		},
 	}
 
@@ -179,12 +185,12 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 		} else {
 			exitCode = 1
 		}
-		if sendErr := stream.Send(&k8shelldpb.ExecResponse{
-			Response: &k8shelldpb.ExecResponse_Stderr{Stderr: []byte(err.Error() + "\n")},
+		if sendErr := stream.Send(&k8shelldv1.ExecResponse{
+			Response: &k8shelldv1.ExecResponse_Stderr{Stderr: []byte(err.Error() + "\n")},
 		}); sendErr != nil {
 			s.logger.Error().Msgf("Failed to send stderr: %v", sendErr)
 		}
-		if sendErr := stream.Send(&k8shelldpb.ExecResponse{Response: &k8shelldpb.ExecResponse_ExitCode{ExitCode: exitCode}}); sendErr != nil {
+		if sendErr := stream.Send(&k8shelldv1.ExecResponse{Response: &k8shelldv1.ExecResponse_ExitCode{ExitCode: exitCode}}); sendErr != nil {
 			s.logger.Error().Msgf("Failed to send exit code: %v", sendErr)
 		}
 		s.logger.Error().Msgf("Failed to start command: %v, exit-code: %d", err, exitCode)
@@ -219,13 +225,13 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 			}
 
 			switch req.Request.(type) {
-			case *k8shelldpb.ExecRequest_Input:
+			case *k8shelldv1.ExecRequest_Input:
 				data := req.GetInput()
 				execData.BytesIn += uint64(len(data))
 				if _, err := stdin.Write(data); err != nil {
 					s.logger.Error().Msgf("Failed to write to stdin: %v, PID=%d", err, processPID)
 				}
-			case *k8shelldpb.ExecRequest_Signal:
+			case *k8shelldv1.ExecRequest_Signal:
 				s.logger.Debug().Msgf("Received signal %s, sending the signal to PID: %d", req.GetSignal(), processPID)
 				signal, err := system.GetSignalValue(req.GetSignal())
 				if err != nil {
@@ -277,8 +283,8 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 			}
 
 			if n > 0 {
-				streamErr := stream.Send(&k8shelldpb.ExecResponse{
-					Response: &k8shelldpb.ExecResponse_Stdout{Stdout: buf[:n]},
+				streamErr := stream.Send(&k8shelldv1.ExecResponse{
+					Response: &k8shelldv1.ExecResponse_Stdout{Stdout: buf[:n]},
 				})
 				if streamErr != nil {
 					s.logger.Debug().Msgf("Failed to send stdout data: %v, PID=%d", streamErr, processPID)
@@ -317,8 +323,8 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 			}
 
 			if n > 0 {
-				if sendErr := stream.Send(&k8shelldpb.ExecResponse{
-					Response: &k8shelldpb.ExecResponse_Stderr{Stderr: buf[:n]},
+				if sendErr := stream.Send(&k8shelldv1.ExecResponse{
+					Response: &k8shelldv1.ExecResponse_Stderr{Stderr: buf[:n]},
 				}); sendErr != nil {
 					s.logger.Error().Msgf("Failed to send stderr data: %v, PID=%d", sendErr, processPID)
 				}
@@ -350,7 +356,7 @@ func (s *ExecServiceServer) Exec(stream k8shelldpb.ExecService_ExecServer) error
 	}
 
 	// Send the exit code to the client
-	if sendErr := stream.Send(&k8shelldpb.ExecResponse{Response: &k8shelldpb.ExecResponse_ExitCode{ExitCode: exitCode}}); sendErr != nil {
+	if sendErr := stream.Send(&k8shelldv1.ExecResponse{Response: &k8shelldv1.ExecResponse_ExitCode{ExitCode: exitCode}}); sendErr != nil {
 		s.logger.Error().Msgf("Failed to send exit code: %v", sendErr)
 	}
 	s.logger.Debug().Msgf("Command execution complete: %v, PID=%d, exit-code=%d, bytes-in=%d, bytes-out=%d",

@@ -16,8 +16,8 @@ import (
 
 var operation string
 
-var CredsCmd = &cobra.Command{
-	Use:   "creds",
+var CredentialsCmd = &cobra.Command{
+	Use:   "credentials",
 	Short: "Credentials helpers",
 	Long:  "Credentials helpers for Docker and Git",
 	Run: func(cmd *cobra.Command, args []string) {
@@ -44,8 +44,8 @@ var gitCredsHelperCmd = &cobra.Command{
 }
 
 func init() {
-	CredsCmd.AddCommand(dockerCredsHelperCmd)
-	CredsCmd.AddCommand(gitCredsHelperCmd)
+	CredentialsCmd.AddCommand(dockerCredsHelperCmd)
+	CredentialsCmd.AddCommand(gitCredsHelperCmd)
 
 	dockerCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")
 	gitCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")

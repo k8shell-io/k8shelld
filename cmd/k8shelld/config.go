@@ -5,11 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"regexp"
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/k8shell-io/k8shelld/internal/config"
+	config "github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 )
@@ -35,12 +34,11 @@ var (
 			PProf:    false,
 			LogLevel: DEFAULT_LOG_LEVEL,
 		},
-		Env: config.Env{
-			Unset:         []string{},
-			UnsetPatterns: []*regexp.Regexp{},
+		Identity: config.Identity{
+			TokenPath:     "/run/secrets/identity-token",
+			PublicKeyPath: "/run/secrets/identity-public-key",
+			SigningMethod: "rs256",
 		},
-		PortForwarding:      []string{"localnetworks:0"},
-		PortForwardingRules: []config.PortForwardingRule{},
 		TerminateOrphans: config.TerminateOrphans{
 			Enabled:       true,
 			CheckInterval: 10,
@@ -49,7 +47,6 @@ var (
 		ReapZombies: config.ReapZombies{
 			Enabled: true,
 		},
-		InitScriptsDir: "/usr/local/k8shell/system",
 	}
 )
 
@@ -121,24 +118,6 @@ func LoadConfig(configPath string) (*config.Config, error) {
 	err = logger.InitLogLevel(cfg.System.LogLevel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set log level: %v", err)
-	}
-
-	cfg.User.HomeDir = fmt.Sprintf("/home/%s", cfg.User.Username)
-
-	for _, rule := range cfg.PortForwarding {
-		parsedRule, err := config.ParsePortForwardingRule(rule)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse port forwarding rule: %v", err)
-		}
-		cfg.PortForwardingRules = append(cfg.PortForwardingRules, parsedRule)
-	}
-
-	for _, pattern := range cfg.Env.Unset {
-		p, err := regexp.Compile(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("failed to compile env unset pattern: %v", err)
-		}
-		cfg.Env.UnsetPatterns = append(cfg.Env.UnsetPatterns, p)
 	}
 
 	return cfg, nil

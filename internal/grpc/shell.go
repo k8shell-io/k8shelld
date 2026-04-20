@@ -11,14 +11,16 @@ import (
 	"syscall"
 	"time"
 
+	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
+	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/k8shell-io/k8shelld/internal/utils"
-	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
 	"github.com/creack/pty"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -27,7 +29,7 @@ import (
 // SessionData stores the data of a shell session.
 type SessionData struct {
 	Id       string
-	user     models.User
+	user     models.ShellUser
 	CmdShell string
 	Cmd      *exec.Cmd
 	Ptmx     *os.File
@@ -38,30 +40,29 @@ type SessionData struct {
 	BytesOut uint64
 }
 
-// ShellServiceServer is the service that handles the shell GRPC service server
-type ShellServiceServer struct {
+// ShellHandler is the service that handles the shell GRPC service server
+type ShellHandler struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
-	k8shelldpb.UnimplementedShellServiceServer
 }
 
 // streamWriter is a writer that sends the data to the client stream
 type streamWriter struct {
-	stream k8shelldpb.ShellService_ShellServer
+	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse]
 }
 
 // Write writes the data to the client stream
 func (sw *streamWriter) Write(data []byte) (int, error) {
-	err := sw.stream.Send(&k8shelldpb.ShellResponse{Response: &k8shelldpb.ShellResponse_Data{Data: data}})
+	err := sw.stream.Send(&k8shelldv1.ShellResponse{Response: &k8shelldv1.ShellResponse_Data{Data: data}})
 	if err != nil {
 		return 0, err
 	}
 	return len(data), nil
 }
 
-// NewShellServiceServer creates a new ShellServiceServer
-func NewShellServiceServer(grpcapi *GRPCService) *ShellServiceServer {
-	return &ShellServiceServer{
+// newShellHandler creates a new ShellHandler
+func newShellHandler(grpcapi *GRPCService) *ShellHandler {
+	return &ShellHandler{
 		grpcApi: grpcapi,
 		logger:  logger.NewLogger("grpc-shell"),
 	}
@@ -83,7 +84,7 @@ func isValidShell(shell string) bool {
 }
 
 // Get the port-forward ID from the gRPC metadata "portforward-id"
-func (s *ShellServiceServer) GetSessionID(ctx context.Context) (string, error) {
+func (s *ShellHandler) GetSessionID(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Errorf(codes.InvalidArgument, "missing metadata")
@@ -97,8 +98,8 @@ func (s *ShellServiceServer) GetSessionID(ctx context.Context) (string, error) {
 	return data[0], nil
 }
 
-// Get the port-forward data from the store. It uses the port-forward ID retrieved from the metadata
-func (s *ShellServiceServer) GetSessionData(ctx context.Context) (*SessionData, error) {
+// Get the session data from the store. It uses the session ID retrieved from the metadata
+func (s *ShellHandler) GetSessionData(ctx context.Context) (*SessionData, error) {
 	sid, err := s.GetSessionID(ctx)
 	if err != nil {
 		return nil, err
@@ -112,7 +113,7 @@ func (s *ShellServiceServer) GetSessionData(ctx context.Context) (*SessionData, 
 
 // Shell is a gRPC method that starts a shell session. It is a bidirectional streaming RPC
 // that sends the shell output to the client and receives the client input to send to the shell.
-func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) error {
+func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse]) error {
 	sessionId, err := s.GetSessionID(stream.Context())
 	if err != nil {
 		return fmt.Errorf("failed to get session ID: %v", err)
@@ -123,20 +124,30 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 		return fmt.Errorf("failed to receive shell request: %v", err)
 	}
 
-	shellReq, ok := req.Request.(*k8shelldpb.ShellRequest_StartRequest)
+	shellReq, ok := req.Request.(*k8shelldv1.ShellRequest_StartRequest)
 	if !ok {
 		return status.Errorf(codes.InvalidArgument, "invalid shell request: %v", req)
 	}
 
-	// Get the login shell for the user
-	shell, err := system.GetUserLoginShell(s.grpcApi.user.Username)
+	shellUser, resolveErr := s.grpcApi.resolveShellUser(shellReq.StartRequest.AsUser, s.grpcApi.user)
+	if resolveErr != nil {
+		s.logger.Error().Msgf("Shell session %s: error resolving user: %v", sessionId, resolveErr)
+		return resolveErr
+	}
+
+	shell, err := system.GetUserLoginShell(shellUser.Username)
 	if err != nil {
 		shell = shellReq.StartRequest.CmdShell
 	}
 
+	if _, statErr := os.Stat(shell); statErr != nil {
+		s.logger.Warn().Msgf("Shell %s not found, falling back to /bin/sh", shell)
+		shell = "/bin/sh"
+	}
+
 	session := &SessionData{
 		Id:       sessionId,
-		user:     s.grpcApi.user,
+		user:     shellUser,
 		CmdShell: shell,
 		Pid:      -1,
 		Created:  time.Now(),
@@ -149,7 +160,8 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 	session.Cmd = exec.Command(shell)
 	session.Cmd.Args[0] = "-" + session.Cmd.Args[0] // make the shell a login shell
 
-	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars, session.user.HomeDir)
+	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars,
+		session.user.HomeDir)
 	session.Cmd.Dir = session.user.HomeDir
 
 	s.logger.Debug().Msgf("env: %v", session.Cmd.Env)
@@ -158,8 +170,8 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 	session.Cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, // create a new process group
 		Credential: &syscall.Credential{
-			Uid:    session.user.Uid,
-			Gid:    session.user.Gid,
+			Uid:    session.user.UID,
+			Gid:    session.user.GID,
 			Groups: system.GetSupplementalGroups(session.user.Username),
 		},
 	}
@@ -172,11 +184,13 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 		s.logger.Info().Msgf("Shell session %s ended", sessionId)
 	}()
 
-	s.logger.Info().Msgf("Starting shell session %s, pty=%v", sessionId, shellReq.StartRequest.UsePty)
+	s.logger.Info().Msgf("Starting shell session %s, pty=%v",
+		sessionId, shellReq.StartRequest.UsePty)
 
 	// Start the shell
 	if shellReq.StartRequest.UsePty {
-		err = s.handlePtySession(s.logger, session, stream, shellReq.StartRequest.Width, shellReq.StartRequest.Height)
+		err = s.handlePtySession(s.logger, session, stream, shellReq.StartRequest.Width,
+			shellReq.StartRequest.Height)
 		if err != nil {
 			return fmt.Errorf("error handling PTY session: %v", err)
 		}
@@ -192,47 +206,74 @@ func (s *ShellServiceServer) Shell(stream k8shelldpb.ShellService_ShellServer) e
 }
 
 // cleanUpSession cleans up the session by killing the shell process and closing the PTY
-func (s *ShellServiceServer) cleanUpSession(session *SessionData) {
+func (s *ShellHandler) cleanUpSession(session *SessionData) {
 	if session.Cmd != nil {
-		if session.Cmd.Process.Pid != 0 {
+		if session.Cmd.Process != nil && session.Cmd.Process.Pid != 0 {
 			_ = syscall.Kill(-session.Cmd.Process.Pid, syscall.SIGKILL)
 			_ = session.Cmd.Process.Kill()
-			session.Cmd = nil
 		}
+		session.Cmd = nil
 	}
 	if session.Ptmx != nil {
 		session.Ptmx.Close()
 	}
 }
 
-// handlePtySession handles a shell session with PTY. It creates the PTY session, sets the width and height of the terminal,
-// reads data from the PTY and sends the data back to the client and vice versa.
-func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *SessionData,
-	stream k8shelldpb.ShellService_ShellServer, width uint32, height uint32) error {
+// handlePtySession handles a shell session with PTY. It creates the PTY session, sets the width and height
+// of the terminal, reads data from the PTY and sends the data back to the client and vice versa.
+func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *SessionData,
+	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse], width uint32, height uint32) error {
 
-	var err error
-	session.Ptmx, err = pty.Start(session.Cmd)
+	ptmx, tty, err := pty.Open()
 	if err != nil {
-		return fmt.Errorf("error starting the shell with PTY: %v", err)
+		return fmt.Errorf("error opening PTY: %v", err)
 	}
+	ttyName := tty.Name()
+
+	session.Cmd.Stdin = tty
+	session.Cmd.Stdout = tty
+	session.Cmd.Stderr = tty
+	session.Cmd.SysProcAttr.Setctty = true
+	session.Cmd.SysProcAttr.Ctty = 1
+
+	if err = session.Cmd.Start(); err != nil {
+		_ = ptmx.Close()
+		_ = tty.Close()
+		return fmt.Errorf("error starting shell with PTY: %v", err)
+	}
+	_ = tty.Close()
+	session.Ptmx = ptmx
 
 	s.grpcApi.procWatcher.AddPIDIgnoreTerminate(session.Cmd.Process.Pid)
 	session.Pid = session.Cmd.Process.Pid
 
 	if width > 0 && height > 0 {
-		err = pty.Setsize(session.Ptmx, &pty.Winsize{
+		if err = pty.Setsize(session.Ptmx, &pty.Winsize{
 			Rows: utils.ClampUint32ToUint16(height),
 			Cols: utils.ClampUint32ToUint16(width),
-		})
-		if err != nil {
+		}); err != nil {
 			s.logger.Error().Msgf("Failed to set PTY size: %v", err)
 		}
 	}
 
+	_ = stream.Send(&k8shelldv1.ShellResponse{
+		Response: &k8shelldv1.ShellResponse_StartResponse{
+			StartResponse: &k8shelldv1.ShellStartResponse{Pty: ttyName},
+		},
+	})
+
 	ctx := stream.Context()
-	reqCh := make(chan *k8shelldpb.ShellRequest, 8)
+	reqCh := make(chan *k8shelldv1.ShellRequest, 8)
 	recvErrCh := make(chan error, 1)
 	ptyDone := make(chan struct{})
+
+	if s.grpcApi.blueprint != nil && s.grpcApi.blueprint.Splash != "" {
+		_ = stream.Send(&k8shelldv1.ShellResponse{
+			Response: &k8shelldv1.ShellResponse_Data{
+				Data: []byte("\n\r" + config.ExpandSplash(s.grpcApi.blueprint.Splash, session.user.Username) + "\n\r"),
+			},
+		})
+	}
 
 	// PTY -> client
 	go func() {
@@ -244,8 +285,8 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 				return
 			}
 			if n > 0 {
-				if sendErr := stream.Send(&k8shelldpb.ShellResponse{
-					Response: &k8shelldpb.ShellResponse_Data{Data: append([]byte(nil), buf[:n]...)},
+				if sendErr := stream.Send(&k8shelldv1.ShellResponse{
+					Response: &k8shelldv1.ShellResponse_Data{Data: append([]byte(nil), buf[:n]...)},
 				}); sendErr != nil {
 					recvErrCh <- sendErr
 					return
@@ -302,10 +343,10 @@ func (s *ShellServiceServer) handlePtySession(logger *zerolog.Logger, session *S
 
 // handleNonPtySession handles a shell session without PTY. It creates pipes for the stdin, stdout and stderr of the
 // shell process, reads data from the pipes and sends the data back to the client and vice versa.
-func (s *ShellServiceServer) handleNonPtySession(
+func (s *ShellHandler) handleNonPtySession(
 	logger *zerolog.Logger,
 	session *SessionData,
-	stream k8shelldpb.ShellService_ShellServer,
+	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
 ) error {
 	var (
 		stdout io.ReadCloser
@@ -330,6 +371,12 @@ func (s *ShellServiceServer) handleNonPtySession(
 	s.grpcApi.procWatcher.AddPIDIgnoreTerminate(session.Cmd.Process.Pid)
 	session.Pid = session.Cmd.Process.Pid
 
+	_ = stream.Send(&k8shelldv1.ShellResponse{
+		Response: &k8shelldv1.ShellResponse_StartResponse{
+			StartResponse: &k8shelldv1.ShellStartResponse{},
+		},
+	})
+
 	defer func() {
 		if stdout != nil {
 			_ = stdout.Close()
@@ -346,7 +393,7 @@ func (s *ShellServiceServer) handleNonPtySession(
 	ctx := stream.Context()
 
 	// Channels to coordinate
-	reqCh := make(chan *k8shelldpb.ShellRequest, 8)
+	reqCh := make(chan *k8shelldv1.ShellRequest, 8)
 	recvErrCh := make(chan error, 1)
 	clientClosed := make(chan struct{}, 1)
 	outDone := make(chan struct{})
@@ -438,8 +485,8 @@ func (s *ShellServiceServer) handleNonPtySession(
 }
 
 // ResizeTerminal is a gRPC method that resizes the terminal of a shell session.
-func (s *ShellServiceServer) ResizeTerminal(ctx context.Context,
-	req *k8shelldpb.ResizeTerminalRequest) (*k8shelldpb.ResizeTerminalResponse, error) {
+func (s *ShellHandler) ResizeTerminal(ctx context.Context,
+	req *k8shelldv1.ResizeTerminalRequest) (*k8shelldv1.ResizeTerminalResponse, error) {
 	session, err := s.GetSessionData(ctx)
 	if err != nil {
 		return nil, err
@@ -454,5 +501,33 @@ func (s *ShellServiceServer) ResizeTerminal(ctx context.Context,
 	if err != nil {
 		s.logger.Error().Msgf("Failed to resize terminal: %v", err)
 	}
-	return &k8shelldpb.ResizeTerminalResponse{}, nil
+	return &k8shelldv1.ResizeTerminalResponse{}, nil
+}
+
+// GetCWD returns the current working directory of the shell process identified
+// by the shell_id in the request. The CWD is resolved by reading the
+// /proc/<pid>/cwd symlink of the shell process.
+func (s *ShellHandler) GetCWD(_ context.Context, req *k8shelldv1.GetCWDRequest) (*k8shelldv1.GetCWDResponse, error) {
+	if req.GetShellId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "shell_id is required")
+	}
+
+	value, ok := s.grpcApi.SessionStore.Load(req.GetShellId())
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "shell session %s not found", req.GetShellId())
+	}
+
+	session := value.(*SessionData)
+	if session.Pid <= 0 {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"shell session %s has no running process", req.GetShellId())
+	}
+
+	cwd, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", session.Pid))
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read CWD for shell %s: %v",
+			req.GetShellId(), err)
+	}
+
+	return &k8shelldv1.GetCWDResponse{Path: cwd}, nil
 }

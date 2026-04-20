@@ -16,11 +16,11 @@ install-test-deps: ##@ Install test dependencies
                    ##@ Installs golangci-lint and gosec for static analysis
 	@echo "Installing test dependencies..."
 	@echo "Installing golangci-lint..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "Installing gosec..."
-	go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
+	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	@echo "Installing go-junit-report..."
-	go install github.com/jstemmer/go-junit-report/v2@v2.1.0
+	go install github.com/jstemmer/go-junit-report/v2@latest
 	@mkdir -p $(REPORTS_DIR)
 
 test-static: ##@ Run static analysis
@@ -79,7 +79,7 @@ prepare-docker:  ##@ Prepare Docker build context
 	@rm -rf docker/k8shelld/files
 	@mkdir -p docker/k8shelld/files
 	@cp -r vendor docker/k8shelld/files/
-	@cp -r go.mod go.sum internal pkg cmd sftp scripts docker/k8shelld/files/
+	@cp -r go.mod go.sum internal cmd sftp scripts docker/k8shelld/files/
 	@echo "Docker context prepared!"
 
 image:  ##@ Build Docker image

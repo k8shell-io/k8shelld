@@ -1,28 +1,41 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/k8shell-io/api-server/pkg/client"
+	"github.com/k8shell-io/common/pkg/authz"
+	commonmodels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
+	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/rs/zerolog"
+)
+
+const (
+	FLAG_DIR_TEMPLATE = "%s/.k8shell/flags"
 )
 
 type Server struct {
 	logger      *zerolog.Logger
 	testMode    bool
+	user        *models.User
 	config      *config.Config
+	blueprint   *commonmodels.Blueprint
 	workspace   string
 	restService *RESTService
 	grpcService *grpc.GRPCService
@@ -31,6 +44,7 @@ type Server struct {
 	pprof       bool
 	sysInfo     *system.SystemInfo
 	appManager  *apps.AppManager
+	jwtVerifier *authz.JWTVerifier
 }
 
 func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
@@ -40,19 +54,45 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		if cfg.System.ApiServer.Address == "" {
 			return nil, fmt.Errorf("api server is enabled but address is empty")
 		}
-		apiClient = client.NewClient(cfg.System.ApiServer.Address, cfg.User.UserToken)
+		apiClient = client.NewClient(cfg.System.ApiServer.Address, "")
+	}
+
+	var jwtVerifier *authz.JWTVerifier
+	var err error
+	if !testMode {
+		if cfg.Identity.TokenPath == "" || cfg.Identity.PublicKeyPath == "" || cfg.Identity.SigningMethod == "" {
+			return nil, fmt.Errorf("identity config is incomplete: tokenPath, publicKeyPath and signingMethod are all required")
+		}
+		jwtVerifier, err = authz.NewJWTVerifier(authz.JWTVerifierConfig{
+			SigningMethod: cfg.Identity.SigningMethod,
+			PublicKeyFile: cfg.Identity.PublicKeyPath,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create JWT verifier: %w", err)
+		}
 	}
 
 	s := &Server{
-		logger:     logger.NewLogger("k8shelld"),
-		testMode:   testMode,
-		config:     cfg,
-		pprof:      cfg.System.PProf,
-		sysInfo:    system.NewSystemInfo(cfg),
-		apiClientx: apiClient,
+		logger:      logger.NewLogger("k8shelld"),
+		testMode:    testMode,
+		config:      cfg,
+		pprof:       cfg.System.PProf,
+		apiClientx:  apiClient,
+		jwtVerifier: jwtVerifier,
 	}
 
-	var err error
+	bp, err := config.LoadBlueprint(config.BlueprintPath)
+	if err != nil {
+		s.logger.Warn().Msgf("Failed to load blueprint from %s: %v", config.BlueprintPath, err)
+	}
+	s.blueprint = bp
+	s.sysInfo = system.NewSystemInfo(cfg, bp)
+
+	err = s.loadIdentity()
+	if err != nil {
+		return nil, fmt.Errorf("error loading identity: %v", err)
+	}
+
 	s.workspace = os.Getenv("WORKSPACE")
 	if s.workspace == "" {
 		return nil, fmt.Errorf("cannot get the workspace name from WORKSPACE environment variable")
@@ -65,25 +105,23 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		s.procWatcher = system.NewProcessWatcher(false, false, 0, nil)
 	}
 
-	if cfg.EnableApps {
-		s.appManager, err = apps.NewAppManager(cfg.Apps, cfg.User, s.procWatcher, s.testMode)
+	if s.blueprint != nil && s.blueprint.EnableApps {
+		s.appManager, err = apps.NewAppManager(config.BlueprintApps(s.blueprint.Apps), s.user, s.procWatcher, s.testMode)
 		if err != nil {
 			return nil, fmt.Errorf("error creating App Manager: %v", err)
 		}
 	}
 
-	s.grpcService, err = grpc.NewGRPCService(cfg.User, cfg.System.GrpcConfig, cfg.PortForwardingRules,
-		cfg.InitScriptsDir, s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
+	s.grpcService, err = grpc.NewGRPCService(cfg, s.blueprint, s.user, s.jwtVerifier,
+		s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
 
-	s.restService, err = NewRESTService(restApiUnixSocketPath, cfg.User, s)
+	s.restService, err = NewRESTService(restApiUnixSocketPath, s.user, s)
 	if err != nil {
 		return nil, fmt.Errorf("error creating REST API: %v", err)
 	}
-
-	config.UnsetEnvVars(cfg.Env)
 
 	err = s.initialize()
 	if err != nil {
@@ -104,22 +142,78 @@ func (s *Server) initialize() error {
 		s.logger.Error().Msgf("Error running kbox tools-init: %v", err)
 	}
 
-	if err := system.CreateUser(s.config.User); err != nil {
+	if err := system.CreateUser(s.user); err != nil {
 		s.logger.Fatal().Msgf("Error creating user: %v", err)
 	}
 
-	if s.config.Docker.Enabled && s.config.Docker.CreateDockerSockSymlink {
+	if s.blueprint != nil && s.blueprint.Podman.Enabled {
+		uid := int(s.user.GetUID())
+		gid := int(s.user.GetGID())
+		go func() {
+			const (
+				maxWait      = 30 * time.Second
+				pollInterval = 500 * time.Millisecond
+			)
+			deadline := time.Now().Add(maxWait)
+			for time.Now().Before(deadline) {
+				if _, err := os.Lstat(config.PODMAN_SOCKET_PATH); err == nil {
+					if err := os.Chown(config.PODMAN_SOCKET_PATH, uid, gid); err != nil {
+						s.logger.Error().Msgf("Error chowning podman socket %s: %v", config.PODMAN_SOCKET_PATH, err)
+					} else {
+						s.logger.Info().Msgf("Podman socket %s ownership changed to UID %d GID %d",
+							config.PODMAN_SOCKET_PATH, uid, gid)
+					}
+					return
+				}
+				time.Sleep(pollInterval)
+			}
+			s.logger.Warn().Msgf("Podman socket %s not found after %s, skipping chown",
+				config.PODMAN_SOCKET_PATH, maxWait)
+		}()
+	}
+
+	if s.blueprint != nil && s.blueprint.Podman.Enabled && s.blueprint.Podman.CreateDockerSockSymlink {
 		if _, err := os.Lstat(config.DOCKER_SOCKET_SYMLINK); err != nil {
-			if err := os.Symlink(config.DOCKER_SOCKET_PATH, config.DOCKER_SOCKET_SYMLINK); err != nil {
+			if err := os.Symlink(config.PODMAN_SOCKET_PATH, config.DOCKER_SOCKET_SYMLINK); err != nil {
 				s.logger.Error().Msgf("Error creating docker socket symlink: %v", err)
 			} else {
 				s.logger.Info().Msgf("Created Docker socket symlink: %s -> %s",
-					config.DOCKER_SOCKET_SYMLINK, config.DOCKER_SOCKET_PATH)
+					config.DOCKER_SOCKET_SYMLINK, config.PODMAN_SOCKET_PATH)
 			}
 		} else {
 			s.logger.Warn().Msgf("Docker socket symlink already exists: %s", config.DOCKER_SOCKET_SYMLINK)
 		}
 	}
+
+	err = s.runInitScripts(config.InitScriptsDir, s.user, func() {
+		s.logger.Info().Msg("Init scripts finished, running auto-start apps")
+
+		appMgr := s.appManager
+		if appMgr == nil {
+			s.logger.Warn().Msg("apps are not enabled, skipping auto-start")
+			return
+		}
+
+		if appMgr.Apps() == nil || len(appMgr.Apps()) == 0 {
+			s.logger.Info().Msg("No apps configured, skipping auto-start")
+			return
+		}
+
+		bg := context.Background()
+		for name, app := range appMgr.Apps() {
+			if !app.AutoStart {
+				continue
+			}
+			s.logger.Info().Msgf("Auto-starting app %s", name)
+			if err := appMgr.InstallAndStart(bg, name); err != nil {
+				s.logger.Error().Msgf("Failed to autostart app %s: %v", name, err)
+			}
+		}
+	})
+	if err != nil {
+		s.logger.Error().Msgf("Failed to run init scripts: %v", err)
+	}
+
 	return nil
 }
 
@@ -174,11 +268,24 @@ func (s *Server) Serve() {
 		}()
 	}
 
+	shutdownReason := make(chan string, 1)
+	if s.jwtVerifier != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.watchIdentity(ctx, shutdownReason)
+		}()
+	}
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 
-	sig := <-sigChan
-	s.logger.Info().Msgf("Received signal: %s. Initiating shutdown...", sig)
+	select {
+	case sig := <-sigChan:
+		s.logger.Info().Msgf("Received signal: %s. Initiating shutdown...", sig)
+	case reason := <-shutdownReason:
+		s.logger.Warn().Msgf("Initiating shutdown: %s", reason)
+	}
 
 	if !s.testMode {
 		wg.Add(1)
@@ -192,4 +299,158 @@ func (s *Server) Serve() {
 	wg.Wait()
 
 	s.logger.Info().Msgf("Shutdown complete.")
+}
+
+// RunInitScripts runs the initialization scripts
+func (s *Server) runInitScripts(
+	scriptsDir string,
+	user *models.User,
+	onComplete func(),
+) error {
+
+	s.logger.Info().Msgf("Running init scripts, scriptsDir: %s", scriptsDir)
+	if _, err := os.Stat(scriptsDir); os.IsNotExist(err) {
+		return fmt.Errorf("invalid init scripts directory: %s", scriptsDir)
+	}
+
+	flagDir := fmt.Sprintf(FLAG_DIR_TEMPLATE, user.GetHomeDir())
+	if err := os.MkdirAll(flagDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create flag directory: %s", flagDir)
+	}
+
+	scripts, err := filepath.Glob(filepath.Join(scriptsDir, "__init_*"))
+	if err != nil {
+		return fmt.Errorf("failed to list init scripts: %s", scriptsDir)
+	}
+
+	s.logger.Info().Msgf("Running %d init scripts in background.", len(scripts))
+	var wg sync.WaitGroup
+	for _, scriptPath := range scripts {
+		wg.Add(1)
+		go func(sp string) {
+			defer wg.Done()
+			s.logger.Info().Msgf("Running %s.", sp)
+			if err := s.runScriptHelper(scriptsDir, sp, flagDir, []string{}); err != nil {
+				s.logger.Error().Msgf("Failed to run init script %s: %v", sp, err)
+			}
+		}(scriptPath)
+	}
+	go func() {
+		wg.Wait()
+		s.logger.Info().Msg("All init scripts completed.")
+		if onComplete != nil {
+			onComplete()
+		}
+	}()
+
+	return nil
+}
+
+// runScriptHelper executes a script with flag handling
+func (s *Server) runScriptHelper(scriptsDir, scriptPath string, flagDir string, envVars []string) error {
+	scriptName := filepath.Base(scriptPath)
+
+	flagFile := filepath.Join(flagDir, scriptName)
+	if _, err := os.Stat(flagFile); err == nil {
+		s.logger.Info().Msgf("Flag file exists for %s. Skipping execution.", scriptName)
+		return nil
+	}
+
+	return s.runScript(scriptsDir, scriptName, flagFile, envVars)
+}
+
+// scriptInterpreter returns the interpreter for a script by reading its shebang line.
+// Falls back to "/bin/sh" when no shebang is present.
+func scriptInterpreter(scriptPath string) string {
+	f, err := os.Open(scriptPath)
+	if err != nil {
+		return "/bin/sh"
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	if scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "#!") {
+			interp := strings.TrimSpace(line[2:])
+			if interp != "" {
+				return interp
+			}
+		}
+	}
+	return "/bin/sh"
+}
+
+// runScript executes a script
+func (s *Server) runScript(scriptsDir, scriptName, flagFile string, envVars []string) error {
+	scriptPath := filepath.Join(scriptsDir, scriptName)
+
+	interp := scriptInterpreter(scriptPath)
+	cmd := exec.Command(interp, scriptPath)
+	cmd.Env = system.CreateEnvVars(envVars, s.user.GetHomeDir())
+
+	cmd.Dir = s.user.GetHomeDir()
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true, // create a new process group
+		Credential: &syscall.Credential{
+			Uid:    s.user.GetUID(),
+			Gid:    s.user.GetGID(),
+			Groups: system.GetSupplementalGroups(s.user.GetUsername()),
+		},
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stdout pipe for script %s: %w", scriptName, err)
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stderr pipe for script %s: %w", scriptName, err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start script %s: %w", scriptName, err)
+	}
+
+	s.procWatcher.AddPIDIgnoreTerminate(cmd.Process.Pid)
+
+	scannerOut := bufio.NewScanner(stdout)
+	scannerErr := bufio.NewScanner(stderr)
+
+	go func() {
+		for scannerOut.Scan() {
+			s.logger.Debug().Msgf("script=%s, msg=%s", scriptName, scannerOut.Text())
+		}
+	}()
+	go func() {
+		for scannerErr.Scan() {
+			s.logger.Debug().Msgf("script=%s, msg=%s", scriptName, scannerErr.Text())
+		}
+	}()
+
+	if err := cmd.Wait(); err != nil {
+		s.logger.Error().Msgf("Failed to wait for script %s: %v", scriptName, err)
+	}
+	s.checkScriptState(cmd, flagFile, scriptName)
+	return nil
+}
+
+// checkScriptState checks the state of a script after it has finished executing.
+func (s *Server) checkScriptState(cmd *exec.Cmd, flagFile string, scriptName string) {
+	status := cmd.ProcessState.ExitCode()
+	if status == 0 {
+		if flagFile != "" {
+			if err := os.WriteFile(flagFile, []byte{}, 0644); err == nil {
+				s.logger.Info().Msgf("The script %s completed successfully. Flag file created at %s.", scriptName, flagFile)
+			} else {
+				s.logger.Error().Msgf("Failed to create flag file for background script %s: %v", scriptName, err)
+			}
+		} else {
+			s.logger.Info().Msgf("The script %s completed successfully.", scriptName)
+		}
+	} else {
+		s.logger.Error().Msgf("The script %s failed with exit status %d.", scriptName, status)
+	}
 }

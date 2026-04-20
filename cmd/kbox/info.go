@@ -11,8 +11,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	"github.com/k8shell-io/k8shelld/internal/client"
-	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/spf13/cobra"
 )
 
@@ -74,11 +74,18 @@ Docker (if available):
 			fmt.Println("Error parsing uptime:", err)
 			return
 		}
+
+		repoName := sysInfo.Repository
+		if repoName == "" {
+			repoName = "n/a"
+		}
+
 		workspace := [][2]string{
 			{"Name", env("WORKSPACE", "n/a")},
-			{"Start time", startTime.Format("2006-01-02 15:04:05")},
+			{"Start time", startTime.Local().Format("2006-01-02 15:04:05 MST")},
 			{"Image", env("IMAGE", "n/a")},
 			{"Blueprint", env("BLUEPRINT", "n/a")},
+			{"Repository", repoName},
 			{"Users", fmt.Sprintf("%d", system.Users)},
 		}
 		printGroup("Workspace", workspace)
@@ -150,7 +157,7 @@ Docker (if available):
 	},
 }
 
-func fetchSysInfo() (*api.SystemInfo, error) {
+func fetchSysInfo() (*k8shelld.SystemInfo, error) {
 	resp, err := client.MakeRequest("GET", "/sysinfo", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching sysinfo: %w", err)
@@ -161,7 +168,7 @@ func fetchSysInfo() (*api.SystemInfo, error) {
 		return nil, err
 	}
 
-	var data api.SystemInfo
+	var data k8shelld.SystemInfo
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, fmt.Errorf("error parsing sysinfo response: %w", err)
 	}

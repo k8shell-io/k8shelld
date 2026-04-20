@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/internal/config"
+	commonmodels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/rs/zerolog"
@@ -20,7 +20,7 @@ import (
 // supervisorState holds the state for a supervisor
 type AppSupervisor struct {
 	manager *AppManager
-	app     *config.AppSpec
+	app     *commonmodels.AppSpec
 	log     zerolog.Logger
 
 	stopCh   chan struct{}
@@ -31,7 +31,7 @@ type AppSupervisor struct {
 	pid          int
 }
 
-func NewAppSupervisor(manager *AppManager, app *config.AppSpec) *AppSupervisor {
+func NewAppSupervisor(manager *AppManager, app *commonmodels.AppSpec) *AppSupervisor {
 	log := logger.NewLogger("app-supervisor").With().Str("app", app.Name).Logger()
 	return &AppSupervisor{
 		manager: manager,
@@ -111,12 +111,12 @@ func (s *AppSupervisor) supervise() {
 		}
 		s.log.Debug().Msgf("starting app version %s", appVersion)
 
-		env := system.CreateEnvVars([]string{}, s.manager.user.HomeDir)
+		env := system.CreateEnvVars([]string{}, s.manager.user.GetHomeDir())
 		startCmd := expandEnvSlice(s.app.Start, env)
 		s.log.Debug().Msgf("starting app with command: %v", startCmd)
 		cmd := exec.Command(startCmd[0], startCmd[1:]...)
 		cmd.Env = env
-		cmd.Dir = s.manager.user.HomeDir
+		cmd.Dir = s.manager.user.GetHomeDir()
 
 		s.log.Debug().Msgf("env: %v", cmd.Env)
 
@@ -124,9 +124,9 @@ func (s *AppSupervisor) supervise() {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setsid: true,
 				Credential: &syscall.Credential{
-					Uid:    s.manager.user.Uid,
-					Gid:    s.manager.user.Gid,
-					Groups: system.GetSupplementalGroups(s.manager.user.Username),
+					Uid:    s.manager.user.GetUID(),
+					Gid:    s.manager.user.GetGID(),
+					Groups: system.GetSupplementalGroups(s.manager.user.GetUsername()),
 				},
 			}
 		}

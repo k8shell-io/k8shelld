@@ -12,17 +12,23 @@ import (
 	"sync"
 	"time"
 
+	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
+	"github.com/k8shell-io/common/pkg/authz"
 	"github.com/k8shell-io/common/pkg/gapi"
+	commonmodels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
-	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
+	"github.com/k8shell-io/k8shelld/internal/utils"
 
 	apiClient "github.com/k8shell-io/api-server/pkg/client"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 const cleanupInterval = 1 * time.Minute // The interval for cleaning up the stores
@@ -42,20 +48,20 @@ type StoreRecord struct {
 
 // GRPCApiService is the main service that handles the gRPC API
 type GRPCService struct {
-	grpcConfig          gapi.ServerConfig           // The gRPC server configuration
-	logger              *zerolog.Logger             // The logger
-	initScriptsDir      string                      // The directory where the init scripts are located
-	user                models.User                 // The workspace owner
-	procWatcher         *system.ProcessWatcher      // The process watcher
-	portForwardingRules []config.PortForwardingRule // The port forwarding rules that are allowed
-	ExecStore           *sync.Map                   // The store for the exec data
-	PortForwardStore    *sync.Map                   // The store for the port forwarding data
-	SessionStore        *sync.Map                   // The store for the session data
-	UnixSocketStore     *sync.Map                   // The store for the unix socket data
-	apiClientx          *apiClient.Client           // The API client to communicate with the API server
-	appManager          *apps.AppManager            // The app manager
-	CommandService      *CommandServiceServer       // The command service
-	sysInfo             *system.SystemInfo          // The system information
+	Config           *config.Config          // The main configuration
+	blueprint        *commonmodels.Blueprint // The workspace blueprint
+	user             *models.User            // The user information loaded from the identity token
+	logger           *zerolog.Logger         // The logger
+	procWatcher      *system.ProcessWatcher  // The process watcher
+	ExecStore        *sync.Map               // The store for the exec data
+	PortForwardStore *sync.Map               // The store for the port forwarding data
+	SessionStore     *sync.Map               // The store for the session data
+	UnixSocketStore  *sync.Map               // The store for the unix socket data
+	apiClientx       *apiClient.Client       // The API client to communicate with the API server
+	appManager       *apps.AppManager        // The app manager
+	CommandService   *CommandServiceServer   // The command service
+	sysInfo          *system.SystemInfo      // The system information
+	jwtVerifier      *authz.JWTVerifier      // The JWT verifier for the identity token
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -75,28 +81,27 @@ func getStatus(deleted time.Time) string {
 }
 
 // NewGRPCAPI creates a new GRPCApiService
-func NewGRPCService(user models.User, grpcConfig gapi.ServerConfig,
-	portForwardingRules []config.PortForwardingRule, initScriptsDir string,
+func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, user *models.User, jwtVerifier *authz.JWTVerifier,
 	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
 	appManager *apps.AppManager, sysInfo *system.SystemInfo) (*GRPCService, error) {
 
 	logger := logger.NewLogger("grpc")
 
 	return &GRPCService{
-		logger:              logger,
-		initScriptsDir:      initScriptsDir,
-		grpcConfig:          grpcConfig,
-		user:                user,
-		portForwardingRules: portForwardingRules,
-		procWatcher:         procWatcher,
-		ExecStore:           &sync.Map{},
-		PortForwardStore:    &sync.Map{},
-		SessionStore:        &sync.Map{},
-		UnixSocketStore:     &sync.Map{},
-		apiClientx:          apiClient,
-		appManager:          appManager,
-		CommandService:      NewCommandServiceServer(),
-		sysInfo:             sysInfo,
+		logger:           logger,
+		Config:           config,
+		blueprint:        blueprint,
+		user:             user,
+		procWatcher:      procWatcher,
+		ExecStore:        &sync.Map{},
+		PortForwardStore: &sync.Map{},
+		SessionStore:     &sync.Map{},
+		UnixSocketStore:  &sync.Map{},
+		apiClientx:       apiClient,
+		appManager:       appManager,
+		CommandService:   NewCommandServiceServer(),
+		sysInfo:          sysInfo,
+		jwtVerifier:      jwtVerifier,
 	}, nil
 }
 
@@ -119,19 +124,18 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 
 	// create gRPC server, always stop forcibly
 	// to avoid hanging connections on existing sessions during shutdown
-	server, err := gapi.NewServer(&a.grpcConfig, false)
+	server, err := gapi.NewServer(&a.Config.System.GrpcConfig, false)
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC server: %v", err)
 	}
 
+	server.AddInterceptor(a.callerValidationInterceptor())
+
 	if err := server.RegisterService(func(s *grpc.Server) error {
-		k8shelldpb.RegisterSystemServiceServer(s, NewSystemServiceServer(a))
-		k8shelldpb.RegisterShellServiceServer(s, NewShellServiceServer(a))
-		k8shelldpb.RegisterExecServiceServer(s, NewExecServiceServer(a))
-		k8shelldpb.RegisterPortForwardServiceServer(s, NewPortForwardServiceServer(a))
-		k8shelldpb.RegisterUnixSocketServiceServer(s, NewUnixSocketServiceServer(a))
-		k8shelldpb.RegisterAppServiceServer(s, NewAppServiceServer(a.appManager))
-		k8shelldpb.RegisterCommandServiceServer(s, a.CommandService)
+		k8shelldv1.RegisterSystemServiceServer(s, NewSystemServiceServer(a))
+		k8shelldv1.RegisterSshServiceServer(s, NewSshServiceServer(a))
+		k8shelldv1.RegisterAppServiceServer(s, NewAppServiceServer(a.appManager))
+		k8shelldv1.RegisterCommandServiceServer(s, a.CommandService)
 		a.logger.Info().Msgf("GRPC services server registered")
 		return nil
 	}); err != nil {
@@ -168,6 +172,64 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 	case err := <-errChan:
 		return err
 	}
+}
+
+func (s *GRPCService) callerValidationInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return nil, status.Errorf(codes.InvalidArgument, "missing metadata")
+		}
+
+		data := md.Get("token")
+		if len(data) == 0 {
+			return nil, status.Errorf(codes.InvalidArgument, "missing token in metadata")
+		}
+
+		tokenStr := data[0]
+		if tokenStr == "" {
+			return nil, status.Errorf(codes.InvalidArgument, "empty token in metadata")
+		}
+
+		if _, err := s.jwtVerifier.VerifyToken(tokenStr); err != nil {
+			return nil, status.Errorf(codes.PermissionDenied, "invalid token: %v", err)
+		}
+
+		if !s.user.TokenEqual(tokenStr) {
+			return nil, status.Errorf(codes.PermissionDenied, "invalid token: caller token does not match workspace token")
+		}
+
+		return handler(ctx, req)
+	}
+}
+
+// resolveShellUser determines which OS user the shell session should run as.
+// Priority: explicit "root" (requires sudo) > named user lookup > default user.
+func (s *GRPCService) resolveShellUser(reqUser string, callerUser *models.User) (models.ShellUser, error) {
+	if reqUser == "root" {
+		if callerUser.SudoEnabled() {
+			return models.ShellUser{Username: "root", UID: 0, GID: 0, HomeDir: "/root"}, nil
+		}
+		return models.ShellUser{}, fmt.Errorf("user %s does not have sudo privileges", callerUser.GetUsername())
+	}
+
+	if reqUser != "" && reqUser != callerUser.GetUsername() {
+		u := system.UserExists(reqUser)
+		if u == nil {
+			return models.ShellUser{}, fmt.Errorf("requested user %s not found", reqUser)
+		}
+		uid, err := utils.ParseUint32(u.Uid)
+		if err != nil {
+			return models.ShellUser{}, fmt.Errorf("failed to parse UID for user %s: %v", u.Username, err)
+		}
+		gid, err := utils.ParseUint32(u.Gid)
+		if err != nil {
+			return models.ShellUser{}, fmt.Errorf("failed to parse GID for user %s: %v", u.Username, err)
+		}
+		return models.ShellUser{Username: u.Username, UID: uid, GID: gid, HomeDir: u.HomeDir}, nil
+	}
+
+	return models.NewShellUser(callerUser), nil
 }
 
 // Cleanup the stores by removing the entries that were deleted more than deleteDelay ago

@@ -12,9 +12,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
+	commonmodels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
-	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -32,31 +33,33 @@ const MaxCPUSamples = 100 // Maximum number of CPU samples to keep in history
 // Usage struct to hold CPU & Memory metrics
 // The metrics are collected from cgroups v2 files
 type SystemInfo struct {
-	CollectedAt        time.Time       // Time of collection
-	CPUUsageUsec       int64           // CPU usage in microseconds
-	CPUUsageMillicores float64         // CPU usage in mCPU
-	MemoryUsageMiB     float64         // Memory usage in MiB
-	CPULimitMillicores float64         // CPU limit in mCPU (if set)
-	MemLimitMiB        float64         // Memory limit in MiB (if set)
-	CPUUsageSeconds    float64         // CPU usage in seconds
-	CPUAvg1Min         float64         // CPU usage average over 1 minute
-	CPUAvg5Min         float64         // CPU usage average over 5 minutes
-	CPUAvg15Min        float64         // CPU usage average over 15 minutes
-	config             *config.Config  // System configuration
-	stats              *SystemStats    // System statistics
-	mu                 sync.Mutex      // Mutex for thread-safe updates
-	prevUsage          int64           // Previous CPU usage for delta calculation
-	prevTime           time.Time       // Previous time for delta calculation
-	log                *zerolog.Logger // Logger instance
+	CollectedAt        time.Time               // Time of collection
+	CPUUsageUsec       int64                   // CPU usage in microseconds
+	CPUUsageMillicores float64                 // CPU usage in mCPU
+	MemoryUsageMiB     float64                 // Memory usage in MiB
+	CPULimitMillicores float64                 // CPU limit in mCPU (if set)
+	MemLimitMiB        float64                 // Memory limit in MiB (if set)
+	CPUUsageSeconds    float64                 // CPU usage in seconds
+	CPUAvg1Min         float64                 // CPU usage average over 1 minute
+	CPUAvg5Min         float64                 // CPU usage average over 5 minutes
+	CPUAvg15Min        float64                 // CPU usage average over 15 minutes
+	config             *config.Config          // System configuration
+	blueprint          *commonmodels.Blueprint // Blueprint loaded from /etc/k8shell/blueprint.yaml
+	stats              *SystemStats            // System statistics
+	mu                 sync.Mutex              // Mutex for thread-safe updates
+	prevUsage          int64                   // Previous CPU usage for delta calculation
+	prevTime           time.Time               // Previous time for delta calculation
+	log                *zerolog.Logger         // Logger instance
 }
 
-func NewSystemInfo(config *config.Config) *SystemInfo {
+func NewSystemInfo(config *config.Config, blueprint *commonmodels.Blueprint) *SystemInfo {
 	return &SystemInfo{
-		config:   config,
-		stats:    &SystemStats{MaxSamples: MaxCPUSamples},
-		prevTime: time.Now(),
-		mu:       sync.Mutex{},
-		log:      logger.NewLogger("sysifo"),
+		config:    config,
+		blueprint: blueprint,
+		stats:     &SystemStats{MaxSamples: MaxCPUSamples},
+		prevTime:  time.Now(),
+		mu:        sync.Mutex{},
+		log:       logger.NewLogger("sysifo"),
 	}
 }
 
@@ -129,7 +132,7 @@ func (s *SystemInfo) refresh() error {
 }
 
 // GetSystemUsageSnapshot returns a snapshot of system metrics.
-func (s *SystemInfo) GetSystemUsageSnapshot() (*api.SystemUsage, error) {
+func (s *SystemInfo) GetSystemUsageSnapshot() (*k8shelld.SystemUsage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -138,7 +141,7 @@ func (s *SystemInfo) GetSystemUsageSnapshot() (*api.SystemUsage, error) {
 		return nil, err
 	}
 
-	return &api.SystemUsage{
+	return &k8shelld.SystemUsage{
 		Uptime:             uptime.Format(time.RFC3339),
 		CPUUsageMillicores: s.CPUUsageMillicores,
 		CPULimitMillicores: s.CPULimitMillicores,
@@ -150,24 +153,28 @@ func (s *SystemInfo) GetSystemUsageSnapshot() (*api.SystemUsage, error) {
 	}, nil
 }
 
-func (s *SystemInfo) GetMountUsageSnapshot() ([]api.MountUsage, error) {
+func (s *SystemInfo) GetMountUsageSnapshot() ([]k8shelld.MountUsage, error) {
 	mounts, err := GetMountUsages()
 	if err != nil {
 		return nil, err
 	}
 
-	storageMounts := []api.MountUsage{}
+	storageMounts := []k8shelld.MountUsage{}
+	if s.blueprint == nil {
+		return storageMounts, nil
+	}
+
 	for i := range mounts {
 		m := &mounts[i]
-		for _, s := range s.config.Storages {
-			if m.MountPoint == s.Path {
-				if sz := strings.TrimSpace(s.Size); sz != "" {
+		for _, stor := range s.blueprint.Storages {
+			if m.MountPoint == stor.Path {
+				if sz := strings.TrimSpace(extractStorageSize(stor.ClaimSpec)); sz != "" {
 					if b, perr := ParseSizeBytes(sz); perr == nil {
 						m.DeclaredSize = b
 					} else {
 						m.DeclaredSize = 0
-						log.Err(perr).Msgf("Cannot parse declared size %q for workspace storage %q at path %q",
-							sz, s.Name, s.Path)
+						log.Err(perr).Msgf("Cannot parse declared size %q for storage at path %q",
+							sz, stor.Path)
 					}
 				}
 				storageMounts = append(storageMounts, *m)
@@ -178,9 +185,8 @@ func (s *SystemInfo) GetMountUsageSnapshot() ([]api.MountUsage, error) {
 	return storageMounts, nil
 }
 
-func (s *SystemInfo) GetDockerUsageSnapshot(ctx context.Context) (*api.DockerUsage, error) {
-	docker := s.config.Docker
-	if !docker.Enabled {
+func (s *SystemInfo) GetDockerUsageSnapshot(ctx context.Context) (*k8shelld.DockerUsage, error) {
+	if s.blueprint == nil || !s.blueprint.Podman.Enabled {
 		return nil, nil
 	}
 
@@ -189,15 +195,15 @@ func (s *SystemInfo) GetDockerUsageSnapshot(ctx context.Context) (*api.DockerUsa
 		return nil, fmt.Errorf("error getting docker usage: %v", err)
 	}
 
-	for _, m := range docker.Storages {
-		if du.DockerRootDir != "" && strings.HasPrefix(du.DockerRootDir, m.Path) {
-			if sz := strings.TrimSpace(m.Size); sz != "" {
+	for _, stor := range s.blueprint.Podman.Storages {
+		if du.DockerRootDir != "" && strings.HasPrefix(du.DockerRootDir, stor.Path) {
+			if sz := strings.TrimSpace(extractStorageSize(stor.ClaimSpec)); sz != "" {
 				if b, perr := ParseSizeBytes(sz); perr == nil {
 					du.DeclaredSize = b
 				} else {
 					du.DeclaredSize = 0
-					log.Err(perr).Msgf("Cannot parse declared size %q for docker storage %q at path %q",
-						sz, m.Name, m.Path)
+					log.Err(perr).Msgf("Cannot parse declared size %q for podman storage at path %q",
+						sz, stor.Path)
 				}
 			}
 			break
@@ -548,4 +554,25 @@ func GetPIDListeningOnPort(port int) (int, error) {
 	}
 
 	return 0, nil
+}
+
+// extractStorageSize extracts the storage size from a Kubernetes-style claimSpec.
+// It looks for claimSpec.resources.requests.storage (e.g. "10Gi").
+func extractStorageSize(claimSpec map[string]interface{}) string {
+	if claimSpec == nil {
+		return ""
+	}
+	resources, ok := claimSpec["resources"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	requests, ok := resources["requests"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	size, ok := requests["storage"].(string)
+	if !ok {
+		return ""
+	}
+	return size
 }

@@ -16,11 +16,12 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	commonModels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apps"
+	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
-	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
 )
@@ -29,7 +30,7 @@ const API_VERSION = "v1"
 
 type RESTService struct {
 	unixSocketPath string
-	user           models.User
+	user           *models.User
 	logger         *zerolog.Logger
 	server         *Server
 }
@@ -55,7 +56,7 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 }
 
 // NewRESTAPI creates a new REST API service
-func NewRESTService(unixSocketPath string, user models.User, server *Server) (*RESTService, error) {
+func NewRESTService(unixSocketPath string, user *models.User, server *Server) (*RESTService, error) {
 	logger := logger.NewLogger("api")
 
 	return &RESTService{
@@ -85,6 +86,8 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/apps/{name}/logs", a.GetAppLogs).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/apps/{name}/start", a.StartApp).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/apps/{name}/stop", a.StopApp).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/identity", a.GetIdentity).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/splash", a.GetSplash).Methods(http.MethodGet)
 
 	a.logRoutes(router)
 	return router
@@ -146,7 +149,7 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.logger.Debug().Msgf("Fetching last %d sessions for workspace %s", n, a.server.workspace)
-	sessions, err := a.server.apiClientx.ListUserSessions(r.Context(), a.user.Username,
+	sessions, err := a.server.apiClientx.ListUserSessions(r.Context(), a.user.GetUsername(),
 		a.server.workspace, n, 0, true)
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot retrieve workspace sessions: %v", err)
@@ -163,8 +166,16 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *RESTService) Shutdown(w http.ResponseWriter, r *http.Request) {
-	a.logger.Debug().Msgf("Shutting down workspace %s", a.server.workspace)
-	_, err := a.server.grpcService.CommandService.SendCommand(r.Context(), "shutdown")
+	action := r.URL.Query().Get("action")
+	if action == "" {
+		action = "stop"
+	}
+	if action != "stop" && action != "delete" {
+		http.Error(w, "invalid action: must be 'stop' or 'delete'", http.StatusBadRequest)
+		return
+	}
+	a.logger.Debug().Msgf("Shutting down workspace %s (action=%s)", a.server.workspace, action)
+	_, err := a.server.grpcService.CommandService.SendCommand(r.Context(), "shutdown "+action)
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot shutdown workspace: %v", err)
 		http.Error(w, "Failed to shutdown workspace", http.StatusBadGateway)
@@ -195,9 +206,9 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.logger.Debug().Msgf("Fetching %s credentials for address %s and user %s", credsType,
-		address, a.user.Username)
+		address, a.user.GetUsername())
 
-	creds, err := a.server.apiClientx.GetUserCredentials(r.Context(), a.user.Username)
+	creds, err := a.server.apiClientx.GetUserCredentials(r.Context(), a.user.GetUsername())
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot retrieve user credentials: %v", err)
 		http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
@@ -216,7 +227,14 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		if credsType == "git" && cred.ServiceName == "github" && cred.ServiceURL == address {
+
+		credAddress := cred.ServiceURL
+		parts := strings.Split(cred.ServiceURL, "://")
+		if len(parts) == 2 && !strings.HasPrefix(address, "http") {
+			credAddress = parts[1]
+		}
+
+		if credsType == "git" && cred.ServiceName == "git" && credAddress == address {
 			credStr := fmt.Sprintf(`{"Username": "%s", "Password": "%s"}`,
 				cred.ExternalID, cred.ExternalToken)
 			w.Header().Set("Content-Type", "application/json")
@@ -246,6 +264,18 @@ func (a *RESTService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// repoURL builds a repository URL from GIT_ADDRESS, GIT_REPOOWNER and GIT_REPONAME env vars.
+// Returns an empty string when any of the required vars is unset.
+func repoURL() string {
+	addr := strings.TrimRight(os.Getenv("GIT_ADDRESS"), "/")
+	owner := os.Getenv("GIT_REPOOWNER")
+	name := os.Getenv("GIT_REPONAME")
+	if addr == "" || owner == "" || name == "" {
+		return ""
+	}
+	return addr + "/" + owner + "/" + name
+}
+
 func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	metrics, err := a.server.sysInfo.GetSystemUsageSnapshot()
 	if err != nil {
@@ -269,11 +299,12 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := api.SystemInfo{
-		Time:   time.Now().Format(time.RFC3339),
-		System: metrics,
-		Mounts: mounts,
-		Docker: docker,
+	response := k8shelld.SystemInfo{
+		Time:       time.Now().Format(time.RFC3339),
+		System:     metrics,
+		Mounts:     mounts,
+		Docker:     docker,
+		Repository: repoURL(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -281,6 +312,62 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		a.logger.Error().Msgf("Failed to encode system info response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
+	}
+}
+
+func (a *RESTService) GetIdentity(w http.ResponseWriter, r *http.Request) {
+	claims := a.user.ClaimsSnapshot()
+
+	roles := make([]string, len(claims.Roles))
+	for i, role := range claims.Roles {
+		roles[i] = string(role)
+	}
+
+	expiresAt := ""
+	if claims.ExpiresAt != nil {
+		expiresAt = claims.ExpiresAt.Time.UTC().Format(time.RFC3339)
+	}
+
+	shell := claims.Shell
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+
+	response := k8shelld.IdentityInfo{
+		Username:     a.user.GetUsername(),
+		Name:         claims.Name,
+		Email:        claims.Email,
+		UID:          a.user.GetUID(),
+		GID:          a.user.GetGID(),
+		Shell:        shell,
+		Sudo:         claims.Sudo,
+		Roles:        roles,
+		Organization: claims.Organization,
+		Source:       claims.Source,
+		ExpiresAt:    expiresAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		a.logger.Error().Msgf("Failed to encode identity response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+func (a *RESTService) GetSplash(w http.ResponseWriter, r *http.Request) {
+	var splash string
+	if a.server.blueprint != nil {
+		splash = a.server.blueprint.Splash
+	}
+	expanded := config.ExpandSplash(splash, a.user.GetUsername())
+	// ExpandSplash returns PTY-style \r\n; normalise to plain \n for terminal.
+	text := strings.ReplaceAll(expanded, "\r\n", "\n")
+
+	response := k8shelld.SplashInfo{Text: text}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		a.logger.Error().Msgf("Failed to encode splash response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
 
@@ -382,7 +469,7 @@ func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Reques
 		}
 
 		if compose {
-			_, err := a.server.apiClientx.ComposeBlueprint(r.Context(), a.user.Username, &k8shellFile)
+			_, err := a.server.apiClientx.ComposeBlueprint(r.Context(), a.user.GetUsername(), &k8shellFile)
 			if err != nil {
 				response.Status = "invalid"
 				response.Errors = []string{fmt.Sprintf("Failed to compose final blueprint: %v", err)}
@@ -589,7 +676,7 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 		}
 
 		if !a.server.testMode {
-			err = os.Chown(a.unixSocketPath, int(a.user.Uid), int(a.user.Gid))
+			err = os.Chown(a.unixSocketPath, int(a.user.GetUID()), int(a.user.GetGID()))
 			if err != nil {
 				a.logger.Error().Msgf("Error changing ownership of Unix socket: %v", err)
 				unixListener.Close()

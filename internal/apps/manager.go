@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/k8shelld/internal/config"
+	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
+	commonmodels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
-	"github.com/k8shell-io/k8shelld/pkg/api"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -34,8 +34,8 @@ var ErrAppInvalidState = fmt.Errorf("not a valid app state")
 
 // AppManager manages the lifecycle of applications defined in the configuration
 type AppManager struct {
-	apps        *config.Apps
-	user        models.User
+	apps        map[string]*commonmodels.AppSpec
+	user        *models.User
 	stateDir    string
 	logger      *zerolog.Logger
 	mu          sync.Mutex
@@ -46,7 +46,7 @@ type AppManager struct {
 }
 
 // NewAppManager creates a new AppManager instance
-func NewAppManager(apps *config.Apps, user models.User, procWatcher *system.ProcessWatcher,
+func NewAppManager(apps map[string]*commonmodels.AppSpec, user *models.User, procWatcher *system.ProcessWatcher,
 	testMode bool) (*AppManager, error) {
 	log := logger.NewLogger("app-manager")
 
@@ -54,11 +54,9 @@ func NewAppManager(apps *config.Apps, user models.User, procWatcher *system.Proc
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
 
-	if apps != nil {
-		// The app struct does not have the Name field set from the config
-		for name, app := range *apps {
-			app.Name = name
-		}
+	// The app struct does not have the Name field set from the config
+	for name, app := range apps {
+		app.Name = name
 	}
 
 	return &AppManager{
@@ -74,7 +72,7 @@ func NewAppManager(apps *config.Apps, user models.User, procWatcher *system.Proc
 }
 
 // newSupervisor creates a new AppSupervisor for the given app and adds it to the manager.
-func (m *AppManager) newSupervisor(app *config.AppSpec) *AppSupervisor {
+func (m *AppManager) newSupervisor(app *commonmodels.AppSpec) *AppSupervisor {
 	s := NewAppSupervisor(m, app)
 	m.mu.Lock()
 	m.supervisors[app.Name] = s
@@ -107,11 +105,11 @@ func (m *AppManager) ensureAppStateDir(name string) (string, error) {
 }
 
 // GetApp retrieves the app specification by name.
-func (m *AppManager) GetApp(name string) (*config.AppSpec, error) {
+func (m *AppManager) GetApp(name string) (*commonmodels.AppSpec, error) {
 	if m.apps == nil {
 		return nil, ErrNoAppsConfigured
 	}
-	app, ok := (*m.apps)[name]
+	app, ok := m.apps[name]
 	if !ok {
 		return nil, fmt.Errorf("app %s %w", name, ErrAppNotFound)
 	}
@@ -125,7 +123,7 @@ func (m *AppManager) isAppInstalled(name string) (bool, error) {
 		return false, err
 	}
 
-	env := system.CreateEnvVars([]string{}, m.user.HomeDir)
+	env := system.CreateEnvVars([]string{}, m.user.GetHomeDir())
 	binaryPath := expandEnv(app.Binary, env)
 	if binaryPath == "" {
 		return false, fmt.Errorf("app binary not specified")
@@ -152,7 +150,7 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 		return "", fmt.Errorf("version command or version regex not configured for app %s", name)
 	}
 
-	env := system.CreateEnvVars([]string{}, m.user.HomeDir)
+	env := system.CreateEnvVars([]string{}, m.user.GetHomeDir())
 	versionCmd := expandEnvSlice(app.VersionCmd, env)
 
 	cmd := exec.CommandContext(ctx, versionCmd[0], versionCmd[1:]...)
@@ -164,16 +162,16 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 			Pdeathsig: 0,
 		}
 	} else {
-		cmd.Env = system.CreateEnvVars([]string{}, m.user.HomeDir)
-		cmd.Dir = m.user.HomeDir
+		cmd.Env = system.CreateEnvVars([]string{}, m.user.GetHomeDir())
+		cmd.Dir = m.user.GetHomeDir()
 		if !m.testMode {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setsid:    true,
 				Pdeathsig: 0,
 				Credential: &syscall.Credential{
-					Uid:    m.user.Uid,
-					Gid:    m.user.Gid,
-					Groups: system.GetSupplementalGroups(m.user.Username),
+					Uid:    m.user.GetUID(),
+					Gid:    m.user.GetGID(),
+					Groups: system.GetSupplementalGroups(m.user.GetUsername()),
 				},
 			}
 		}
@@ -359,7 +357,7 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		m.mu.Unlock()
 	}()
 
-	env := system.CreateEnvVars([]string{}, m.user.HomeDir)
+	env := system.CreateEnvVars([]string{}, m.user.GetHomeDir())
 	installScript := expandEnv(app.Install, env)
 	appStateDir, err := m.ensureAppStateDir(name)
 	if err != nil {
@@ -389,16 +387,16 @@ func (m *AppManager) runInstall(ctx context.Context, name string) error {
 		cmd.Env = os.Environ()
 		cmd.Dir = "/root"
 	} else {
-		cmd.Env = system.CreateEnvVars([]string{}, m.user.HomeDir)
-		cmd.Dir = m.user.HomeDir
+		cmd.Env = system.CreateEnvVars([]string{}, m.user.GetHomeDir())
+		cmd.Dir = m.user.GetHomeDir()
 
 		if !m.testMode {
 			cmd.SysProcAttr = &syscall.SysProcAttr{
 				Setsid: true,
 				Credential: &syscall.Credential{
-					Uid:    m.user.Uid,
-					Gid:    m.user.Gid,
-					Groups: system.GetSupplementalGroups(m.user.Username),
+					Uid:    m.user.GetUID(),
+					Gid:    m.user.GetGID(),
+					Groups: system.GetSupplementalGroups(m.user.GetUsername()),
 				},
 			}
 		}
@@ -500,21 +498,21 @@ func (m *AppManager) Stop(ctx context.Context, name string) error {
 }
 
 // ListAppStatus returns app status including port, PID and running time, without internal state.
-func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error) {
+func (m *AppManager) ListAppStatus(ctx context.Context) ([]k8shelld.AppStatus, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var res []api.AppStatus
+	var res []k8shelld.AppStatus
 	if m.apps == nil {
 		return res, nil
 	}
 
-	for name, app := range *m.apps {
+	for name, app := range m.apps {
 		installing := m.installing[name]
 
-		status := api.AppStatus{
+		status := k8shelld.AppStatus{
 			Name:     name,
-			Status:   api.AppStatusUnknown,
+			Status:   k8shelld.AppStatusUnknown,
 			Version:  "",
 			Port:     app.Listen,
 			Protocol: app.Protocol,
@@ -547,13 +545,13 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 		status.Version = version
 
 		if installing {
-			status.Status = api.AppStatusInstalling
+			status.Status = k8shelld.AppStatusInstalling
 			res = append(res, status)
 			continue
 		}
 
 		if !installed {
-			status.Status = api.AppStatusNotInstalled
+			status.Status = k8shelld.AppStatusNotInstalled
 			res = append(res, status)
 			continue
 		}
@@ -562,30 +560,30 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]api.AppStatus, error)
 			pid, err := system.GetPIDListeningOnPort(app.Listen)
 			if err != nil {
 				m.logger.Warn().Msgf("Could not get PID for app %s, port %d: %v", name, app.Listen, err)
-				status.Status = api.AppStatusNotStarted
+				status.Status = k8shelld.AppStatusNotStarted
 				res = append(res, status)
 				continue
 			}
 
 			if pid != 0 {
-				status.Status = api.AppStatusInvalid
+				status.Status = k8shelld.AppStatusInvalid
 				res = append(res, status)
 				continue
 			}
 
-			status.Status = api.AppStatusNotStarted
+			status.Status = k8shelld.AppStatusNotStarted
 			res = append(res, status)
 			continue
 		}
 
 		if sup.PID() == 0 {
-			status.Status = api.AppStatusPending
+			status.Status = k8shelld.AppStatusPending
 			res = append(res, status)
 			continue
 		}
 
 		status.PID = sup.PID()
-		status.Status = api.AppStatusRunning
+		status.Status = k8shelld.AppStatusRunning
 
 		if dur, err := system.GetProcessRunningTime(status.PID); err == nil {
 			status.Age = formatAge(dur)
@@ -786,7 +784,7 @@ func (m *AppManager) InstallAndStart(ctx context.Context, name string) error {
 	return nil
 }
 
-func (m *AppManager) Apps() *config.Apps {
+func (m *AppManager) Apps() map[string]*commonmodels.AppSpec {
 	return m.apps
 }
 

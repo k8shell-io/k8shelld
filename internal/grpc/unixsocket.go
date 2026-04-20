@@ -9,11 +9,12 @@ import (
 	"sync"
 	"time"
 
+	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/utils"
-	"github.com/k8shell-io/k8shelld/pkg/api/k8shelldpb"
 	"github.com/rs/zerolog"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -29,23 +30,22 @@ type unixSocketData struct {
 	Mode       string
 }
 
-// UnixSocketServiceServer is the service that handles the shell GRPC service server
-type UnixSocketServiceServer struct {
+// UnixSocketHandler is the service that handles the shell GRPC service server
+type UnixSocketHandler struct {
 	grpcApi *GRPCService
 	logger  *zerolog.Logger
-	k8shelldpb.UnimplementedUnixSocketServiceServer
 }
 
-// NewUnixSocketServiceServer creates a new UnixSocketServiceServer
-func NewUnixSocketServiceServer(grpcapi *GRPCService) *UnixSocketServiceServer {
-	return &UnixSocketServiceServer{
+// newUnixSocketHandler creates a new UnixSocketHandler
+func newUnixSocketHandler(grpcapi *GRPCService) *UnixSocketHandler {
+	return &UnixSocketHandler{
 		grpcApi: grpcapi,
 		logger:  logger.NewLogger("grpc-unixsocket"),
 	}
 }
 
 // Get the unix socket ID from the gRPC metadata "unixsocket-id"
-func (s *UnixSocketServiceServer) GetUnixSocketID(ctx context.Context) (string, error) {
+func (s *UnixSocketHandler) GetUnixSocketID(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", status.Errorf(codes.InvalidArgument, "missing metadata")
@@ -60,7 +60,7 @@ func (s *UnixSocketServiceServer) GetUnixSocketID(ctx context.Context) (string, 
 }
 
 // Get the unix socket data from the store. It uses the unix socket ID retrieved from the metadata
-func (s *UnixSocketServiceServer) GetUnixSocketData(ctx context.Context) (*SessionData, error) {
+func (s *UnixSocketHandler) GetUnixSocketData(ctx context.Context) (*SessionData, error) {
 	sid, err := s.GetUnixSocketID(ctx)
 	if err != nil {
 		return nil, err
@@ -72,7 +72,7 @@ func (s *UnixSocketServiceServer) GetUnixSocketData(ctx context.Context) (*Sessi
 	return value.(*SessionData), nil
 }
 
-func (s *UnixSocketServiceServer) UnixSocket(stream k8shelldpb.UnixSocketService_UnixSocketServer) error {
+func (s *UnixSocketHandler) UnixSocket(stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
 	uxid, err := s.GetUnixSocketID(stream.Context())
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "failed to get unixsocket-id: %v", err)
@@ -83,16 +83,16 @@ func (s *UnixSocketServiceServer) UnixSocket(stream k8shelldpb.UnixSocketService
 		return status.Errorf(codes.InvalidArgument, "failed to receive request: %v", err)
 	}
 
-	start, ok := req.Request.(*k8shelldpb.UnixSocketRequest_StartRequest)
+	start, ok := req.Request.(*k8shelldv1.UnixSocketRequest_StartRequest)
 	if !ok {
 		return status.Errorf(codes.InvalidArgument,
 			"invalid unix socket request, expected unix socket start request: %v", req)
 	}
 
 	switch start.StartRequest.Mode {
-	case k8shelldpb.UnixSocketMode_UNIX_SOCKET_MODE_LISTEN:
+	case k8shelldv1.UnixSocketMode_UNIX_SOCKET_MODE_LISTEN:
 		return s.startListenerAndBridge(uxid, start.StartRequest.SocketPath, stream)
-	case k8shelldpb.UnixSocketMode_UNIX_SOCKET_MODE_DIAL:
+	case k8shelldv1.UnixSocketMode_UNIX_SOCKET_MODE_DIAL:
 		return s.dialAndBridge(uxid, start.StartRequest.SocketPath, stream)
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid unix socket mode")
@@ -100,8 +100,8 @@ func (s *UnixSocketServiceServer) UnixSocket(stream k8shelldpb.UnixSocketService
 }
 
 // startListenerAndBridge starts a Unix socket listener and bridges gRPC <-> conn
-func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string,
-	stream k8shelldpb.UnixSocketService_UnixSocketServer) error {
+func (s *UnixSocketHandler) startListenerAndBridge(uxid, socketPath string,
+	stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
 
 	unixsocket := &unixSocketData{
 		Id:         uxid,
@@ -119,7 +119,7 @@ func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string
 		return status.Errorf(codes.Internal, "failed to create Unix socket listener: %v", err)
 	}
 
-	if err := os.Chown(unixsocket.socketPath, int(s.grpcApi.user.Uid), int(s.grpcApi.user.Gid)); err != nil {
+	if err := os.Chown(unixsocket.socketPath, int(s.grpcApi.user.GetUID()), int(s.grpcApi.user.GetGID())); err != nil {
 		return status.Errorf(codes.Internal, "failed to chown socket: %v", err)
 	}
 	if err := os.Chmod(unixsocket.socketPath, 0700); err != nil {
@@ -138,8 +138,8 @@ func (s *UnixSocketServiceServer) startListenerAndBridge(uxid, socketPath string
 }
 
 // dialAndBridge dials a Unix socket and bridges gRPC <-> conn
-func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
-	stream k8shelldpb.UnixSocketService_UnixSocketServer) error {
+func (s *UnixSocketHandler) dialAndBridge(uxid, socketPath string,
+	stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
 
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
@@ -203,7 +203,7 @@ func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
 			if n == 0 {
 				continue
 			}
-			if serr := stream.Send(&k8shelldpb.UnixSocketResponse{Data: buf[:n]}); serr != nil {
+			if serr := stream.Send(&k8shelldv1.UnixSocketResponse{Data: buf[:n]}); serr != nil {
 				errCh <- fmt.Errorf("send to stream: %w", serr)
 				return
 			}
@@ -219,8 +219,8 @@ func (s *UnixSocketServiceServer) dialAndBridge(uxid, socketPath string,
 	return nil
 }
 
-func (s *UnixSocketServiceServer) communicate(uxListener *net.UnixListener, unixsocket *unixSocketData,
-	stream k8shelldpb.UnixSocketService_UnixSocketServer) error {
+func (s *UnixSocketHandler) communicate(uxListener *net.UnixListener, unixsocket *unixSocketData,
+	stream grpc.BidiStreamingServer[k8shelldv1.UnixSocketRequest, k8shelldv1.UnixSocketResponse]) error {
 	buf := make([]byte, 1024)
 	stop := make(chan struct{})
 	defer close(stop)
@@ -268,7 +268,7 @@ func (s *UnixSocketServiceServer) communicate(uxListener *net.UnixListener, unix
 						}
 						break
 					} else {
-						if err := stream.Send(&k8shelldpb.UnixSocketResponse{
+						if err := stream.Send(&k8shelldv1.UnixSocketResponse{
 							Data: buf[:n],
 						}); err != nil {
 							s.logger.Error().Msgf("Failed to send data to the client: %v", err)
