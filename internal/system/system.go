@@ -20,13 +20,40 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Paths to cgroups v2 files
-const (
-	cpuStatPath    = "/sys/fs/cgroup/cpu.stat"
-	cpuMaxPath     = "/sys/fs/cgroup/cpu.max"
-	memCurrentPath = "/sys/fs/cgroup/memory.current"
-	memMaxPath     = "/sys/fs/cgroup/memory.max"
+const cgroupRoot = "/sys/fs/cgroup"
+
+var (
+	cgroupBaseOnce sync.Once
+	cgroupBaseDir  string
 )
+
+// cgroupBasePath returns the root directory for this container's cgroup v2
+// files. In unprivileged containers the kernel provides an isolated cgroup
+// namespace so /sys/fs/cgroup already points at the container's own slice.
+// In privileged containers the full host hierarchy is visible and
+// /proc/self/cgroup reveals the real sub-path
+// (e.g. /kubepods/burstable/pod.../container...). We append that path so
+// we read metrics for this container, not the host root cgroup.
+func cgroupBasePath() string {
+	cgroupBaseOnce.Do(func() {
+		cgroupBaseDir = cgroupRoot
+		data, err := os.ReadFile("/proc/self/cgroup")
+		if err != nil {
+			return
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+			// cgroups v2 unified hierarchy always has hierarchy-id 0
+			if strings.HasPrefix(line, "0::") {
+				sub := strings.TrimSpace(strings.TrimPrefix(line, "0::"))
+				if sub != "" && sub != "/" {
+					cgroupBaseDir = filepath.Join(cgroupRoot, sub)
+				}
+				break
+			}
+		}
+	})
+	return cgroupBaseDir
+}
 
 const MaxCPUSamples = 100 // Maximum number of CPU samples to keep in history
 
@@ -334,7 +361,7 @@ func GetStartTimeFromProcStat() (time.Time, error) {
 
 // getCPUUsage retrieves CPU usage in millicores and seconds
 func getCPUUsage(previousUsage int64, prevTime time.Time) (float64, float64, int64, time.Time, error) {
-	usageUsec, err := keyReadIntFromFile(cpuStatPath, "usage_usec")
+	usageUsec, err := keyReadIntFromFile(filepath.Join(cgroupBasePath(), "cpu.stat"), "usage_usec")
 	if err != nil {
 		return 0, 0, 0, time.Now(), err
 	}
@@ -354,7 +381,7 @@ func getCPUUsage(previousUsage int64, prevTime time.Time) (float64, float64, int
 
 // getCPULimits retrieves CPU limits (if defined)
 func getCPULimits() (float64, error) {
-	data, err := readStringFromFile(cpuMaxPath)
+	data, err := readStringFromFile(filepath.Join(cgroupBasePath(), "cpu.max"))
 	if err != nil {
 		return 0, err
 	}
@@ -376,7 +403,7 @@ func getCPULimits() (float64, error) {
 
 // getMemoryUsage retrieves memory usage in MiB
 func getMemoryUsage() (float64, error) {
-	memBytes, err := readIntFromFile(memCurrentPath)
+	memBytes, err := readIntFromFile(filepath.Join(cgroupBasePath(), "memory.current"))
 	if err != nil {
 		return 0, err
 	}
@@ -385,7 +412,7 @@ func getMemoryUsage() (float64, error) {
 
 // getMemoryLimit retrieves memory limits (if defined)
 func getMemoryLimit() (float64, error) {
-	memLimitStr, err := readStringFromFile(memMaxPath)
+	memLimitStr, err := readStringFromFile(filepath.Join(cgroupBasePath(), "memory.max"))
 	if err != nil {
 		return 0, err
 	}

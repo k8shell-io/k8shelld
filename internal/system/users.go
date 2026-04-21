@@ -40,7 +40,7 @@ type distroProvider interface {
 //
 //   - Alpine Linux is detected via /etc/alpine-release
 //   - BusyBox-based images are detected by the absence of useradd and the presence of adduser
-//   - All other systems (Ubuntu, Debian, CentOS, RHEL …) use the standard shadow-utils provider
+//   - All other systems (Ubuntu, Debian, CentOS, RHEL) use the standard shadow-utils provider
 func getProvider() distroProvider {
 	// Alpine Linux always ships /etc/alpine-release
 	if _, err := os.Stat("/etc/alpine-release"); err == nil {
