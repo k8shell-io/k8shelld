@@ -6,7 +6,10 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
@@ -28,6 +31,10 @@ type unixSocketData struct {
 	BytesIn    uint64
 	BytesOut   uint64
 	Mode       string
+	// ShellPid is the PID of the shell session that owns this socket.
+	// When non-zero, only processes descended from this PID are allowed
+	// to connect (enforced via SO_PEERCRED after Accept).
+	ShellPid int
 }
 
 // UnixSocketHandler is the service that handles the shell GRPC service server
@@ -108,6 +115,15 @@ func (s *UnixSocketHandler) startListenerAndBridge(uxid, socketPath string,
 		socketPath: socketPath,
 		Created:    time.Now(),
 		Mode:       "listen",
+	}
+
+	// Associate the socket with the owning shell session so that we can
+	// enforce process-ancestry checks on Accept.  Shell and unix-socket IDs
+	// share the same base (e.g. "sh-p98l6-78-2i1" and "ux-p98l6-78-2i2"
+	// both have base "p98l6-78-2i").  We match on that base to find the
+	// right SessionData in SessionStore.
+	if sess := s.findShellSessionByBase(uxid); sess != nil && sess.Pid > 0 {
+		unixsocket.ShellPid = sess.Pid
 	}
 
 	if _, err := os.Lstat(unixsocket.socketPath); err == nil {
@@ -248,6 +264,24 @@ func (s *UnixSocketHandler) communicate(uxListener *net.UnixListener, unixsocket
 					break
 				}
 
+				// Enforce process-ancestry restriction: the connecting process must
+				// be a descendant of the shell that owns this socket.
+				if unixsocket.ShellPid > 0 {
+					if uc, ok := conn.(*net.UnixConn); ok {
+						pid, perr := peerPid(uc)
+						if perr != nil || !isProcDescendant(pid, unixsocket.ShellPid) {
+							s.logger.Warn().Msgf(
+								"unix-socket %s: rejected connection from PID %d (not descendant of shell PID %d)",
+								unixsocket.socketPath, pid, unixsocket.ShellPid)
+							conn.Close()
+							mu.Lock()
+							conn = nil
+							mu.Unlock()
+							break
+						}
+					}
+				}
+
 				s.logger.Info().Msg("Client connected")
 
 				for {
@@ -318,4 +352,108 @@ func (s *UnixSocketHandler) communicate(uxListener *net.UnixListener, unixsocket
 	s.logger.Info().Msg("Communication ended")
 	uxListener.Close()
 	return nil
+}
+
+// findShellSessionByBase searches SessionStore for a shell session whose ID
+// shares the same base as the given unix-socket ID.  Both ID types use the
+// scheme "{prefix}-{proxyID}-{pid}-{random2chars}{counter}" where the base
+// is everything after the type prefix with trailing counter digits stripped.
+func (s *UnixSocketHandler) findShellSessionByBase(uxid string) *SessionData {
+	base := channelBase(uxid)
+	if base == "" {
+		return nil
+	}
+	var found *SessionData
+	s.grpcApi.SessionStore.Range(func(key, value any) bool {
+		sess, ok := value.(*SessionData)
+		if !ok {
+			return true
+		}
+		if channelBase(sess.Id) == base {
+			found = sess
+			return false // stop
+		}
+		return true
+	})
+	return found
+}
+
+// channelBase extracts the shared base from a channel ID generated with the
+// pattern "{type}-{proxyID}-{pid}-{random2chars}{counter}", e.g.:
+//
+//	"sh-p98l6-78-2i1" → "p98l6-78-2i"
+//	"ux-p98l6-78-2i2" → "p98l6-78-2i"
+//
+// The random 2 chars can contain digits, so we cannot reliably strip trailing
+// digits.  Instead we split on "-" and take exactly the first 2 characters of
+// the last segment as the random part, discarding the trailing counter.
+func channelBase(id string) string {
+	parts := strings.SplitN(id, "-", 4)
+	// parts: [type, proxyID, pid, random2chars+counter]
+	if len(parts) != 4 || len(parts[3]) < 2 {
+		return ""
+	}
+	return parts[1] + "-" + parts[2] + "-" + parts[3][:2]
+}
+
+// peerPid returns the PID of the process on the other end of a Unix socket
+// connection using SO_PEERCRED.
+func peerPid(conn *net.UnixConn) (int, error) {
+	rawConn, err := conn.SyscallConn()
+	if err != nil {
+		return 0, err
+	}
+	var pid int
+	var credErr error
+	if ctrlErr := rawConn.Control(func(fd uintptr) {
+		ucred, err := syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
+		if err != nil {
+			credErr = err
+			return
+		}
+		pid = int(ucred.Pid)
+	}); ctrlErr != nil {
+		return 0, ctrlErr
+	}
+	return pid, credErr
+}
+
+// isProcDescendant returns true when childPid is the same as ancestorPid or
+// is a descendant of it in the /proc process tree.  The walk is capped at 64
+// levels to guard against cycles in unusual namespaces.
+func isProcDescendant(childPid, ancestorPid int) bool {
+	const maxDepth = 64
+	pid := childPid
+	for i := 0; i < maxDepth; i++ {
+		if pid == ancestorPid {
+			return true
+		}
+		if pid <= 1 {
+			return false
+		}
+		ppid, err := procParentPid(pid)
+		if err != nil || ppid == pid {
+			return false
+		}
+		pid = ppid
+	}
+	return false
+}
+
+// procParentPid reads the PPid field from /proc/<pid>/status.
+func procParentPid(pid int) (int, error) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return 0, err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "PPid:") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				break
+			}
+			return strconv.Atoi(fields[1])
+		}
+	}
+	return 0, fmt.Errorf("PPid not found in /proc/%d/status", pid)
 }
