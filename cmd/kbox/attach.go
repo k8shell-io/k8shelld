@@ -1,0 +1,144 @@
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"sync"
+	"text/tabwriter"
+	"time"
+
+	"github.com/k8shell-io/k8shelld/internal/client"
+	grpcpkg "github.com/k8shell-io/k8shelld/internal/grpc"
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
+)
+
+var AttachCmd = &cobra.Command{
+	Use:   "attach [session-id]",
+	Short: "Attach to a detached shell session",
+	Long: `Attach to a detached shell session by session ID.
+
+If no session ID is provided, lists all detached sessions and prompts you
+to select one. The terminal is put into raw mode for the duration of the
+session. Use 'kbox detach' inside the session to detach again.`,
+
+	Run: func(cmd *cobra.Command, args []string) {
+		var id string
+
+		if len(args) > 0 {
+			id = args[0]
+		} else {
+			var err error
+			id, err = pickSession()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "attach: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
+		conn, err := client.HijackAttach(id)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "attach: %v\n", err)
+			os.Exit(1)
+		}
+		defer conn.Close()
+
+		// Put stdin in raw mode so all key events are forwarded as-is.
+		fd := int(os.Stdin.Fd())
+		oldState, err := term.MakeRaw(fd)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "attach: raw mode: %v\n", err)
+			os.Exit(1)
+		}
+		defer term.Restore(fd, oldState)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		// conn -> stdout
+		go func() {
+			defer wg.Done()
+			_, _ = io.Copy(os.Stdout, conn)
+			// When the server closes the connection the copy returns.
+			// Restore the terminal so the prompt is usable again.
+			term.Restore(fd, oldState)
+		}()
+
+		// stdin -> conn
+		go func() {
+			defer wg.Done()
+			_, _ = io.Copy(conn, os.Stdin)
+		}()
+
+		wg.Wait()
+	},
+}
+
+// pickSession fetches the list of detached sessions and prompts the user to
+// select one, returning its ID.
+func pickSession() (string, error) {
+	resp, err := client.MakeRequest("GET", "/shells", nil, nil)
+	if err != nil {
+		return "", fmt.Errorf("list sessions: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if err := client.CheckApplicationError(resp); err != nil {
+		return "", err
+	}
+
+	var sessions []grpcpkg.DetachedSessionInfo
+	if err := json.NewDecoder(resp.Body).Decode(&sessions); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+
+	if len(sessions) == 0 {
+		return "", fmt.Errorf("no detached sessions available")
+	}
+
+	if len(sessions) == 1 {
+		fmt.Printf("Attaching to the only detached session: %s\n", sessions[0].Id)
+		return sessions[0].Id, nil
+	}
+
+	// Print a table and ask the user to choose.
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "#\tID\tSHELL\tPID\tCREATED\tDETACHED")
+	for i, s := range sessions {
+		created := formatRelTime(s.Created)
+		detached := formatRelTime(s.DetachedAt)
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%d\t%s\t%s\n",
+			i+1, s.Id, s.CmdShell, s.Pid, created, detached)
+	}
+	tw.Flush()
+
+	fmt.Printf("\nEnter number (1-%d): ", len(sessions))
+	scanner := bufio.NewScanner(os.Stdin)
+	if !scanner.Scan() {
+		return "", fmt.Errorf("no input")
+	}
+	choice := strings.TrimSpace(scanner.Text())
+	n := 0
+	if _, err := fmt.Sscanf(choice, "%d", &n); err != nil || n < 1 || n > len(sessions) {
+		return "", fmt.Errorf("invalid selection %q", choice)
+	}
+	return sessions[n-1].Id, nil
+}
+
+// formatRelTime parses an RFC3339 string and returns a human-friendly relative
+// duration, e.g. "5m ago".
+func formatRelTime(ts string) string {
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return ts
+	}
+	d := time.Since(t).Round(time.Second)
+	if d < 0 {
+		d = 0
+	}
+	return d.String() + " ago"
+}
