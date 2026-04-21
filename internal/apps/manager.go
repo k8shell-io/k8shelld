@@ -265,15 +265,13 @@ func (m *AppManager) ensureAppVersion(name string) (string, error) {
 
 	version, err := m.appVersionFromFile(name)
 	if err != nil {
-		m.logger.Warn().Msgf("could not read version file for app %s: %v", name, err)
 		ctx := context.Background()
 		version, err = m.appVersion(ctx, name)
 		if err != nil {
 			return "", fmt.Errorf("cannot determine version for %s: %w", name, err)
 		}
-		err = m.writeAppVersionToFile(name, version)
-		if err != nil {
-			m.logger.Warn().Msgf("could not write version file for app %s: %v", name, err)
+		if werr := m.writeAppVersionToFile(name, version); werr != nil {
+			m.logger.Warn().Msgf("could not write version file for app %s: %v", name, werr)
 		}
 	}
 	return version, nil
@@ -534,9 +532,9 @@ func (m *AppManager) ListAppStatus(ctx context.Context) ([]k8shelld.AppStatus, e
 		}
 
 		if installed {
-			v, err := m.appVersionFromFile(name)
+			v, err := m.ensureAppVersion(name)
 			if err != nil {
-				m.logger.Warn().Msgf("could not read version file for app %s: %v", name, err)
+				m.logger.Warn().Msgf("could not determine version for app %s: %v", name, err)
 				v = "N/A"
 			}
 			version = v
