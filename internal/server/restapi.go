@@ -20,6 +20,7 @@ import (
 	commonModels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
+	grpcpkg "github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/rs/zerolog"
@@ -88,6 +89,9 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/apps/{name}/stop", a.StopApp).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/identity", a.GetIdentity).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/splash", a.GetSplash).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/shells", a.ListDetachedShells).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/shells/{id}/detach", a.DetachShell).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/shells/{id}/attach", a.AttachShell).Methods(http.MethodPost)
 
 	a.logRoutes(router)
 	return router
@@ -766,4 +770,62 @@ func (a *RESTService) StopApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListDetachedShells returns a JSON list of PTY shell sessions with no attached client.
+func (a *RESTService) ListDetachedShells(w http.ResponseWriter, r *http.Request) {
+	result := a.server.grpcService.ListDetachedSessions()
+	if result == nil {
+		result = []grpcpkg.DetachedSessionInfo{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		a.logger.Error().Msgf("ListDetachedShells encode: %v", err)
+	}
+}
+
+// DetachShell signals the currently attached client of a session to detach,
+// keeping the shell process alive for later `kbox attach`.
+func (a *RESTService) DetachShell(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	if err := a.server.grpcService.DetachShellSession(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// AttachShell hijacks the HTTP connection and bridges it directly to the PTY
+// of the requested shell session (replaying scrollback first).
+func (a *RESTService) AttachShell(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	if code, err := a.server.grpcService.ValidateSessionForAttach(id); err != nil {
+		http.Error(w, err.Error(), code)
+		return
+	}
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "hijack not supported", http.StatusInternalServerError)
+		return
+	}
+	conn, buf, err := hj.Hijack()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+	// Drain any buffered bytes the HTTP server read ahead.
+	if buf.Reader.Buffered() > 0 {
+		extra := make([]byte, buf.Reader.Buffered())
+		_, _ = buf.Read(extra)
+		_ = extra // discard; client hasn't sent PTY input yet
+	}
+	// Switch to raw PTY protocol: send 200 OK then hand the conn to the loop.
+	if _, err := conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n")); err != nil {
+		a.logger.Error().Msgf("AttachShell write 200: %v", err)
+		return
+	}
+	if err := a.server.grpcService.ServeRESTAttach(id, conn); err != nil {
+		a.logger.Error().Msgf("AttachShell ServeRESTAttach: %v", err)
+	}
 }

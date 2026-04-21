@@ -142,7 +142,7 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 		return fmt.Errorf("failed to register services: %v", err)
 	}
 
-	// cleanup goroutine
+	// cleanup goroutine — removes completed channel store entries after the delete delay
 	go func() {
 		ticker := time.NewTicker(cleanupInterval)
 		defer ticker.Stop()
@@ -152,6 +152,21 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 				a.cleanupChannelStores()
 			case <-ctx.Done():
 				a.logger.Info().Msgf("Cleanup goroutine exiting")
+				return
+			}
+		}
+	}()
+
+	// detachable session GC — terminates idle detachable sessions that have
+	// exceeded their timeout, and removes sessions whose shell process has exited
+	go func() {
+		ticker := time.NewTicker(detachableGCInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				a.gcDetachedSessions()
+			case <-ctx.Done():
 				return
 			}
 		}
