@@ -64,6 +64,7 @@ type ProcessWatcher struct {
 
 type ProcessInfo struct {
 	ppid         int
+	sid          int // session ID (from /proc/<pid>/stat field 6)
 	ignoreSIGHUP bool
 	cmdline      string
 }
@@ -139,6 +140,7 @@ func (p *ProcessWatcher) Run(ctx context.Context) {
 func (p *ProcessWatcher) getProcessInfo(pid int) (ProcessInfo, error) {
 	var info = ProcessInfo{
 		ppid:         -1,
+		sid:          -1,
 		ignoreSIGHUP: false,
 		cmdline:      "",
 	}
@@ -173,6 +175,24 @@ func (p *ProcessWatcher) getProcessInfo(pid int) (ProcessInfo, error) {
 		// Break early if both fields are found
 		if info.ppid != -1 && info.ignoreSIGHUP {
 			break
+		}
+	}
+
+	// Read session ID from /proc/<pid>/stat (field index 5, 0-based).
+	statPath := fmt.Sprintf("/proc/%d/stat", pid)
+	if statData, statErr := os.ReadFile(statPath); statErr == nil {
+		// stat format: pid (comm) state ppid pgrp session ...
+		// The comm field can contain spaces and parentheses, so find the
+		// closing ')' and count fields from there.
+		statStr := string(statData)
+		if rp := strings.LastIndex(statStr, ")"); rp >= 0 {
+			fields := strings.Fields(statStr[rp+1:])
+			// fields[0]=state [1]=ppid [2]=pgrp [3]=session
+			if len(fields) >= 4 {
+				if sid, parseErr := strconv.Atoi(fields[3]); parseErr == nil {
+					info.sid = sid
+				}
+			}
 		}
 	}
 
@@ -236,6 +256,26 @@ func (p *ProcessWatcher) terminateOrphans() {
 		if err != nil {
 			p.logger.Error().Msgf("Failed to get process info for PID %d: %v", pid, err)
 			continue
+		}
+
+		// If the process's session leader is in the ignore list, protect it.
+		// This covers processes that are children of a shell session (e.g.
+		// background jobs started from .bashrc) which would otherwise be
+		// treated as orphans because their ppid was reparented to 1.
+		if info.sid > 0 && info.sid != pid {
+			p.ignorePIDsMutex.Lock()
+			for _, ignorePID := range p.ignorePIDsTerminate {
+				if info.sid == ignorePID {
+					p.logger.Debug().Msgf("Ignoring PID %d, session leader %d is in ignore list", pid, info.sid)
+					p.ignoreSIGHUPTable[pid] = true
+					found = true
+					break
+				}
+			}
+			p.ignorePIDsMutex.Unlock()
+			if found {
+				continue
+			}
 		}
 
 		if info.ppid == 1 {
