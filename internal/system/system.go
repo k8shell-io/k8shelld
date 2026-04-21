@@ -77,6 +77,8 @@ type SystemInfo struct {
 	prevUsage          int64                   // Previous CPU usage for delta calculation
 	prevTime           time.Time               // Previous time for delta calculation
 	log                *zerolog.Logger         // Logger instance
+	cachedMounts       []k8shelld.MountUsage   // Cached mount usage (refreshed in background)
+	cachedDocker       *k8shelld.DockerUsage   // Cached docker usage (refreshed in background)
 }
 
 func NewSystemInfo(config *config.Config, blueprint *commonmodels.Blueprint) *SystemInfo {
@@ -91,17 +93,22 @@ func NewSystemInfo(config *config.Config, blueprint *commonmodels.Blueprint) *Sy
 }
 
 func (s *SystemInfo) Collect(ctx context.Context, refreshTimeSec int) error {
+	// Do an initial refresh immediately so data is available before the first tick.
+	if err := s.refresh(); err != nil {
+		s.log.Warn().Msgf("Initial system info refresh failed: %v", err)
+	}
+	s.refreshStorage(ctx)
+
 	ticker := time.NewTicker(time.Duration(refreshTimeSec) * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			err := s.refresh()
-			if err != nil {
+			if err := s.refresh(); err != nil {
 				s.log.Warn().Msgf("Failed to update system info: %v", err)
-				continue
 			}
+			s.refreshStorage(ctx)
 		case <-ctx.Done():
 			s.log.Info().Msg("System info updater stopped.")
 			return ctx.Err()
@@ -180,7 +187,15 @@ func (s *SystemInfo) GetSystemUsageSnapshot() (*k8shelld.SystemUsage, error) {
 	}, nil
 }
 
+// GetMountUsageSnapshot returns the cached mount usage. Refreshed in the background by Collect.
 func (s *SystemInfo) GetMountUsageSnapshot() ([]k8shelld.MountUsage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cachedMounts, nil
+}
+
+// computeMountSnapshot performs the live mount statfs scan and blueprint filtering.
+func (s *SystemInfo) computeMountSnapshot() ([]k8shelld.MountUsage, error) {
 	mounts, err := GetMountUsages()
 	if err != nil {
 		return nil, err
@@ -212,7 +227,15 @@ func (s *SystemInfo) GetMountUsageSnapshot() ([]k8shelld.MountUsage, error) {
 	return storageMounts, nil
 }
 
-func (s *SystemInfo) GetDockerUsageSnapshot(ctx context.Context) (*k8shelld.DockerUsage, error) {
+// GetDockerUsageSnapshot returns the cached docker usage. Refreshed in the background by Collect.
+func (s *SystemInfo) GetDockerUsageSnapshot(_ context.Context) (*k8shelld.DockerUsage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cachedDocker, nil
+}
+
+// computeDockerSnapshot performs the live docker socket queries and blueprint annotation.
+func (s *SystemInfo) computeDockerSnapshot(ctx context.Context) (*k8shelld.DockerUsage, error) {
 	if s.blueprint == nil || !s.blueprint.Podman.Enabled {
 		return nil, nil
 	}
@@ -238,6 +261,30 @@ func (s *SystemInfo) GetDockerUsageSnapshot(ctx context.Context) (*k8shelld.Dock
 	}
 
 	return du, nil
+}
+
+// refreshStorage updates cachedMounts and cachedDocker in parallel.
+func (s *SystemInfo) refreshStorage(ctx context.Context) {
+	var (
+		mounts []k8shelld.MountUsage
+		docker *k8shelld.DockerUsage
+		wg     sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		mounts, _ = s.computeMountSnapshot()
+	}()
+	go func() {
+		defer wg.Done()
+		docker, _ = s.computeDockerSnapshot(ctx)
+	}()
+	wg.Wait()
+
+	s.mu.Lock()
+	s.cachedMounts = mounts
+	s.cachedDocker = docker
+	s.mu.Unlock()
 }
 
 // CPUSample represents a CPU usage sample
