@@ -236,7 +236,9 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 	session.Cmd.SysProcAttr.Setctty = true
 	session.Cmd.SysProcAttr.Ctty = 1
 
+	unlockCreation := s.grpcApi.procWatcher.LockForCreation()
 	if err = session.Cmd.Start(); err != nil {
+		unlockCreation()
 		_ = ptmx.Close()
 		_ = tty.Close()
 		return fmt.Errorf("error starting shell with PTY: %v", err)
@@ -246,6 +248,7 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 
 	s.grpcApi.procWatcher.AddPIDIgnoreTerminate(session.Cmd.Process.Pid)
 	session.Pid = session.Cmd.Process.Pid
+	unlockCreation()
 
 	if width > 0 && height > 0 {
 		if err = pty.Setsize(session.Ptmx, &pty.Winsize{
@@ -365,11 +368,14 @@ func (s *ShellHandler) handleNonPtySession(
 		return fmt.Errorf("stdin pipe: %w", err)
 	}
 
+	unlockCreation := s.grpcApi.procWatcher.LockForCreation()
 	if err := session.Cmd.Start(); err != nil {
+		unlockCreation()
 		return fmt.Errorf("start non-pty session %s: %w", session.Id, err)
 	}
 	s.grpcApi.procWatcher.AddPIDIgnoreTerminate(session.Cmd.Process.Pid)
 	session.Pid = session.Cmd.Process.Pid
+	unlockCreation()
 
 	_ = stream.Send(&k8shelldv1.ShellResponse{
 		Response: &k8shelldv1.ShellResponse_StartResponse{

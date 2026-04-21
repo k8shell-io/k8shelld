@@ -60,6 +60,12 @@ type ProcessWatcher struct {
 	ignoreSIGHUPTable   map[int]bool
 	ignorePIDsMutex     sync.Mutex
 	ignorePIDsTerminate []int
+	// creationMu is held by callers during the window between os.Start() and
+	// AddPIDIgnoreTerminate().  terminateOrphans acquires it before killing
+	// anything, so a newly-started process is always registered before it can
+	// be targeted.
+	creationMu       sync.Mutex
+	watcherStartTime time.Time
 }
 
 type ProcessInfo struct {
@@ -78,6 +84,7 @@ func NewProcessWatcher(terminateOrphans bool, reapZombies bool, checkInterval in
 		checkInterval:       checkInterval,
 		ignorePIDsMutex:     sync.Mutex{},
 		ignorePIDsTerminate: []int{},
+		watcherStartTime:    time.Now(),
 	}
 
 	// Compile exclude patterns
@@ -95,6 +102,15 @@ func (p *ProcessWatcher) AddPIDIgnoreTerminate(pid int) {
 	p.ignorePIDsMutex.Lock()
 	defer p.ignorePIDsMutex.Unlock()
 	p.ignorePIDsTerminate = append(p.ignorePIDsTerminate, pid)
+}
+
+// LockForCreation must be called before starting a child process and the
+// returned unlock function called immediately after AddPIDIgnoreTerminate.
+// This prevents terminateOrphans from seeing a newly-started process before
+// its PID has been added to the ignore list.
+func (p *ProcessWatcher) LockForCreation() func() {
+	p.creationMu.Lock()
+	return p.creationMu.Unlock
 }
 
 func (p *ProcessWatcher) Run(ctx context.Context) {
@@ -218,6 +234,11 @@ func (p *ProcessWatcher) reapZombies() {
 }
 
 func (p *ProcessWatcher) terminateOrphans() {
+	// Block while any process is being started so we never see a child before
+	// its PID has been registered in ignorePIDsTerminate.
+	p.creationMu.Lock()
+	defer p.creationMu.Unlock()
+
 	validPIDs := make(map[int]bool)
 	files, err := os.ReadDir("/proc")
 	if err != nil {

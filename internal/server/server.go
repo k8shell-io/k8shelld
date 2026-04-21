@@ -410,11 +410,14 @@ func (s *Server) runScript(scriptsDir, scriptName, flagFile string, envVars []st
 		return fmt.Errorf("failed to get stderr pipe for script %s: %w", scriptName, err)
 	}
 
+	unlockCreation := s.procWatcher.LockForCreation()
 	if err := cmd.Start(); err != nil {
+		unlockCreation()
 		return fmt.Errorf("failed to start script %s: %w", scriptName, err)
 	}
 
 	s.procWatcher.AddPIDIgnoreTerminate(cmd.Process.Pid)
+	unlockCreation()
 
 	scannerOut := bufio.NewScanner(stdout)
 	scannerErr := bufio.NewScanner(stderr)

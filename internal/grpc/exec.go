@@ -175,6 +175,7 @@ func (s *ExecHandler) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecReques
 
 	// Start the command and check the output
 	// When command execution fails, we write the error to stderr and return the exit code
+	unlockCreation := s.grpcApi.procWatcher.LockForCreation()
 	if err := cmd.Start(); err != nil {
 		if exitError, ok := err.(*exec.Error); ok {
 			if exitError.Err == exec.ErrNotFound {
@@ -194,6 +195,7 @@ func (s *ExecHandler) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecReques
 			s.logger.Error().Msgf("Failed to send exit code: %v", sendErr)
 		}
 		s.logger.Error().Msgf("Failed to start command: %v, exit-code: %d", err, exitCode)
+		unlockCreation()
 		return nil
 	}
 
@@ -201,6 +203,7 @@ func (s *ExecHandler) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecReques
 
 	// all good, add the PID to the ignore list not to be terminated as it will be orphaned
 	s.grpcApi.procWatcher.AddPIDIgnoreTerminate(processPID)
+	unlockCreation()
 
 	s.logger.Debug().Msgf("Executing command: %v, PID: %d", cmdReq.CommandDetails, processPID)
 
