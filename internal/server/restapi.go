@@ -56,6 +56,16 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 	return rec.ResponseWriter.Write(data)
 }
 
+// Hijack implements http.Hijacker by delegating to the underlying ResponseWriter,
+// allowing handlers like AttachShell to take over the raw connection.
+func (rec *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := rec.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("underlying ResponseWriter does not support hijacking")
+	}
+	return hj.Hijack()
+}
+
 // NewRESTAPI creates a new REST API service
 func NewRESTService(unixSocketPath string, user *models.User, server *Server) (*RESTService, error) {
 	logger := logger.NewLogger("api")
