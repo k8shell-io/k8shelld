@@ -138,6 +138,22 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 		return status.Errorf(codes.InvalidArgument, "invalid shell request: %v", req)
 	}
 
+	autoDetach := shellReq.StartRequest.Attach
+	if autoDetach {
+		if !s.grpcApi.allowSessionDetach {
+			return status.Errorf(codes.PermissionDenied, "session attachment is not enabled")
+		}
+		if !shellReq.StartRequest.UsePty {
+			return status.Errorf(codes.InvalidArgument, "attach=true requires UsePty=true")
+		}
+		if v, exists := s.grpcApi.SessionStore.Load(sessionId); exists {
+			if code, validateErr := s.grpcApi.ValidateSessionForAttach(sessionId); validateErr != nil {
+				return status.Errorf(httpStatusToGRPCCode(code), "%v", validateErr)
+			}
+			return s.handleGRPCAttachExisting(stream, v.(*SessionData))
+		}
+	}
+
 	shellUser, resolveErr := s.grpcApi.resolveShellUser(shellReq.StartRequest.AsUser, s.grpcApi.user)
 	if resolveErr != nil {
 		s.logger.Error().Msgf("Shell session %s: error resolving user: %v", sessionId, resolveErr)
@@ -201,7 +217,7 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 
 	if shellReq.StartRequest.UsePty {
 		err = s.handlePtySession(s.logger, session, stream, shellReq.StartRequest.Width,
-			shellReq.StartRequest.Height)
+			shellReq.StartRequest.Height, autoDetach)
 		if err != nil {
 			return fmt.Errorf("error handling PTY session: %v", err)
 		}
@@ -243,7 +259,7 @@ func (s *ShellHandler) cleanUpSession(session *SessionData) {
 // session-owned PTY read loop and the attached-client loop.
 func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *SessionData,
 	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
-	width uint32, height uint32) error {
+	width uint32, height uint32, autoDetach bool) error {
 
 	// Always allocate scrollback buffer and shell-exit channel for PTY sessions.
 	session.ring = newRingBuffer(detachableRingBufSize)
@@ -300,7 +316,7 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 
 	s.startPtyReadLoop(session)
 	detachCh := session.doAttach(&grpcStreamSender{stream: stream})
-	return s.runAttachedClientLoop(logger, session, stream, detachCh)
+	return s.runAttachedClientLoop(logger, session, stream, detachCh, autoDetach)
 }
 
 // handleNonPtySession handles a shell session without PTY. It creates pipes for the stdin, stdout and stderr of the

@@ -116,12 +116,15 @@ func (s *ShellHandler) startPtyReadLoop(session *SessionData) {
 
 // runAttachedClientLoop forwards gRPC client input to the PTY.
 // Ctrl+A D triggers a detach (handled by filterPtyInput).  The loop also listens
-// for detachCh (explicit detach), session.ptyDone (shell exit), and stream errors,
+// for detachCh (explicit detach), session.ptyDone (shell exit), and stream errors.
+// When autoDetach is true, a gRPC context close (client disconnect) detaches the
+// session rather than destroying it, keeping the shell alive.
 func (s *ShellHandler) runAttachedClientLoop(
 	logger *zerolog.Logger,
 	session *SessionData,
 	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
 	detachCh <-chan struct{},
+	autoDetach bool,
 ) error {
 	ctx := stream.Context()
 	reqCh := make(chan *k8shelldv1.ShellRequest, 8)
@@ -157,8 +160,13 @@ func (s *ShellHandler) runAttachedClientLoop(
 	for {
 		select {
 		case <-ctx.Done():
-			clearAttached()
-			logger.Debug().Msgf("Session %s: gRPC context done, destroying", session.Id)
+			if autoDetach {
+				doDetach()
+				logger.Debug().Msgf("Session %s: gRPC context done, auto-detaching", session.Id)
+			} else {
+				clearAttached()
+				logger.Debug().Msgf("Session %s: gRPC context done, destroying", session.Id)
+			}
 			return nil
 
 		case <-session.ptyDone:
@@ -253,6 +261,47 @@ func (a *GRPCService) ListDetachedSessions() []DetachedSessionInfo {
 		return true
 	})
 	return result
+}
+
+// handleGRPCAttachExisting reattaches a gRPC stream to an already-detached session.
+// It replays the scrollback ring buffer, registers the stream as the sender, then
+// runs the normal attached-client loop with autoDetach=true so that a client
+// disconnect keeps the session alive rather than destroying it.
+func (s *ShellHandler) handleGRPCAttachExisting(
+	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
+	session *SessionData,
+) error {
+	_ = stream.Send(&k8shelldv1.ShellResponse{
+		Response: &k8shelldv1.ShellResponse_StartResponse{
+			StartResponse: &k8shelldv1.ShellStartResponse{},
+		},
+	})
+
+	if scrollback := session.ring.Snapshot(); len(scrollback) > 0 {
+		_ = stream.Send(&k8shelldv1.ShellResponse{
+			Response: &k8shelldv1.ShellResponse_Data{Data: scrollback},
+		})
+	}
+
+	detachCh := session.doAttach(&grpcStreamSender{stream: stream})
+	return s.runAttachedClientLoop(s.logger, session, stream, detachCh, true)
+}
+
+// httpStatusToGRPCCode maps HTTP status codes returned by ValidateSessionForAttach
+// to the nearest equivalent gRPC status code.
+func httpStatusToGRPCCode(httpCode int) codes.Code {
+	switch httpCode {
+	case 403:
+		return codes.PermissionDenied
+	case 404:
+		return codes.NotFound
+	case 409:
+		return codes.AlreadyExists
+	case 410:
+		return codes.NotFound
+	default:
+		return codes.InvalidArgument
+	}
 }
 
 // DetachShellSession triggers a detach on the currently attached client for
