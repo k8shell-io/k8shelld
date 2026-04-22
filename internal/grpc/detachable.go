@@ -30,9 +30,9 @@ import (
 )
 
 const (
-	// detachableSessionTimeout is how long a session with no attached client
-	// survives before the GC terminates it.
-	detachableSessionTimeout = 30 * time.Minute
+	// defaultDetachedSessionTTL is the fallback TTL for detached sessions when
+	// no value is set in the server config or per-session override.
+	defaultDetachedSessionTTL = 30 * time.Minute
 
 	// detachableGCInterval controls how often the GC scans for expired sessions.
 	detachableGCInterval = 1 * time.Minute
@@ -251,13 +251,27 @@ func (a *GRPCService) ListDetachedSessions() []DetachedSessionInfo {
 }
 
 // DetachShellSession triggers a detach on the currently attached client for
-// the given session.  The shell process and ring buffer stay alive.
-func (a *GRPCService) DetachShellSession(sessionId string) error {
+// the given session, optionally setting a per-session TTL override.
+// The shell process and ring buffer stay alive.
+func (a *GRPCService) DetachShellSession(sessionId string, ttl *time.Duration) error {
+	if !a.allowSessionDetach {
+		return fmt.Errorf("session detachment is not enabled on this server")
+	}
 	v, ok := a.SessionStore.Load(sessionId)
 	if !ok {
 		return fmt.Errorf("session %s not found", sessionId)
 	}
 	session := v.(*SessionData)
+
+	if ttl != nil {
+		if err := a.validateTTL(*ttl); err != nil {
+			return err
+		}
+		ttlCopy := *ttl
+		session.mu.Lock()
+		session.DetachTTL = &ttlCopy
+		session.mu.Unlock()
+	}
 
 	session.mu.Lock()
 	ch := session.detachRequested
@@ -277,6 +291,9 @@ func (a *GRPCService) DetachShellSession(sessionId string) error {
 // ValidateSessionForAttach checks that a session exists, is a live PTY session,
 // and has no client currently attached.
 func (a *GRPCService) ValidateSessionForAttach(sessionId string) (int, error) {
+	if !a.allowSessionDetach {
+		return 403, fmt.Errorf("session attachment is not enabled on this server")
+	}
 	v, ok := a.SessionStore.Load(sessionId)
 	if !ok {
 		return 404, fmt.Errorf("session %s not found", sessionId)
@@ -297,6 +314,26 @@ func (a *GRPCService) ValidateSessionForAttach(sessionId string) (int, error) {
 		return 409, fmt.Errorf("session %s already has a client attached", sessionId)
 	}
 	return 0, nil
+}
+
+// validateTTL returns an error if the requested TTL violates server policy.
+// ttl=0 means "never expire" and requires allowUnlimitedTTL.
+// Non-zero values are capped at detachedSessionTTL (0 = no cap).
+func (a *GRPCService) validateTTL(requested time.Duration) error {
+	if requested == 0 {
+		if !a.allowUnlimitedTTL {
+			if a.detachedSessionTTL == 0 {
+				return fmt.Errorf("ttl=0 (no expiry) is not permitted; set allowUnlimittedTTL in server config to enable it")
+			}
+			return fmt.Errorf("ttl=0 (no expiry) is not permitted; server maximum is %v", a.detachedSessionTTL)
+		}
+		return nil
+	}
+	max := a.detachedSessionTTL
+	if max != 0 && requested > max {
+		return fmt.Errorf("requested ttl %v exceeds server maximum of %v", requested, max)
+	}
+	return nil
 }
 
 // ServeRESTAttach attaches a hijacked HTTP conn to the session: replays the
@@ -457,12 +494,26 @@ func (a *GRPCService) gcDetachedSessions() {
 		detachedAt := session.DetachedAt
 		session.mu.Unlock()
 
-		if isDetached && !detachedAt.IsZero() && now.Sub(detachedAt) > detachableSessionTimeout {
-			a.logger.Info().Msgf("GC: session %s timed out after %v, terminating",
-				session.Id, now.Sub(detachedAt).Round(time.Second))
-			session.cleanup()
-			session.Deleted = now
-			a.SessionStore.Delete(key)
+		if isDetached && !detachedAt.IsZero() {
+			var effectiveTTL time.Duration
+			session.mu.Lock()
+			perSession := session.DetachTTL
+			session.mu.Unlock()
+			if perSession != nil {
+				effectiveTTL = *perSession
+			} else {
+				effectiveTTL = a.detachedSessionTTL
+			}
+			if effectiveTTL == 0 {
+				return true // this session is exempt from GC
+			}
+			if now.Sub(detachedAt) > effectiveTTL {
+				a.logger.Info().Msgf("GC: session %s timed out after %v (ttl=%v), terminating",
+					session.Id, now.Sub(detachedAt).Round(time.Second), effectiveTTL)
+				session.cleanup()
+				session.Deleted = now
+				a.SessionStore.Delete(key)
+			}
 		}
 		return true
 	})

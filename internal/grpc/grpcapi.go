@@ -48,20 +48,23 @@ type StoreRecord struct {
 
 // GRPCApiService is the main service that handles the gRPC API
 type GRPCService struct {
-	Config           *config.Config          // The main configuration
-	blueprint        *commonmodels.Blueprint // The workspace blueprint
-	user             *models.User            // The user information loaded from the identity token
-	logger           *zerolog.Logger         // The logger
-	procWatcher      *system.ProcessWatcher  // The process watcher
-	ExecStore        *sync.Map               // The store for the exec data
-	PortForwardStore *sync.Map               // The store for the port forwarding data
-	SessionStore     *sync.Map               // The store for the session data
-	UnixSocketStore  *sync.Map               // The store for the unix socket data
-	apiClientx       *apiClient.Client       // The API client to communicate with the API server
-	appManager       *apps.AppManager        // The app manager
-	CommandService   *CommandServiceServer   // The command service
-	sysInfo          *system.SystemInfo      // The system information
-	jwtVerifier      *authz.JWTVerifier      // The JWT verifier for the identity token
+	Config             *config.Config          // The main configuration
+	blueprint          *commonmodels.Blueprint // The workspace blueprint
+	user               *models.User            // The user information loaded from the identity token
+	logger             *zerolog.Logger         // The logger
+	procWatcher        *system.ProcessWatcher  // The process watcher
+	ExecStore          *sync.Map               // The store for the exec data
+	PortForwardStore   *sync.Map               // The store for the port forwarding data
+	SessionStore       *sync.Map               // The store for the session data
+	UnixSocketStore    *sync.Map               // The store for the unix socket data
+	apiClientx         *apiClient.Client       // The API client to communicate with the API server
+	appManager         *apps.AppManager        // The app manager
+	CommandService     *CommandServiceServer   // The command service
+	sysInfo            *system.SystemInfo      // The system information
+	jwtVerifier        *authz.JWTVerifier      // The JWT verifier for the identity token
+	detachedSessionTTL time.Duration           // max TTL for sessions with no client; 0 = no GC
+	allowSessionDetach bool                    // whether clients may detach/attach PTY sessions
+	allowUnlimitedTTL  bool                    // whether clients may request ttl=0 (never expire)
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -102,21 +105,35 @@ func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, us
 
 	logger := logger.NewLogger("grpc")
 
+	detachedTTL := defaultDetachedSessionTTL
+	if cfg := config.Shells.DetachedTTL; cfg != "" {
+		if d, err := time.ParseDuration(cfg); err != nil {
+			return nil, fmt.Errorf("invalid shells.detachedTTL %q: %w", cfg, err)
+		} else if d < 0 {
+			return nil, fmt.Errorf("shells.detachedTTL must not be negative")
+		} else {
+			detachedTTL = d
+		}
+	}
+
 	return &GRPCService{
-		logger:           logger,
-		Config:           config,
-		blueprint:        blueprint,
-		user:             user,
-		procWatcher:      procWatcher,
-		ExecStore:        &sync.Map{},
-		PortForwardStore: &sync.Map{},
-		SessionStore:     &sync.Map{},
-		UnixSocketStore:  &sync.Map{},
-		apiClientx:       apiClient,
-		appManager:       appManager,
-		CommandService:   NewCommandServiceServer(),
-		sysInfo:          sysInfo,
-		jwtVerifier:      jwtVerifier,
+		logger:             logger,
+		Config:             config,
+		blueprint:          blueprint,
+		user:               user,
+		procWatcher:        procWatcher,
+		ExecStore:          &sync.Map{},
+		PortForwardStore:   &sync.Map{},
+		SessionStore:       &sync.Map{},
+		UnixSocketStore:    &sync.Map{},
+		apiClientx:         apiClient,
+		appManager:         appManager,
+		CommandService:     NewCommandServiceServer(),
+		sysInfo:            sysInfo,
+		jwtVerifier:        jwtVerifier,
+		detachedSessionTTL: detachedTTL,
+		allowSessionDetach: config.Shells.AllowSessionDetach,
+		allowUnlimitedTTL:  config.Shells.AllowUnlimittedTTL,
 	}, nil
 }
 

@@ -54,7 +54,7 @@ func CheckApplicationError(resp *http.Response) error {
 	return nil
 }
 
-// HijackAttach opens a raw connection to POST /api/v1/shells/{id}/attach
+// HijackAttach opens a raw connection to POST /api/v1/shells/{id}/attach.
 // It sends the HTTP request manually, reads the "HTTP/1.1 101 Switching Protocols"
 // response, drains the remaining headers, and returns the bare net.Conn ready for PTY I/O.
 func HijackAttach(sessionId string) (net.Conn, error) {

@@ -813,10 +813,35 @@ func (a *RESTService) ListDetachedShells(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-// DetachShell signals the currently attached client of a session to detach
+// DetachShell signals the currently attached client of a session to detach.
+// An optional JSON body { "ttl": "30m" } sets a per-session TTL override.
 func (a *RESTService) DetachShell(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
-	if err := a.server.grpcService.DetachShellSession(id); err != nil {
+
+	var ttl *time.Duration
+	if r.ContentLength > 0 {
+		var body struct {
+			TTL string `json:"ttl"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.TTL != "" {
+			d, err := time.ParseDuration(body.TTL)
+			if err != nil {
+				http.Error(w, "invalid ttl: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			if d < 0 {
+				http.Error(w, "ttl must not be negative", http.StatusBadRequest)
+				return
+			}
+			ttl = &d
+		}
+	}
+
+	if err := a.server.grpcService.DetachShellSession(id, ttl); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -827,6 +852,7 @@ func (a *RESTService) DetachShell(w http.ResponseWriter, r *http.Request) {
 // of the requested shell session (replaying scrollback first).
 func (a *RESTService) AttachShell(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
+
 	if code, err := a.server.grpcService.ValidateSessionForAttach(id); err != nil {
 		http.Error(w, err.Error(), code)
 		return

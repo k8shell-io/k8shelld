@@ -40,12 +40,13 @@ type SessionData struct {
 	BytesOut uint64
 
 	// PTY session state (nil/zero for non-PTY sessions)
-	DetachedAt      time.Time     // set when a client detaches from a live session
-	ring            *RingBuffer   // scrollback buffer
-	ptyDone         chan struct{} // closed by startPtyReadLoop when the shell exits
-	attachedSender  streamSender  // current live stream writer; nil when no client attached
-	detachRequested chan struct{} // per-attachment channel; closed to trigger a detach
-	mu              sync.Mutex    // protects PTY state fields, BytesIn, BytesOut
+	DetachedAt      time.Time      // set when a client detaches from a live session
+	DetachTTL       *time.Duration // per-session TTL override; nil = use server default; 0 = never expire
+	ring            *RingBuffer    // scrollback buffer
+	ptyDone         chan struct{}  // closed by startPtyReadLoop when the shell exits
+	attachedSender  streamSender   // current live stream writer; nil when no client attached
+	detachRequested chan struct{}  // per-attachment channel; closed to trigger a detach
+	mu              sync.Mutex     // protects PTY state fields, BytesIn, BytesOut
 }
 
 // ShellHandler is the service that handles the shell GRPC service server
