@@ -357,9 +357,9 @@ func (s *UnixSocketHandler) communicate(uxListener *net.UnixListener, unixsocket
 // findShellSessionByBase searches SessionStore for a shell session whose ID
 // shares the same base as the given unix-socket ID.  Both ID types use the
 // scheme "{prefix}-{proxyID}-{pid}-{random2chars}{counter}" where the base
-// is everything after the type prefix with trailing counter digits stripped.
+// is everything after the stream type prefix with trailing counter digits stripped.
 func (s *UnixSocketHandler) findShellSessionByBase(uxid string) *SessionData {
-	base := channelBase(uxid)
+	base := streamBase(uxid)
 	if base == "" {
 		return nil
 	}
@@ -369,7 +369,7 @@ func (s *UnixSocketHandler) findShellSessionByBase(uxid string) *SessionData {
 		if !ok {
 			return true
 		}
-		if channelBase(sess.Id) == base {
+		if streamBase(sess.Id) == base {
 			found = sess
 			return false // stop
 		}
@@ -378,7 +378,7 @@ func (s *UnixSocketHandler) findShellSessionByBase(uxid string) *SessionData {
 	return found
 }
 
-// channelBase extracts the shared base from a channel ID generated with the
+// streamBase extracts the shared base from a stream ID generated with the
 // pattern "{type}-{proxyID}-{pid}-{random2chars}{counter}", e.g.:
 //
 //	"sh-p98l6-78-2i1" → "p98l6-78-2i"
@@ -387,7 +387,7 @@ func (s *UnixSocketHandler) findShellSessionByBase(uxid string) *SessionData {
 // The random 2 chars can contain digits, so we cannot reliably strip trailing
 // digits.  Instead we split on "-" and take exactly the first 2 characters of
 // the last segment as the random part, discarding the trailing counter.
-func channelBase(id string) string {
+func streamBase(id string) string {
 	parts := strings.SplitN(id, "-", 4)
 	// parts: [type, proxyID, pid, random2chars+counter]
 	if len(parts) != 4 || len(parts[3]) < 2 {

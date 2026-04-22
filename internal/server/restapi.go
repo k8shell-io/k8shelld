@@ -87,7 +87,7 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 	apiRouter.HandleFunc("/creds", a.GetCredsHelper).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/sessions", a.GetSessions).Methods(http.MethodGet)
-	apiRouter.HandleFunc("/ssh/channels", a.GetSSHChannels).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/streams", a.GetStreams).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/logs", a.GetLogs).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/shutdown", a.Shutdown).Methods(http.MethodPost)
@@ -264,16 +264,16 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Credentials not found", http.StatusNotFound)
 }
 
-func (a *RESTService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {
-	response, err := a.server.grpcService.GetAllChannelStoreData()
+func (a *RESTService) GetStreams(w http.ResponseWriter, r *http.Request) {
+	response, err := a.server.grpcService.GetAllStreamData()
 	if err != nil {
-		a.logger.Error().Msgf("Failed to get channels data: %v", err)
-		http.Error(w, "Failed to get channels data", http.StatusInternalServerError)
+		a.logger.Error().Msgf("Failed to get streams data: %v", err)
+		http.Error(w, "Failed to get streams data", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		a.logger.Error().Msgf("Failed to encode SSH channels response: %v", err)
+		a.logger.Error().Msgf("Failed to encode streams response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}

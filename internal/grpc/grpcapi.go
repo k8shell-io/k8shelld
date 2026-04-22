@@ -32,7 +32,7 @@ import (
 )
 
 const cleanupInterval = 1 * time.Minute // The interval for cleaning up the stores
-const deleteDelay = 1 * time.Minute     // The delay after the channel was stopped before deleting an entry
+const deleteDelay = 1 * time.Minute     // The delay after the stream was stopped before deleting an entry
 const timeFormat = time.RFC3339         // The time format for the created and deleted fields
 
 type StoreRecord struct {
@@ -157,14 +157,14 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 		return fmt.Errorf("failed to register services: %v", err)
 	}
 
-	// cleanup goroutine — removes completed channel store entries after the delete delay
+	// cleanup goroutine — removes completed stream store entries after the delete delay
 	go func() {
 		ticker := time.NewTicker(cleanupInterval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				a.cleanupChannelStores()
+				a.cleanupStreamStores()
 			case <-ctx.Done():
 				a.logger.Info().Msgf("Cleanup goroutine exiting")
 				return
@@ -262,32 +262,32 @@ func (s *GRPCService) resolveShellUser(reqUser string, callerUser *models.User) 
 	return models.NewShellUser(callerUser), nil
 }
 
-// Cleanup the stores by removing the entries that were deleted more than deleteDelay ago
-func (a *GRPCService) cleanupChannelStores() {
-	a.cleanupChannelStore(a.ExecStore, func(v any) bool {
+// cleanupStreamStores removes stream store entries that were deleted more than deleteDelay ago.
+func (a *GRPCService) cleanupStreamStores() {
+	a.cleanupStreamStore(a.ExecStore, func(v any) bool {
 		data := v.(*ExecData)
 		return !data.Deleted.IsZero() && time.Since(data.Deleted) > deleteDelay
 	})
 
-	a.cleanupChannelStore(a.PortForwardStore, func(v any) bool {
+	a.cleanupStreamStore(a.PortForwardStore, func(v any) bool {
 		data := v.(*PortForwardData)
 		return !data.Deleted.IsZero() && time.Since(data.Deleted) > deleteDelay
 	})
 
-	a.cleanupChannelStore(a.SessionStore, func(v any) bool {
+	a.cleanupStreamStore(a.SessionStore, func(v any) bool {
 		data := v.(*SessionData)
 		return !data.Deleted.IsZero() && time.Since(data.Deleted) > deleteDelay
 	})
 
-	a.cleanupChannelStore(a.UnixSocketStore, func(v any) bool {
+	a.cleanupStreamStore(a.UnixSocketStore, func(v any) bool {
 		data := v.(*unixSocketData)
 		return !data.Deleted.IsZero() && time.Since(data.Deleted) > deleteDelay
 	})
 
 }
 
-// Generic cleanup function for any store
-func (a *GRPCService) cleanupChannelStore(store *sync.Map, shouldDelete func(any) bool) {
+// cleanupStreamStore is a generic cleanup helper for any stream store.
+func (a *GRPCService) cleanupStreamStore(store *sync.Map, shouldDelete func(any) bool) {
 	store.Range(func(key, value any) bool {
 		if shouldDelete(value) {
 			store.Delete(key)
@@ -296,7 +296,7 @@ func (a *GRPCService) cleanupChannelStore(store *sync.Map, shouldDelete func(any
 	})
 }
 
-func (a *GRPCService) GetAllChannelStoreData() ([]StoreRecord, error) {
+func (a *GRPCService) GetAllStreamData() ([]StoreRecord, error) {
 	var result []StoreRecord
 
 	// Helper function to process each store

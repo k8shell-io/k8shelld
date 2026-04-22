@@ -34,7 +34,7 @@ func init() {
 	kboxCmd.AddCommand(ToolsInitCmd)
 	kboxCmd.AddCommand(UptimeCmd)
 	kboxCmd.AddCommand(InfoCmd)
-	kboxCmd.AddCommand(ChannelsCmd)
+	kboxCmd.AddCommand(StreamsCmd)
 	kboxCmd.AddCommand(LastCmd)
 	kboxCmd.AddCommand(LogsCmd)
 	kboxCmd.AddCommand(ShutdownCmd)

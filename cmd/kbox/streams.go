@@ -57,24 +57,24 @@ var tableFields = []table.FieldDefinition{
 	},
 }
 
-var ChannelsCmd = &cobra.Command{
-	Use:   "channels",
-	Short: "Display channels",
-	Long: `Display channels created from the k8shell proxy (shell, port-forward, exec, unix-socket, reverse-proxy).
+var StreamsCmd = &cobra.Command{
+	Use:   "streams",
+	Short: "Display streams",
+	Long: `Display streams created from the k8shell proxy (shell, port-forward, exec, unix-socket, reverse-proxy).
 
 The command displays the following fields:
-  - id: Channel ID
-  - created: Channel creation time
-  - duration: Channel duration
-  - status: Channel status (ACTIVE, STOPPED)
+  - id: Stream ID
+  - created: Stream creation time
+  - duration: Stream duration
+  - status: Stream status (ACTIVE, STOPPED)
   - bytes_in: Bytes received
   - bytes_out: Bytes sent
-  - params: Channel parameters
+  - params: Stream parameters
 
 Use the --sort flag to sort the output by one or more fields. Prefix the field name with '-' for descending order.`,
 
 	Run: func(cmd *cobra.Command, args []string) {
-		url := "/ssh/channels"
+		url := "/streams"
 		resp, err := client.MakeRequest("GET", url, nil, nil)
 		if err != nil {
 			fmt.Printf("Failed to get GRPC status: %v\n", err)
@@ -127,7 +127,7 @@ Use the --sort flag to sort the output by one or more fields. Prefix the field n
 }
 
 func init() {
-	ChannelsCmd.Flags().String("sort", "-created", "Comma separated list of fields to sort by, prefix with '-' for descending order")
-	ChannelsCmd.Flags().Bool("json", false, "Display output in JSON format")
-	ChannelsCmd.Flags().Bool("no-ansi", false, "Disable ANSI color output")
+	StreamsCmd.Flags().String("sort", "-created", "Comma separated list of fields to sort by, prefix with '-' for descending order")
+	StreamsCmd.Flags().Bool("json", false, "Display output in JSON format")
+	StreamsCmd.Flags().Bool("no-ansi", false, "Disable ANSI color output")
 }

@@ -12,7 +12,7 @@ This repository contains the following core components:
 ## Features
 
 - SSH-based access via gRPC channel multiplexing
-- Support for `shell`, `exec`, `sftp`, `port-forward` channels
+- Support for `shell`, `exec`, `sftp`, `port-forward` streams
 - Built-in PTY and agent-forwarding support
 - Docker-in-Docker support for isolated container builds
 - Lightweight, self-contained init process (`k8shelld`)
