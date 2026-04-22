@@ -116,9 +116,10 @@ func (s *ShellHandler) startPtyReadLoop(session *SessionData) {
 
 // runAttachedClientLoop forwards gRPC client input to the PTY.
 //
-//   - detachCh fires  → detach; session stays alive for `kbox attach`
-//   - ctx.Done/EOF    → destroy (default; no explicit detach = session ends)
-//   - ptyDone         → shell exited; remove from store
+//   - Ctrl+A D in the input stream → detach; session stays alive
+//   - detachCh fires               → detach (e.g. via POST /shells/{id}/detach)
+//   - ctx.Done / EOF               → destroy (default; no explicit detach = session ends)
+//   - ptyDone                      → shell exited; remove from store
 func (s *ShellHandler) runAttachedClientLoop(
 	logger *zerolog.Logger,
 	session *SessionData,
@@ -146,6 +147,15 @@ func (s *ShellHandler) runAttachedClientLoop(
 		session.attachedSender = nil
 		session.mu.Unlock()
 	}
+	doDetach := func() {
+		session.mu.Lock()
+		session.attachedSender = nil
+		session.DetachedAt = time.Now()
+		session.mu.Unlock()
+		logger.Info().Msgf("Session %s: detached, process kept alive", session.Id)
+	}
+
+	prevCtrlA := false // state carried across successive Recv calls
 
 	for {
 		select {
@@ -162,11 +172,7 @@ func (s *ShellHandler) runAttachedClientLoop(
 			return nil
 
 		case <-detachCh:
-			session.mu.Lock()
-			session.attachedSender = nil
-			session.DetachedAt = time.Now()
-			session.mu.Unlock()
-			logger.Info().Msgf("Session %s: detached, process kept alive", session.Id)
+			doDetach()
 			return nil
 
 		case err := <-recvErrCh:
@@ -183,13 +189,20 @@ func (s *ShellHandler) runAttachedClientLoop(
 				return nil
 			}
 			if data := req.GetData(); data != nil {
-				if _, werr := session.Ptmx.Write(data); werr != nil {
-					clearAttached()
-					return fmt.Errorf("pty write: %w", werr)
+				filtered, detach := filterPtyInput(data, &prevCtrlA)
+				if len(filtered) > 0 {
+					if _, werr := session.Ptmx.Write(filtered); werr != nil {
+						clearAttached()
+						return fmt.Errorf("pty write: %w", werr)
+					}
+					session.mu.Lock()
+					session.BytesIn += uint64(len(filtered))
+					session.mu.Unlock()
 				}
-				session.mu.Lock()
-				session.BytesIn += uint64(len(data))
-				session.mu.Unlock()
+				if detach {
+					doDetach()
+					return nil
+				}
 			}
 			// Non-data messages (resize etc. are handled via dedicated RPCs) are ignored.
 		}
@@ -320,27 +333,37 @@ func (a *GRPCService) ServeRESTAttach(sessionId string, conn net.Conn) error {
 }
 
 // runRESTAttachLoop bridges a raw net.Conn to the PTY.
-//   - ptyDone  → shell exited; remove session, close conn
-//   - detachCh → explicit detach; keep process alive, close conn
-//   - conn err → destroy session (no detach = ends)
+//   - Ctrl+A D in the input → detach; keep process alive, close conn
+//   - ptyDone               → shell exited; remove session, close conn
+//   - detachCh              → explicit detach (e.g. POST /shells/{id}/detach)
+//   - conn err              → destroy session (no detach = ends)
 func (a *GRPCService) runRESTAttachLoop(session *SessionData, conn net.Conn, detachCh <-chan struct{}) {
 	defer conn.Close()
 
 	inputErrCh := make(chan error, 1)
+	clientDetachCh := make(chan struct{}, 1)
 	go func() {
 		buf := make([]byte, 4096)
+		prevCtrlA := false
 		for {
 			n, err := conn.Read(buf)
 			if n > 0 {
-				session.mu.Lock()
-				ptmx := session.Ptmx
-				session.BytesIn += uint64(n)
-				session.mu.Unlock()
-				if ptmx != nil {
-					if _, werr := ptmx.Write(buf[:n]); werr != nil {
-						inputErrCh <- werr
-						return
+				filtered, detach := filterPtyInput(buf[:n], &prevCtrlA)
+				if len(filtered) > 0 {
+					session.mu.Lock()
+					ptmx := session.Ptmx
+					session.BytesIn += uint64(len(filtered))
+					session.mu.Unlock()
+					if ptmx != nil {
+						if _, werr := ptmx.Write(filtered); werr != nil {
+							inputErrCh <- werr
+							return
+						}
 					}
+				}
+				if detach {
+					clientDetachCh <- struct{}{}
+					return
 				}
 			}
 			if err != nil {
@@ -372,10 +395,38 @@ func (a *GRPCService) runRESTAttachLoop(session *SessionData, conn net.Conn, det
 		doDestroy("shell exited")
 	case <-detachCh:
 		doDetach()
+	case <-clientDetachCh:
+		doDetach()
 	case err := <-inputErrCh:
 		a.logger.Debug().Msgf("REST: session %s conn closed: %v", session.Id, err)
 		doDestroy("client disconnected without detach")
 	}
+}
+
+// filterPtyInput scans data written to a PTY for the Ctrl+A D detach sequence
+// (0x01 0x64, same as GNU screen). It returns the bytes to forward and whether
+// a detach was triggered. prevCtrlA carries state across successive calls so
+// the sequence is detected correctly even when split across read boundaries.
+func filterPtyInput(data []byte, prevCtrlA *bool) (out []byte, detach bool) {
+	out = make([]byte, 0, len(data))
+	for _, b := range data {
+		if *prevCtrlA {
+			*prevCtrlA = false
+			if b == 'd' || b == 'D' {
+				return out, true
+			}
+			// Not a detach sequence — forward the buffered Ctrl+A and this byte.
+			out = append(out, 0x01, b)
+			continue
+		}
+		if b == 0x01 { // Ctrl+A: hold until next byte
+			*prevCtrlA = true
+			continue
+		}
+		out = append(out, b)
+	}
+	// If data ended on a lone Ctrl+A it is held in *prevCtrlA for the next call.
+	return out, false
 }
 
 // ResizeSession resizes the PTY of any shell session (attached or detached).

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -24,7 +23,10 @@ var AttachCmd = &cobra.Command{
 
 If no session ID is provided, lists all detached sessions and prompts you
 to select one. The terminal is put into raw mode for the duration of the
-session. Use 'kbox detach' inside the session to detach again.`,
+session.
+
+Detach shortcut: Ctrl+A D  (same as GNU screen)
+  Keeps the shell process running; use 'kbox attach' to reconnect.`,
 
 	Run: func(cmd *cobra.Command, args []string) {
 		var id string
@@ -48,6 +50,7 @@ session. Use 'kbox detach' inside the session to detach again.`,
 		defer conn.Close()
 
 		// Put stdin in raw mode so all key events are forwarded as-is.
+		// The server intercepts Ctrl+A D and closes the connection cleanly.
 		fd := int(os.Stdin.Fd())
 		oldState, err := term.MakeRaw(fd)
 		if err != nil {
@@ -56,25 +59,14 @@ session. Use 'kbox detach' inside the session to detach again.`,
 		}
 		defer term.Restore(fd, oldState)
 
-		var wg sync.WaitGroup
-		wg.Add(2)
-
 		// conn -> stdout
 		go func() {
-			defer wg.Done()
 			_, _ = io.Copy(os.Stdout, conn)
-			// When the server closes the connection the copy returns.
-			// Restore the terminal so the prompt is usable again.
 			term.Restore(fd, oldState)
 		}()
 
-		// stdin -> conn
-		go func() {
-			defer wg.Done()
-			_, _ = io.Copy(conn, os.Stdin)
-		}()
-
-		wg.Wait()
+		// stdin -> conn (unfiltered; detach interception is server-side)
+		_, _ = io.Copy(conn, os.Stdin)
 	},
 }
 
