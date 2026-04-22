@@ -813,8 +813,7 @@ func (a *RESTService) ListDetachedShells(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-// DetachShell signals the currently attached client of a session to detach,
-// keeping the shell process alive for later `kbox attach`.
+// DetachShell signals the currently attached client of a session to detach
 func (a *RESTService) DetachShell(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	if err := a.server.grpcService.DetachShellSession(id); err != nil {
@@ -843,15 +842,14 @@ func (a *RESTService) AttachShell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
-	// Drain any buffered bytes the HTTP server read ahead.
 	if buf.Reader.Buffered() > 0 {
 		extra := make([]byte, buf.Reader.Buffered())
 		_, _ = buf.Read(extra)
-		_ = extra // discard; client hasn't sent PTY input yet
+		_ = extra
 	}
-	// Switch to raw PTY protocol: send 200 OK then hand the conn to the loop.
-	if _, err := conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n")); err != nil {
-		a.logger.Error().Msgf("AttachShell write 200: %v", err)
+	const switchProto = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: k8shell-pty\r\nConnection: Upgrade\r\n\r\n"
+	if _, err := conn.Write([]byte(switchProto)); err != nil {
+		a.logger.Error().Msgf("AttachShell write 101: %v", err)
 		return
 	}
 	if err := a.server.grpcService.ServeRESTAttach(id, conn); err != nil {

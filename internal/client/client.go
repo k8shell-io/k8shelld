@@ -54,9 +54,9 @@ func CheckApplicationError(resp *http.Response) error {
 	return nil
 }
 
-// HijackAttach opens a raw connection to POST /api/v1/shells/{id}/attach.
-// It sends the HTTP request manually, reads the "HTTP/1.1 200 OK" response
-// header, and returns the bare net.Conn ready for PTY I/O.
+// HijackAttach opens a raw connection to POST /api/v1/shells/{id}/attach
+// It sends the HTTP request manually, reads the "HTTP/1.1 101 Switching Protocols"
+// response, drains the remaining headers, and returns the bare net.Conn ready for PTY I/O.
 func HijackAttach(sessionId string) (net.Conn, error) {
 	conn, err := net.Dial("unix", models.RESTAPIUnixSocket)
 	if err != nil {
@@ -69,22 +69,28 @@ func HijackAttach(sessionId string) (net.Conn, error) {
 		return nil, fmt.Errorf("write HTTP request: %w", err)
 	}
 
-	// Read the status line only; we don't need to parse headers beyond the 200.
 	reader := bufio.NewReader(conn)
 	statusLine, err := reader.ReadString('\n')
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("read HTTP response: %w", err)
 	}
-	if !strings.HasPrefix(statusLine, "HTTP/1.1 200") {
+	if !strings.HasPrefix(statusLine, "HTTP/1.1 101") {
 		conn.Close()
 		return nil, fmt.Errorf("unexpected response: %s", strings.TrimSpace(statusLine))
 	}
-	// Consume the blank line that follows the status line (HTTP/1.1 200 OK\r\n\r\n).
-	// The server sends exactly "HTTP/1.1 200 OK\r\n\r\n" so the next read is "\r\n".
-	_, _ = reader.ReadString('\n')
 
-	// Wrap the conn so any bytes already buffered by the reader are not lost.
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("read HTTP headers: %w", err)
+		}
+		if line == "\r\n" {
+			break
+		}
+	}
+
 	return &bufferedConn{conn: conn, reader: reader}, nil
 }
 

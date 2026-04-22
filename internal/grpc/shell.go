@@ -185,8 +185,6 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 	s.grpcApi.SessionStore.Store(session.Id, session)
 
 	defer func() {
-		// Only kill the process if the session was not explicitly detached.
-		// Detached sessions remain alive until `kbox attach` or GC.
 		session.mu.Lock()
 		isDetached := !session.DetachedAt.IsZero()
 		session.mu.Unlock()
@@ -200,7 +198,6 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 	s.logger.Info().Msgf("Starting shell session %s, pty=%v",
 		sessionId, shellReq.StartRequest.UsePty)
 
-	// Start the shell
 	if shellReq.StartRequest.UsePty {
 		err = s.handlePtySession(s.logger, session, stream, shellReq.StartRequest.Width,
 			shellReq.StartRequest.Height)
@@ -244,7 +241,8 @@ func (s *ShellHandler) cleanUpSession(session *SessionData) {
 // handlePtySession starts the shell with a PTY, then hands off to the
 // session-owned PTY read loop and the attached-client loop.
 func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *SessionData,
-	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse], width uint32, height uint32) error {
+	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
+	width uint32, height uint32) error {
 
 	// Always allocate scrollback buffer and shell-exit channel for PTY sessions.
 	session.ring = newRingBuffer(detachableRingBufSize)
@@ -299,7 +297,6 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 		})
 	}
 
-	// Start the session-owned PTY read loop then bridge the initial gRPC client.
 	s.startPtyReadLoop(session)
 	detachCh := session.doAttach(&grpcStreamSender{stream: stream})
 	return s.runAttachedClientLoop(logger, session, stream, detachCh)

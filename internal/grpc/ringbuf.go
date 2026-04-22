@@ -27,7 +27,6 @@ func (r *RingBuffer) Write(data []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// If data is larger than the whole buffer, only keep the last cap bytes.
 	if len(data) >= r.cap {
 		copy(r.buf, data[len(data)-r.cap:])
 		r.head = 0
@@ -38,7 +37,6 @@ func (r *RingBuffer) Write(data []byte) {
 	for _, b := range data {
 		idx := (r.head + r.used) % r.cap
 		if r.used == r.cap {
-			// Overwrite oldest byte and advance head.
 			r.buf[idx] = b
 			r.head = (r.head + 1) % r.cap
 		} else {

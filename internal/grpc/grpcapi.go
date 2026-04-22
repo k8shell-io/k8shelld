@@ -96,8 +96,8 @@ func getSessionStatus(session *SessionData) string {
 }
 
 // NewGRPCAPI creates a new GRPCApiService
-func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, user *models.User, jwtVerifier *authz.JWTVerifier,
-	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
+func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, user *models.User,
+	jwtVerifier *authz.JWTVerifier, procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
 	appManager *apps.AppManager, sysInfo *system.SystemInfo) (*GRPCService, error) {
 
 	logger := logger.NewLogger("grpc")

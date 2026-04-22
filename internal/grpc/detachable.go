@@ -1,20 +1,18 @@
 package grpc
 
-// detachable.go — screen-like detach/reattach for PTY shell sessions.
+// detachable.go — detach/reattach for PTY shell sessions.
 //
 // All PTY sessions have a ring buffer and a session-owned PTY read loop.
 // By default, closing the gRPC stream or REST connection destroys the session,
-// identical to the previous behaviour.
 //
-// Detach is explicit: the user runs `kbox detach` inside the session which calls
-// POST /api/v1/shells/{id}/detach → DetachShellSession → closes the per-attachment
-// detachRequested channel → the active loop cleanly detaches, keeping the process alive.
+// Detach: `kbox detach` inside the session which calls
+// POST /api/v1/shells/{id}/detach - DetachShellSession - closes the detachRequested
+// channel. Then the active loop cleanly detaches, keeping the process alive.
 //
-// Reattach: `kbox attach [session-id]` calls POST /api/v1/shells/{id}/attach over a
-// hijacked HTTP connection → ServeRESTAttach replays scrollback and bridges the PTY.
+// Attach: `kbox attach [session-id]` calls POST /api/v1/shells/{id}/attach over a
+// hijacked HTTP connection, then ServeRESTAttach replays scrollback and bridges the PTY.
 //
-// Sessions with no attached client for longer than detachableSessionTimeout are
-// terminated by gcDetachedSessions.
+// Sessions are garbage collected when detached with no client for over 30 minutes
 
 import (
 	"fmt"
@@ -40,7 +38,7 @@ const (
 	detachableGCInterval = 1 * time.Minute
 )
 
-// streamSender abstracts sending terminal output bytes to a client.
+// streamSender abstracts sending terminal output bytes to a client
 // The session-owned PTY read loop uses this so it can forward data without
 // holding a concrete reference to the gRPC stream or REST connection.
 type streamSender interface {
@@ -52,6 +50,8 @@ type grpcStreamSender struct {
 	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse]
 }
 
+// send forwards data to the client over the gRPC stream.  The stream's Recv loop
+// handles any send errors by detaching the client
 func (s *grpcStreamSender) send(data []byte) error {
 	return s.stream.Send(&k8shelldv1.ShellResponse{
 		Response: &k8shelldv1.ShellResponse_Data{Data: data},
@@ -115,11 +115,8 @@ func (s *ShellHandler) startPtyReadLoop(session *SessionData) {
 }
 
 // runAttachedClientLoop forwards gRPC client input to the PTY.
-//
-//   - Ctrl+A D in the input stream → detach; session stays alive
-//   - detachCh fires               → detach (e.g. via POST /shells/{id}/detach)
-//   - ctx.Done / EOF               → destroy (default; no explicit detach = session ends)
-//   - ptyDone                      → shell exited; remove from store
+// Ctrl+A D triggers a detach (handled by filterPtyInput).  The loop also listens
+// for detachCh (explicit detach), session.ptyDone (shell exit), and stream errors,
 func (s *ShellHandler) runAttachedClientLoop(
 	logger *zerolog.Logger,
 	session *SessionData,
@@ -155,7 +152,7 @@ func (s *ShellHandler) runAttachedClientLoop(
 		logger.Info().Msgf("Session %s: detached, process kept alive", session.Id)
 	}
 
-	prevCtrlA := false // state carried across successive Recv calls
+	prevCtrlA := false // cctrlA key press carried across successive Recv calls
 
 	for {
 		select {
@@ -209,7 +206,7 @@ func (s *ShellHandler) runAttachedClientLoop(
 	}
 }
 
-// ----- REST attach/detach API (called from internal/server/restapi.go) -----
+// **** REST attach/detach API (called from internal/server/restapi.go)
 
 // DetachedSessionInfo is returned by ListDetachedSessions.
 type DetachedSessionInfo struct {
@@ -220,7 +217,7 @@ type DetachedSessionInfo struct {
 	DetachedAt string `json:"detached_at"`
 }
 
-// ListDetachedSessions returns sessions that are alive but have no attached client.
+// ListDetachedSessions returns sessions that are alive but have no attached client
 func (a *GRPCService) ListDetachedSessions() []DetachedSessionInfo {
 	var result []DetachedSessionInfo
 	a.SessionStore.Range(func(key, value any) bool {
@@ -230,7 +227,7 @@ func (a *GRPCService) ListDetachedSessions() []DetachedSessionInfo {
 		}
 		select {
 		case <-session.ptyDone:
-			return true // already exited
+			return true
 		default:
 		}
 		session.mu.Lock()
@@ -279,7 +276,6 @@ func (a *GRPCService) DetachShellSession(sessionId string) error {
 
 // ValidateSessionForAttach checks that a session exists, is a live PTY session,
 // and has no client currently attached.
-// Returns (httpStatusCode, error); statusCode is 0 on success.
 func (a *GRPCService) ValidateSessionForAttach(sessionId string) (int, error) {
 	v, ok := a.SessionStore.Load(sessionId)
 	if !ok {
@@ -327,16 +323,15 @@ func (a *GRPCService) ServeRESTAttach(sessionId string, conn net.Conn) error {
 		}
 	}
 
-	a.logger.Info().Msgf("REST: attached to shell session %s (pid %d)", sessionId, session.Pid)
+	a.logger.Info().Msgf("Attached to shell session %s (pid %d)", sessionId, session.Pid)
 	a.runRESTAttachLoop(session, conn, detachCh)
 	return nil
 }
 
 // runRESTAttachLoop bridges a raw net.Conn to the PTY.
-//   - Ctrl+A D in the input → detach; keep process alive, close conn
-//   - ptyDone               → shell exited; remove session, close conn
-//   - detachCh              → explicit detach (e.g. POST /shells/{id}/detach)
-//   - conn err              → destroy session (no detach = ends)
+// It listens for client input, session exit, and detach signals. When the client sends Ctrl+A D
+// or calls `kbox detach`, the session is detached but remains alive.  When the session exits
+// or the client disconnects without detaching, the session is destroyed and removed from the store
 func (a *GRPCService) runRESTAttachLoop(session *SessionData, conn net.Conn, detachCh <-chan struct{}) {
 	defer conn.Close()
 
@@ -403,10 +398,7 @@ func (a *GRPCService) runRESTAttachLoop(session *SessionData, conn net.Conn, det
 	}
 }
 
-// filterPtyInput scans data written to a PTY for the Ctrl+A D detach sequence
-// (0x01 0x64, same as GNU screen). It returns the bytes to forward and whether
-// a detach was triggered. prevCtrlA carries state across successive calls so
-// the sequence is detected correctly even when split across read boundaries.
+// filterPtyInput scans data written to a PTY for the Ctrl+A D detach sequence (0x01 0x64)
 func filterPtyInput(data []byte, prevCtrlA *bool) (out []byte, detach bool) {
 	out = make([]byte, 0, len(data))
 	for _, b := range data {
@@ -415,7 +407,6 @@ func filterPtyInput(data []byte, prevCtrlA *bool) (out []byte, detach bool) {
 			if b == 'd' || b == 'D' {
 				return out, true
 			}
-			// Not a detach sequence — forward the buffered Ctrl+A and this byte.
 			out = append(out, 0x01, b)
 			continue
 		}
@@ -425,7 +416,6 @@ func filterPtyInput(data []byte, prevCtrlA *bool) (out []byte, detach bool) {
 		}
 		out = append(out, b)
 	}
-	// If data ended on a lone Ctrl+A it is held in *prevCtrlA for the next call.
 	return out, false
 }
 
@@ -446,8 +436,6 @@ func (a *GRPCService) ResizeSession(sessionId string, width, height uint32) erro
 }
 
 // gcDetachedSessions removes expired sessions.
-//  1. Shell already exited (ptyDone closed) → clean up immediately.
-//  2. Detached with no client for > detachableSessionTimeout → terminate.
 func (a *GRPCService) gcDetachedSessions() {
 	now := time.Now()
 	a.SessionStore.Range(func(key, value any) bool {
