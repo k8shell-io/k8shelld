@@ -497,10 +497,11 @@ func (a *GRPCService) gcDetachedSessions() {
 		}
 		select {
 		case <-session.ptyDone:
-			a.logger.Info().Msgf("GC: removing exited session %s", session.Id)
-			session.cleanup()
-			session.Deleted = now
-			a.SessionStore.Delete(key)
+			if session.Deleted.IsZero() {
+				a.logger.Info().Msgf("GC: marking exited session %s as stopped", session.Id)
+				session.cleanup()
+				session.Deleted = now
+			}
 			return true
 		default:
 		}
@@ -527,7 +528,6 @@ func (a *GRPCService) gcDetachedSessions() {
 					session.Id, now.Sub(detachedAt).Round(time.Second), effectiveTTL)
 				session.cleanup()
 				session.Deleted = now
-				a.SessionStore.Delete(key)
 			}
 		}
 		return true

@@ -15,6 +15,9 @@ func rowColorFunc(row map[string]interface{}) string {
 	if row["status"] == "STOPPED" {
 		return "\033[2m" // Dimmed/shaded for stopped status
 	}
+	if row["status"] == "DETACHED" {
+		return "\033[33m" // Yellow for detached status
+	}
 	return "" // No color o
 }
 
