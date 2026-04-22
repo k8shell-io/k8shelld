@@ -2,11 +2,14 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -57,12 +60,38 @@ Detach shortcut: Ctrl+A D  (same as GNU screen)
 			fmt.Fprintf(os.Stderr, "attach: raw mode: %v\n", err)
 			os.Exit(1)
 		}
-		defer term.Restore(fd, oldState)
+		defer func() { _ = term.Restore(fd, oldState) }()
+
+		// Send the initial terminal size and forward any subsequent resize events.
+		sendResize := func() {
+			w, h, err := term.GetSize(fd)
+			if err != nil || w <= 0 || h <= 0 {
+				return
+			}
+			body, _ := json.Marshal(struct {
+				Width  int `json:"width"`
+				Height int `json:"height"`
+			}{w, h})
+			_, _ = client.MakeRequest("POST", "/shells/"+id+"/resize", nil, bytes.NewReader(body))
+		}
+		sendResize()
+
+		winch := make(chan os.Signal, 1)
+		signal.Notify(winch, syscall.SIGWINCH)
+		go func() {
+			for range winch {
+				sendResize()
+			}
+		}()
+		defer func() {
+			signal.Stop(winch)
+			close(winch)
+		}()
 
 		// conn -> stdout
 		go func() {
 			_, _ = io.Copy(os.Stdout, conn)
-			term.Restore(fd, oldState)
+			_ = term.Restore(fd, oldState)
 		}()
 
 		// stdin -> conn (unfiltered; detach interception is server-side)
