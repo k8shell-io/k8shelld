@@ -260,7 +260,7 @@ func (a *GRPCService) ListDetachedSessions() []DetachedSessionInfo {
 // The shell process and ring buffer stay alive.
 func (a *GRPCService) DetachShellSession(sessionId string, ttl *time.Duration) error {
 	if !a.allowSessionDetach {
-		return fmt.Errorf("session detachment is not enabled on this server")
+		return fmt.Errorf("session detachment is not enabled")
 	}
 	v, ok := a.SessionStore.Load(sessionId)
 	if !ok {
@@ -297,7 +297,7 @@ func (a *GRPCService) DetachShellSession(sessionId string, ttl *time.Duration) e
 // and has no client currently attached.
 func (a *GRPCService) ValidateSessionForAttach(sessionId string) (int, error) {
 	if !a.allowSessionDetach {
-		return 403, fmt.Errorf("session attachment is not enabled on this server")
+		return 403, fmt.Errorf("session attachment is not enabled")
 	}
 	v, ok := a.SessionStore.Load(sessionId)
 	if !ok {

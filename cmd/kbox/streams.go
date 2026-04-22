@@ -13,12 +13,12 @@ import (
 
 func rowColorFunc(row map[string]interface{}) string {
 	if row["status"] == "STOPPED" {
-		return "\033[2m" // Dimmed/shaded for stopped status
+		return "\033[2m" // Dimmed/shaded
 	}
 	if row["status"] == "DETACHED" {
-		return "\033[33m" // Yellow for detached status
+		return "\033[33m" // Yellow
 	}
-	return "" // No color o
+	return ""
 }
 
 var tableFields = []table.FieldDefinition{
