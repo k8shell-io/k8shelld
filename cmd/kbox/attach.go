@@ -16,6 +16,7 @@ import (
 	"github.com/k8shell-io/k8shelld/internal/client"
 	grpcpkg "github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/spf13/cobra"
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
 
@@ -88,14 +89,29 @@ Detach shortcut: Ctrl+A D  (same as GNU screen)
 			close(winch)
 		}()
 
-		// conn -> stdout
+		// conn -> stdout: runs until the server closes the connection (detach or
+		// session exit). Signals outDone so the main goroutine can clean up.
+		outDone := make(chan struct{})
 		go func() {
+			defer close(outDone)
 			_, _ = io.Copy(os.Stdout, conn)
-			_ = term.Restore(fd, oldState)
 		}()
 
-		// stdin -> conn (unfiltered; detach interception is server-side)
-		_, _ = io.Copy(conn, os.Stdin)
+		// stdin -> conn (unfiltered; detach interception is server-side).
+		// If stdin closes first, shut down the conn so the output goroutine exits.
+		go func() {
+			_, _ = io.Copy(conn, os.Stdin)
+			conn.Close()
+		}()
+
+		// Wait for the output side to finish (server closed the connection).
+		<-outDone
+
+		// Flush any terminal query responses (e.g. CPR, DA2, OSC color replies)
+		// that the terminal emulator queued in stdin while we were in raw mode.
+		// This must happen BEFORE term.Restore re-enables ECHO; otherwise the
+		// line discipline echoes those bytes onto the parent shell's prompt.
+		_ = unix.IoctlSetInt(fd, unix.TCFLSH, 0 /* TCIFLUSH */)
 	},
 }
 
