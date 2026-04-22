@@ -197,8 +197,13 @@ func (s *ShellHandler) runAttachedClientLoop(
 					session.mu.Unlock()
 				}
 				if detach {
-					doDetach()
-					return nil
+					if !s.grpcApi.allowSessionDetach {
+						// pass Ctrl+A D through to the PTY unchanged
+						_, _ = session.Ptmx.Write([]byte{0x01, 'd'})
+					} else {
+						doDetach()
+						return nil
+					}
 				}
 			}
 			// Non-data messages (resize etc. are handled via dedicated RPCs) are ignored.
@@ -394,8 +399,18 @@ func (a *GRPCService) runRESTAttachLoop(session *SessionData, conn net.Conn, det
 					}
 				}
 				if detach {
-					clientDetachCh <- struct{}{}
-					return
+					if !a.allowSessionDetach {
+						// pass Ctrl+A D through to the PTY unchanged
+						session.mu.Lock()
+						ptmx := session.Ptmx
+						session.mu.Unlock()
+						if ptmx != nil {
+							_, _ = ptmx.Write([]byte{0x01, 'd'})
+						}
+					} else {
+						clientDetachCh <- struct{}{}
+						return
+					}
 				}
 			}
 			if err != nil {

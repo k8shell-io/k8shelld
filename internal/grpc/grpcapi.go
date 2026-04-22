@@ -313,6 +313,40 @@ func (a *GRPCService) cleanupStreamStore(store *sync.Map, shouldDelete func(any)
 	})
 }
 
+// sessionTTLRemaining returns how long a detached session has before GC expires it.
+// Returns "-" when the session is not detached or already stopped.
+// Returns "∞" when the effective TTL is zero (never expire).
+func (a *GRPCService) sessionTTLRemaining(session *SessionData) string {
+	if !session.Deleted.IsZero() {
+		return "-"
+	}
+	session.mu.Lock()
+	detachedAt := session.DetachedAt
+	perSession := session.DetachTTL
+	session.mu.Unlock()
+
+	if detachedAt.IsZero() {
+		return "-"
+	}
+
+	var effectiveTTL time.Duration
+	if perSession != nil {
+		effectiveTTL = *perSession
+	} else {
+		effectiveTTL = a.detachedSessionTTL
+	}
+
+	if effectiveTTL == 0 {
+		return "∞"
+	}
+
+	remaining := time.Until(detachedAt.Add(effectiveTTL)).Round(time.Second)
+	if remaining <= 0 {
+		return "0s"
+	}
+	return remaining.String()
+}
+
 func (a *GRPCService) GetAllStreamData() ([]StoreRecord, error) {
 	var result []StoreRecord
 
@@ -345,6 +379,10 @@ func (a *GRPCService) GetAllStreamData() ([]StoreRecord, error) {
 				}
 				result = append(result, record)
 			case *SessionData:
+				params := fmt.Sprintf("cmd=%s, pid=%d", v.CmdShell, v.Pid)
+				if ttl := a.sessionTTLRemaining(v); ttl != "-" {
+					params += fmt.Sprintf(", ttl=%s", ttl)
+				}
 				record := StoreRecord{
 					Id:       v.Id,
 					Name:     storeName,
@@ -353,7 +391,7 @@ func (a *GRPCService) GetAllStreamData() ([]StoreRecord, error) {
 					Status:   getSessionStatus(v),
 					BytesIn:  v.BytesIn,
 					BytesOut: v.BytesOut,
-					Params:   fmt.Sprintf("cmd=%s, pid=%d", v.CmdShell, v.Pid),
+					Params:   params,
 				}
 				result = append(result, record)
 			case *unixSocketData:

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -32,7 +33,7 @@ reject values that exceed its configured maximum.`,
 		}
 
 		// Build optional JSON body with TTL override.
-		var bodyReader *bytes.Reader
+		var bodyReader io.Reader
 		if ttlStr, _ := cmd.Flags().GetString("ttl"); ttlStr != "" {
 			if ttlStr == "0" {
 				ttlStr = "0s" // time.ParseDuration requires a unit
