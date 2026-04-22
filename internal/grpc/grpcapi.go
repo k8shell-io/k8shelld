@@ -80,6 +80,21 @@ func getStatus(deleted time.Time) string {
 	return "STOPPED"
 }
 
+// getSessionStatus returns the status string for a shell session, distinguishing
+// detached sessions (process alive but no client attached) from active ones.
+func getSessionStatus(session *SessionData) string {
+	if !session.Deleted.IsZero() {
+		return "STOPPED"
+	}
+	session.mu.Lock()
+	detachedAt := session.DetachedAt
+	session.mu.Unlock()
+	if !detachedAt.IsZero() {
+		return "DETACHED"
+	}
+	return "ACTIVE"
+}
+
 // NewGRPCAPI creates a new GRPCApiService
 func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, user *models.User, jwtVerifier *authz.JWTVerifier,
 	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
@@ -318,7 +333,7 @@ func (a *GRPCService) GetAllChannelStoreData() ([]StoreRecord, error) {
 					Name:     storeName,
 					Created:  v.Created.Format(timeFormat),
 					Deleted:  getDeletedDate(v.Deleted),
-					Status:   getStatus(v.Deleted),
+					Status:   getSessionStatus(v),
 					BytesIn:  v.BytesIn,
 					BytesOut: v.BytesOut,
 					Params:   fmt.Sprintf("cmd=%s, pid=%d", v.CmdShell, v.Pid),
