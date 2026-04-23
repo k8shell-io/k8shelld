@@ -8,11 +8,13 @@ const detachableRingBufSize = 256 * 1024 // 256 KiB
 // RingBuffer is a thread-safe fixed-capacity circular byte buffer.
 // When full, new writes overwrite the oldest data (like a terminal scrollback).
 type RingBuffer struct {
-	mu   sync.Mutex
-	buf  []byte
-	cap  int
-	head int // index of the oldest byte
-	used int // number of valid bytes currently stored
+	mu       sync.Mutex
+	buf      []byte
+	cap      int
+	head     int // index of the oldest byte
+	used     int // number of valid bytes currently stored
+	writePos int // monotonic count of bytes ever written
+	markPos  int // writePos value at the last Mark() call; 0 = no mark
 }
 
 func newRingBuffer(capacity int) *RingBuffer {
@@ -26,6 +28,8 @@ func (r *RingBuffer) Write(data []byte) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	r.writePos += len(data)
 
 	if len(data) >= r.cap {
 		copy(r.buf, data[len(data)-r.cap:])
@@ -60,6 +64,46 @@ func (r *RingBuffer) Snapshot() []byte {
 	} else {
 		n := copy(out, r.buf[r.head:])
 		copy(out[n:], r.buf[:r.used-n])
+	}
+	return out
+}
+
+// Mark records the current write position.  A subsequent SnapshotSinceMark
+// call will return only bytes written after this point.
+func (r *RingBuffer) Mark() {
+	r.mu.Lock()
+	r.markPos = r.writePos
+	r.mu.Unlock()
+}
+
+// SnapshotSinceMark returns only the bytes written since the last Mark call.
+// If no mark has been set, it behaves like Snapshot.
+// If more bytes were written than the buffer capacity since the mark, all
+// currently buffered bytes are returned (the oldest ones were overwritten).
+func (r *RingBuffer) SnapshotSinceMark() []byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.used == 0 {
+		return nil
+	}
+
+	bytesAfterMark := r.writePos - r.markPos
+	if bytesAfterMark <= 0 {
+		return nil
+	}
+	if bytesAfterMark > r.used {
+		bytesAfterMark = r.used
+	}
+
+	skip := r.used - bytesAfterMark
+	out := make([]byte, bytesAfterMark)
+	startIdx := (r.head + skip) % r.cap
+	if startIdx+bytesAfterMark <= r.cap {
+		copy(out, r.buf[startIdx:startIdx+bytesAfterMark])
+	} else {
+		n := copy(out, r.buf[startIdx:])
+		copy(out[n:], r.buf[:bytesAfterMark-n])
 	}
 	return out
 }

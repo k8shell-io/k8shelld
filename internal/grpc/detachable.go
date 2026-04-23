@@ -152,6 +152,7 @@ func (s *ShellHandler) runAttachedClientLoop(
 		session.attachedSender = nil
 		session.DetachedAt = time.Now()
 		session.mu.Unlock()
+		session.ring.Mark()
 		logger.Info().Msgf("Session %s: detached, process kept alive", session.Id)
 	}
 
@@ -278,7 +279,7 @@ func (s *ShellHandler) handleGRPCAttachExisting(
 		},
 	})
 
-	if scrollback := session.ring.Snapshot(); len(scrollback) > 0 {
+	if scrollback := session.ring.SnapshotSinceMark(); len(scrollback) > 0 {
 		_ = stream.Send(&k8shelldv1.ShellResponse{
 			Response: &k8shelldv1.ShellResponse_Data{Data: scrollback},
 		})
@@ -402,7 +403,7 @@ func (a *GRPCService) ServeRESTAttach(sessionId string, conn net.Conn) error {
 	}
 	session := v.(*SessionData)
 
-	scrollback := session.ring.Snapshot()
+	scrollback := session.ring.SnapshotSinceMark()
 	detachCh := session.doAttach(&connSender{conn: conn})
 
 	if len(scrollback) > 0 {
