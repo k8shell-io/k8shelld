@@ -158,7 +158,7 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 		if !exists {
 			return status.Errorf(codes.NotFound, "session %s no longer exists", lock.sessionId)
 		}
-		return s.handleGRPCAttachExisting(stream, sv.(*SessionData))
+		return s.handleGRPCAttachExisting(stream, sv.(*SessionData), shellReq.StartRequest.DetachOnClose)
 	}
 
 	if _, exists := s.grpcApi.SessionStore.Load(sessionId); exists {
@@ -223,12 +223,17 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 		s.logger.Info().Msgf("Shell session %s ended", sessionId)
 	}()
 
-	s.logger.Info().Msgf("Starting shell session %s, pty=%v",
-		sessionId, shellReq.StartRequest.UsePty)
+	detachOnClose := shellReq.StartRequest.DetachOnClose
+	if detachOnClose && !s.grpcApi.allowSessionDetach {
+		return status.Errorf(codes.PermissionDenied, "session attachment is not enabled on this server")
+	}
+
+	s.logger.Info().Msgf("Starting shell session %s, pty=%v detachOnClose=%v",
+		sessionId, shellReq.StartRequest.UsePty, detachOnClose)
 
 	if shellReq.StartRequest.UsePty {
 		err = s.handlePtySession(s.logger, session, stream, shellReq.StartRequest.Width,
-			shellReq.StartRequest.Height, false)
+			shellReq.StartRequest.Height, detachOnClose)
 		if err != nil {
 			return fmt.Errorf("error handling PTY session: %v", err)
 		}

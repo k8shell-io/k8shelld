@@ -265,11 +265,12 @@ func (a *GRPCService) ListDetachedSessions() []DetachedSessionInfo {
 
 // handleGRPCAttachExisting reattaches a gRPC stream to an already-detached session.
 // It replays the scrollback ring buffer, registers the stream as the sender, then
-// runs the normal attached-client loop with autoDetach=true so that a client
-// disconnect keeps the session alive rather than destroying it.
+// runs the attached-client loop. detachOnClose controls whether a client
+// disconnect keeps the session alive (true) or destroys it (false).
 func (s *ShellHandler) handleGRPCAttachExisting(
 	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
 	session *SessionData,
+	detachOnClose bool,
 ) error {
 	_ = stream.Send(&k8shelldv1.ShellResponse{
 		Response: &k8shelldv1.ShellResponse_StartResponse{
@@ -284,7 +285,7 @@ func (s *ShellHandler) handleGRPCAttachExisting(
 	}
 
 	detachCh := session.doAttach(&grpcStreamSender{stream: stream})
-	return s.runAttachedClientLoop(s.logger, session, stream, detachCh, true)
+	return s.runAttachedClientLoop(s.logger, session, stream, detachCh, detachOnClose)
 }
 
 // httpStatusToGRPCCode maps HTTP status codes returned by ValidateSessionForAttach
