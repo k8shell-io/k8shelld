@@ -281,7 +281,7 @@ func (s *ShellHandler) handleGRPCAttachExisting(
 
 	if scrollback := session.ring.Snapshot(); len(scrollback) > 0 {
 		_ = stream.Send(&k8shelldv1.ShellResponse{
-			Response: &k8shelldv1.ShellResponse_Data{Data: scrollback},
+			Response: &k8shelldv1.ShellResponse_Data{Data: stripTerminalQueryResponses(scrollback)},
 		})
 	}
 
@@ -403,7 +403,7 @@ func (a *GRPCService) ServeRESTAttach(sessionId string, conn net.Conn) error {
 	}
 	session := v.(*SessionData)
 
-	scrollback := session.ring.Snapshot()
+	scrollback := stripTerminalQueryResponses(session.ring.Snapshot())
 	detachCh := session.doAttach(&connSender{conn: conn})
 
 	if len(scrollback) > 0 {
@@ -502,11 +502,13 @@ func (a *GRPCService) runRESTAttachLoop(session *SessionData, conn net.Conn, det
 }
 
 // stripTerminalQueryResponses removes terminal capability query response
-// sequences from PTY input. Client terminal emulators send these automatically
-// in response to queries issued by the shell or by applications (e.g. colour
-// queries, device attribute requests). They are input-direction-only sequences
-// that the shell should never see; if they reach the PTY master, the line
-// discipline ECHO will bounce them back as output and pollute the scrollback.
+// sequences from scrollback data before replaying it to a reattaching client.
+// When a shell or application queries the terminal (e.g. cursor position, device
+// attributes, colour), the client terminal sends a response back as PTY input.
+// The PTY line discipline may echo that input back as output into the ring buffer.
+// Those echoed responses are meaningless noise to a new client — the sequences
+// were answers to queries the original client already handled — and can cause
+// visual corruption on replay.
 //
 // Sequences removed:
 //   - CSI Pn ; Pn R        — CPR (cursor position report, response to DSR)
@@ -631,13 +633,8 @@ func scanSTTerminated(data []byte, j int) (end int, ok bool) {
 	return 0, false
 }
 
-// filterPtyInput scans data written to a PTY for the Ctrl+A D detach sequence (0x01 0x64)
-// and strips terminal query response escape sequences that the client terminal
-// sends back as input (CPR, DA, OSC colour, DECRPM). These responses should
-// never reach the shell; leaving them in would cause the PTY to echo them back
-// into the scrollback ring buffer as output.
+// filterPtyInput scans data written to a PTY for the Ctrl+A D detach sequence (0x01 0x64).
 func filterPtyInput(data []byte, prevCtrlA *bool) (out []byte, detach bool) {
-	data = stripTerminalQueryResponses(data)
 	out = make([]byte, 0, len(data))
 	for _, b := range data {
 		if *prevCtrlA {
