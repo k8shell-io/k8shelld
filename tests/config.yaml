@@ -38,6 +38,9 @@ terminateOrphans:
   exclude:
   - .*JetBrains.*
 
+shells:
+  allowSessionDetach: true
+
 # docker settings
 docker:
   enabled: true

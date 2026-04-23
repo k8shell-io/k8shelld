@@ -32,8 +32,9 @@ import (
 )
 
 const cleanupInterval = 1 * time.Minute // The interval for cleaning up the stores
-const deleteDelay = 1 * time.Minute     // The delay after the channel was stopped before deleting an entry
+const deleteDelay = 1 * time.Minute     // The delay after the stream was stopped before deleting an entry
 const timeFormat = time.RFC3339         // The time format for the created and deleted fields
+const sessionLockTTL = 30 * time.Second // How long an AcquireSession lock is held before auto-release
 
 type StoreRecord struct {
 	Id       string `json:"id"`
@@ -48,20 +49,25 @@ type StoreRecord struct {
 
 // GRPCApiService is the main service that handles the gRPC API
 type GRPCService struct {
-	Config           *config.Config          // The main configuration
-	blueprint        *commonmodels.Blueprint // The workspace blueprint
-	user             *models.User            // The user information loaded from the identity token
-	logger           *zerolog.Logger         // The logger
-	procWatcher      *system.ProcessWatcher  // The process watcher
-	ExecStore        *sync.Map               // The store for the exec data
-	PortForwardStore *sync.Map               // The store for the port forwarding data
-	SessionStore     *sync.Map               // The store for the session data
-	UnixSocketStore  *sync.Map               // The store for the unix socket data
-	apiClientx       *apiClient.Client       // The API client to communicate with the API server
-	appManager       *apps.AppManager        // The app manager
-	CommandService   *CommandServiceServer   // The command service
-	sysInfo          *system.SystemInfo      // The system information
-	jwtVerifier      *authz.JWTVerifier      // The JWT verifier for the identity token
+	Config             *config.Config          // The main configuration
+	blueprint          *commonmodels.Blueprint // The workspace blueprint
+	user               *models.User            // The user information loaded from the identity token
+	logger             *zerolog.Logger         // The logger
+	procWatcher        *system.ProcessWatcher  // The process watcher
+	ExecStore          *sync.Map               // The store for the exec data
+	PortForwardStore   *sync.Map               // The store for the port forwarding data
+	SessionStore       *sync.Map               // The store for the session data
+	UnixSocketStore    *sync.Map               // The store for the unix socket data
+	apiClientx         *apiClient.Client       // The API client to communicate with the API server
+	appManager         *apps.AppManager        // The app manager
+	CommandService     *CommandServiceServer   // The command service
+	sysInfo            *system.SystemInfo      // The system information
+	jwtVerifier        *authz.JWTVerifier      // The JWT verifier for the identity token
+	detachedSessionTTL time.Duration           // max TTL for sessions with no client; 0 = no GC
+	allowSessionDetach bool                    // whether clients may detach/attach PTY sessions
+	allowUnlimitedTTL  bool                    // whether clients may request ttl=0 (never expire)
+	SessionLockStore   *sync.Map               // stores *sessionLock keyed by lock ID
+	acquireMu          sync.Mutex              // serialises AcquireSession scan-then-store
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -80,28 +86,58 @@ func getStatus(deleted time.Time) string {
 	return "STOPPED"
 }
 
+// getSessionStatus returns the status string for a shell session, distinguishing
+// detached sessions (process alive but no client attached) from active ones.
+func getSessionStatus(session *SessionData) string {
+	if !session.Deleted.IsZero() {
+		return "STOPPED"
+	}
+	session.mu.Lock()
+	detachedAt := session.DetachedAt
+	session.mu.Unlock()
+	if !detachedAt.IsZero() {
+		return "DETACHED"
+	}
+	return "ACTIVE"
+}
+
 // NewGRPCAPI creates a new GRPCApiService
-func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, user *models.User, jwtVerifier *authz.JWTVerifier,
-	procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
+func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, user *models.User,
+	jwtVerifier *authz.JWTVerifier, procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
 	appManager *apps.AppManager, sysInfo *system.SystemInfo) (*GRPCService, error) {
 
 	logger := logger.NewLogger("grpc")
 
+	detachedTTL := defaultDetachedSessionTTL
+	if cfg := config.Shells.DetachedTTL; cfg != "" {
+		if d, err := time.ParseDuration(cfg); err != nil {
+			return nil, fmt.Errorf("invalid shells.detachedTTL %q: %w", cfg, err)
+		} else if d < 0 {
+			return nil, fmt.Errorf("shells.detachedTTL must not be negative")
+		} else {
+			detachedTTL = d
+		}
+	}
+
 	return &GRPCService{
-		logger:           logger,
-		Config:           config,
-		blueprint:        blueprint,
-		user:             user,
-		procWatcher:      procWatcher,
-		ExecStore:        &sync.Map{},
-		PortForwardStore: &sync.Map{},
-		SessionStore:     &sync.Map{},
-		UnixSocketStore:  &sync.Map{},
-		apiClientx:       apiClient,
-		appManager:       appManager,
-		CommandService:   NewCommandServiceServer(),
-		sysInfo:          sysInfo,
-		jwtVerifier:      jwtVerifier,
+		logger:             logger,
+		Config:             config,
+		blueprint:          blueprint,
+		user:               user,
+		procWatcher:        procWatcher,
+		ExecStore:          &sync.Map{},
+		PortForwardStore:   &sync.Map{},
+		SessionStore:       &sync.Map{},
+		UnixSocketStore:    &sync.Map{},
+		apiClientx:         apiClient,
+		appManager:         appManager,
+		CommandService:     NewCommandServiceServer(),
+		sysInfo:            sysInfo,
+		jwtVerifier:        jwtVerifier,
+		detachedSessionTTL: detachedTTL,
+		allowSessionDetach: config.Shells.AllowSessionDetach,
+		allowUnlimitedTTL:  config.Shells.AllowUnlimittedTTL,
+		SessionLockStore:   &sync.Map{},
 	}, nil
 }
 
@@ -142,16 +178,32 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 		return fmt.Errorf("failed to register services: %v", err)
 	}
 
-	// cleanup goroutine
+	// cleanup goroutine — removes completed stream store entries after the delete delay
 	go func() {
 		ticker := time.NewTicker(cleanupInterval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				a.cleanupChannelStores()
+				a.cleanupStreamStores()
+				a.cleanupExpiredLocks()
 			case <-ctx.Done():
 				a.logger.Info().Msgf("Cleanup goroutine exiting")
+				return
+			}
+		}
+	}()
+
+	// detachable session GC — terminates idle detachable sessions that have
+	// exceeded their timeout, and removes sessions whose shell process has exited
+	go func() {
+		ticker := time.NewTicker(detachableGCInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				a.gcDetachedSessions()
+			case <-ctx.Done():
 				return
 			}
 		}
@@ -232,32 +284,32 @@ func (s *GRPCService) resolveShellUser(reqUser string, callerUser *models.User) 
 	return models.NewShellUser(callerUser), nil
 }
 
-// Cleanup the stores by removing the entries that were deleted more than deleteDelay ago
-func (a *GRPCService) cleanupChannelStores() {
-	a.cleanupChannelStore(a.ExecStore, func(v any) bool {
+// cleanupStreamStores removes stream store entries that were deleted more than deleteDelay ago.
+func (a *GRPCService) cleanupStreamStores() {
+	a.cleanupStreamStore(a.ExecStore, func(v any) bool {
 		data := v.(*ExecData)
 		return !data.Deleted.IsZero() && time.Since(data.Deleted) > deleteDelay
 	})
 
-	a.cleanupChannelStore(a.PortForwardStore, func(v any) bool {
+	a.cleanupStreamStore(a.PortForwardStore, func(v any) bool {
 		data := v.(*PortForwardData)
 		return !data.Deleted.IsZero() && time.Since(data.Deleted) > deleteDelay
 	})
 
-	a.cleanupChannelStore(a.SessionStore, func(v any) bool {
+	a.cleanupStreamStore(a.SessionStore, func(v any) bool {
 		data := v.(*SessionData)
 		return !data.Deleted.IsZero() && time.Since(data.Deleted) > deleteDelay
 	})
 
-	a.cleanupChannelStore(a.UnixSocketStore, func(v any) bool {
+	a.cleanupStreamStore(a.UnixSocketStore, func(v any) bool {
 		data := v.(*unixSocketData)
 		return !data.Deleted.IsZero() && time.Since(data.Deleted) > deleteDelay
 	})
 
 }
 
-// Generic cleanup function for any store
-func (a *GRPCService) cleanupChannelStore(store *sync.Map, shouldDelete func(any) bool) {
+// cleanupStreamStore is a generic cleanup helper for any stream store.
+func (a *GRPCService) cleanupStreamStore(store *sync.Map, shouldDelete func(any) bool) {
 	store.Range(func(key, value any) bool {
 		if shouldDelete(value) {
 			store.Delete(key)
@@ -266,7 +318,41 @@ func (a *GRPCService) cleanupChannelStore(store *sync.Map, shouldDelete func(any
 	})
 }
 
-func (a *GRPCService) GetAllChannelStoreData() ([]StoreRecord, error) {
+// sessionTTLRemaining returns how long a detached session has before GC expires it.
+// Returns "-" when the session is not detached or already stopped.
+// Returns "∞" when the effective TTL is zero (never expire).
+func (a *GRPCService) sessionTTLRemaining(session *SessionData) string {
+	if !session.Deleted.IsZero() {
+		return "-"
+	}
+	session.mu.Lock()
+	detachedAt := session.DetachedAt
+	perSession := session.DetachTTL
+	session.mu.Unlock()
+
+	if detachedAt.IsZero() {
+		return "-"
+	}
+
+	var effectiveTTL time.Duration
+	if perSession != nil {
+		effectiveTTL = *perSession
+	} else {
+		effectiveTTL = a.detachedSessionTTL
+	}
+
+	if effectiveTTL == 0 {
+		return "∞"
+	}
+
+	remaining := time.Until(detachedAt.Add(effectiveTTL)).Round(time.Second)
+	if remaining <= 0 {
+		return "0s"
+	}
+	return remaining.String()
+}
+
+func (a *GRPCService) GetAllStreamData() ([]StoreRecord, error) {
 	var result []StoreRecord
 
 	// Helper function to process each store
@@ -298,15 +384,19 @@ func (a *GRPCService) GetAllChannelStoreData() ([]StoreRecord, error) {
 				}
 				result = append(result, record)
 			case *SessionData:
+				params := fmt.Sprintf("cmd=%s, pid=%d", v.CmdShell, v.Pid)
+				if ttl := a.sessionTTLRemaining(v); ttl != "-" {
+					params += fmt.Sprintf(", ttl=%s", ttl)
+				}
 				record := StoreRecord{
 					Id:       v.Id,
 					Name:     storeName,
 					Created:  v.Created.Format(timeFormat),
 					Deleted:  getDeletedDate(v.Deleted),
-					Status:   getStatus(v.Deleted),
+					Status:   getSessionStatus(v),
 					BytesIn:  v.BytesIn,
 					BytesOut: v.BytesOut,
-					Params:   fmt.Sprintf("cmd=%s, pid=%d", v.CmdShell, v.Pid),
+					Params:   params,
 				}
 				result = append(result, record)
 			case *unixSocketData:

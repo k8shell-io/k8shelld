@@ -38,6 +38,15 @@ type SessionData struct {
 	Deleted  time.Time
 	BytesIn  uint64
 	BytesOut uint64
+
+	// PTY session state (nil/zero for non-PTY sessions)
+	DetachedAt      time.Time      // set when a client detaches from a live session
+	DetachTTL       *time.Duration // per-session TTL override; nil = use server default; 0 = never expire
+	ring            *RingBuffer    // scrollback buffer
+	ptyDone         chan struct{}  // closed by startPtyReadLoop when the shell exits
+	attachedSender  streamSender   // current live stream writer; nil when no client attached
+	detachRequested chan struct{}  // per-attachment channel; closed to trigger a detach
+	mu              sync.Mutex     // protects PTY state fields, BytesIn, BytesOut
 }
 
 // ShellHandler is the service that handles the shell GRPC service server
@@ -129,6 +138,33 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 		return status.Errorf(codes.InvalidArgument, "invalid shell request: %v", req)
 	}
 
+	lockId := shellReq.StartRequest.LockId
+	if lockId != "" {
+		if !s.grpcApi.allowSessionDetach {
+			return status.Errorf(codes.PermissionDenied, "session attachment is not enabled on this server")
+		}
+		if !shellReq.StartRequest.UsePty {
+			return status.Errorf(codes.InvalidArgument, "lock_id requires use_pty=true")
+		}
+		v, loaded := s.grpcApi.SessionLockStore.LoadAndDelete(lockId)
+		if !loaded {
+			return status.Errorf(codes.NotFound, "lock %s not found or expired", lockId)
+		}
+		lock := v.(*sessionLock)
+		if time.Now().After(lock.expiresAt) {
+			return status.Errorf(codes.DeadlineExceeded, "lock %s has expired", lockId)
+		}
+		sv, exists := s.grpcApi.SessionStore.Load(lock.sessionId)
+		if !exists {
+			return status.Errorf(codes.NotFound, "session %s no longer exists", lock.sessionId)
+		}
+		return s.handleGRPCAttachExisting(stream, sv.(*SessionData), shellReq.StartRequest.DetachOnClose)
+	}
+
+	if _, exists := s.grpcApi.SessionStore.Load(sessionId); exists {
+		return status.Errorf(codes.AlreadyExists, "session %s already exists", sessionId)
+	}
+
 	shellUser, resolveErr := s.grpcApi.resolveShellUser(shellReq.StartRequest.AsUser, s.grpcApi.user)
 	if resolveErr != nil {
 		s.logger.Error().Msgf("Shell session %s: error resolving user: %v", sessionId, resolveErr)
@@ -151,9 +187,6 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 		CmdShell: shell,
 		Pid:      -1,
 		Created:  time.Now(),
-		Deleted:  time.Time{},
-		BytesIn:  0,
-		BytesOut: 0,
 	}
 
 	// Start the shell process
@@ -162,6 +195,7 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 
 	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars,
 		session.user.HomeDir)
+	session.Cmd.Env = append(session.Cmd.Env, "K8SHELL_SESSION_ID="+sessionId)
 	session.Cmd.Dir = session.user.HomeDir
 
 	s.logger.Debug().Msgf("env: %v", session.Cmd.Env)
@@ -179,18 +213,27 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 	s.grpcApi.SessionStore.Store(session.Id, session)
 
 	defer func() {
-		s.cleanUpSession(session)
-		session.Deleted = time.Now()
+		session.mu.Lock()
+		isDetached := !session.DetachedAt.IsZero()
+		session.mu.Unlock()
+		if !isDetached {
+			s.cleanUpSession(session)
+			session.Deleted = time.Now()
+		}
 		s.logger.Info().Msgf("Shell session %s ended", sessionId)
 	}()
 
-	s.logger.Info().Msgf("Starting shell session %s, pty=%v",
-		sessionId, shellReq.StartRequest.UsePty)
+	detachOnClose := shellReq.StartRequest.DetachOnClose
+	if detachOnClose && !s.grpcApi.allowSessionDetach {
+		return status.Errorf(codes.PermissionDenied, "session attachment is not enabled on this server")
+	}
 
-	// Start the shell
+	s.logger.Info().Msgf("Starting shell session %s, pty=%v detachOnClose=%v",
+		sessionId, shellReq.StartRequest.UsePty, detachOnClose)
+
 	if shellReq.StartRequest.UsePty {
 		err = s.handlePtySession(s.logger, session, stream, shellReq.StartRequest.Width,
-			shellReq.StartRequest.Height)
+			shellReq.StartRequest.Height, detachOnClose)
 		if err != nil {
 			return fmt.Errorf("error handling PTY session: %v", err)
 		}
@@ -205,8 +248,11 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 
 }
 
-// cleanUpSession cleans up the session by killing the shell process and closing the PTY
-func (s *ShellHandler) cleanUpSession(session *SessionData) {
+// cleanup kills the shell process and closes the PTY.
+// Safe to call multiple times and from concurrent goroutines.
+func (session *SessionData) cleanup() {
+	session.mu.Lock()
+	defer session.mu.Unlock()
 	if session.Cmd != nil {
 		if session.Cmd.Process != nil && session.Cmd.Process.Pid != 0 {
 			_ = syscall.Kill(-session.Cmd.Process.Pid, syscall.SIGKILL)
@@ -215,14 +261,25 @@ func (s *ShellHandler) cleanUpSession(session *SessionData) {
 		session.Cmd = nil
 	}
 	if session.Ptmx != nil {
-		session.Ptmx.Close()
+		_ = session.Ptmx.Close()
+		session.Ptmx = nil
 	}
 }
 
-// handlePtySession handles a shell session with PTY. It creates the PTY session, sets the width and height
-// of the terminal, reads data from the PTY and sends the data back to the client and vice versa.
+// cleanUpSession cleans up the session by killing the shell process and closing the PTY
+func (s *ShellHandler) cleanUpSession(session *SessionData) {
+	session.cleanup()
+}
+
+// handlePtySession starts the shell with a PTY, then hands off to the
+// session-owned PTY read loop and the attached-client loop.
 func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *SessionData,
-	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse], width uint32, height uint32) error {
+	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
+	width uint32, height uint32, autoDetach bool) error {
+
+	// Always allocate scrollback buffer and shell-exit channel for PTY sessions.
+	session.ring = newRingBuffer(detachableRingBufSize)
+	session.ptyDone = make(chan struct{})
 
 	ptmx, tty, err := pty.Open()
 	if err != nil {
@@ -265,11 +322,6 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 		},
 	})
 
-	ctx := stream.Context()
-	reqCh := make(chan *k8shelldv1.ShellRequest, 8)
-	recvErrCh := make(chan error, 1)
-	ptyDone := make(chan struct{})
-
 	if s.grpcApi.blueprint != nil && s.grpcApi.blueprint.Splash != "" {
 		_ = stream.Send(&k8shelldv1.ShellResponse{
 			Response: &k8shelldv1.ShellResponse_Data{
@@ -278,70 +330,9 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 		})
 	}
 
-	// PTY -> client
-	go func() {
-		buf := make([]byte, 32*1024)
-		for {
-			n, err := session.Ptmx.Read(buf)
-			if err != nil {
-				close(ptyDone)
-				return
-			}
-			if n > 0 {
-				if sendErr := stream.Send(&k8shelldv1.ShellResponse{
-					Response: &k8shelldv1.ShellResponse_Data{Data: append([]byte(nil), buf[:n]...)},
-				}); sendErr != nil {
-					recvErrCh <- sendErr
-					return
-				}
-				session.BytesOut += utils.SafeIntToUint64(n)
-			}
-		}
-	}()
-
-	// client -> PTY
-	go func() {
-		defer close(reqCh)
-		for {
-			req, err := stream.Recv()
-			if err != nil {
-				recvErrCh <- err
-				return
-			}
-			reqCh <- req
-		}
-	}()
-
-	for {
-		select {
-		case <-ctx.Done():
-			s.logger.Debug().Msg("context done, closing shell session")
-			return nil
-
-		case <-ptyDone:
-			s.logger.Debug().Msg("PTY closed, closing shell session")
-			return nil
-
-		case err := <-recvErrCh:
-			if err == io.EOF {
-				logger.Debug().Msg("client closed stream")
-				return nil
-			}
-			return fmt.Errorf("stream error: %w", err)
-
-		case req, ok := <-reqCh:
-			if !ok {
-				s.logger.Debug().Msg("Recv goroutine ended; nothing more to read from client")
-				return nil
-			}
-			if data := req.GetData(); data != nil {
-				if _, werr := session.Ptmx.Write(data); werr != nil {
-					return fmt.Errorf("pty write: %w", werr)
-				}
-				session.BytesIn += uint64(len(data))
-			}
-		}
-	}
+	s.startPtyReadLoop(session)
+	detachCh := session.doAttach(&grpcStreamSender{stream: stream})
+	return s.runAttachedClientLoop(logger, session, stream, detachCh, autoDetach)
 }
 
 // handleNonPtySession handles a shell session without PTY. It creates pipes for the stdin, stdout and stderr of the

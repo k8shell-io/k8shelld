@@ -34,7 +34,7 @@ func init() {
 	kboxCmd.AddCommand(ToolsInitCmd)
 	kboxCmd.AddCommand(UptimeCmd)
 	kboxCmd.AddCommand(InfoCmd)
-	kboxCmd.AddCommand(ChannelsCmd)
+	kboxCmd.AddCommand(StreamsCmd)
 	kboxCmd.AddCommand(LastCmd)
 	kboxCmd.AddCommand(LogsCmd)
 	kboxCmd.AddCommand(ShutdownCmd)
@@ -43,6 +43,8 @@ func init() {
 	kboxCmd.AddCommand(IdentityCmd)
 	kboxCmd.AddCommand(SplashCmd)
 	kboxCmd.AddCommand(UserCmd)
+	kboxCmd.AddCommand(DetachCmd)
+	kboxCmd.AddCommand(AttachCmd)
 
 	kboxCmd.PersistentFlags().StringVar(&socketPath, "socket", models.RESTAPIUnixSocket,
 		"k8shelld unix socket path")

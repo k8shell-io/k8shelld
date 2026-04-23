@@ -20,6 +20,7 @@ import (
 	commonModels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
+	grpcpkg "github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/rs/zerolog"
@@ -55,6 +56,16 @@ func (rec *responseRecorder) Write(data []byte) (int, error) {
 	return rec.ResponseWriter.Write(data)
 }
 
+// Hijack implements http.Hijacker by delegating to the underlying ResponseWriter,
+// allowing handlers like AttachShell to take over the raw connection.
+func (rec *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := rec.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("underlying ResponseWriter does not support hijacking")
+	}
+	return hj.Hijack()
+}
+
 // NewRESTAPI creates a new REST API service
 func NewRESTService(unixSocketPath string, user *models.User, server *Server) (*RESTService, error) {
 	logger := logger.NewLogger("api")
@@ -76,7 +87,7 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 	apiRouter.HandleFunc("/creds", a.GetCredsHelper).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/sessions", a.GetSessions).Methods(http.MethodGet)
-	apiRouter.HandleFunc("/ssh/channels", a.GetSSHChannels).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/streams", a.GetStreams).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/sysinfo", a.GetSystemInfo).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/logs", a.GetLogs).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/shutdown", a.Shutdown).Methods(http.MethodPost)
@@ -88,6 +99,10 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/apps/{name}/stop", a.StopApp).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/identity", a.GetIdentity).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/splash", a.GetSplash).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/shells", a.ListDetachedShells).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/shells/{id}/detach", a.DetachShell).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/shells/{id}/attach", a.AttachShell).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/shells/{id}/resize", a.ResizeShell).Methods(http.MethodPost)
 
 	a.logRoutes(router)
 	return router
@@ -249,16 +264,16 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Credentials not found", http.StatusNotFound)
 }
 
-func (a *RESTService) GetSSHChannels(w http.ResponseWriter, r *http.Request) {
-	response, err := a.server.grpcService.GetAllChannelStoreData()
+func (a *RESTService) GetStreams(w http.ResponseWriter, r *http.Request) {
+	response, err := a.server.grpcService.GetAllStreamData()
 	if err != nil {
-		a.logger.Error().Msgf("Failed to get channels data: %v", err)
-		http.Error(w, "Failed to get channels data", http.StatusInternalServerError)
+		a.logger.Error().Msgf("Failed to get streams data: %v", err)
+		http.Error(w, "Failed to get streams data", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		a.logger.Error().Msgf("Failed to encode SSH channels response: %v", err)
+		a.logger.Error().Msgf("Failed to encode streams response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
@@ -766,4 +781,104 @@ func (a *RESTService) StopApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ResizeShell resizes the PTY of a shell session (works whether attached or detached).
+func (a *RESTService) ResizeShell(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	var req struct {
+		Width  uint32 `json:"width"`
+		Height uint32 `json:"height"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if err := a.server.grpcService.ResizeSession(id, req.Width, req.Height); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListDetachedShells returns a JSON list of PTY shell sessions with no attached client.
+func (a *RESTService) ListDetachedShells(w http.ResponseWriter, r *http.Request) {
+	result := a.server.grpcService.ListDetachedSessions()
+	if result == nil {
+		result = []grpcpkg.DetachedSessionInfo{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		a.logger.Error().Msgf("ListDetachedShells encode: %v", err)
+	}
+}
+
+// DetachShell signals the currently attached client of a session to detach.
+// An optional JSON body { "ttl": "30m" } sets a per-session TTL override.
+func (a *RESTService) DetachShell(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	var ttl *time.Duration
+	if r.ContentLength > 0 {
+		var body struct {
+			TTL string `json:"ttl"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.TTL != "" {
+			d, err := time.ParseDuration(body.TTL)
+			if err != nil {
+				http.Error(w, "invalid ttl: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			if d < 0 {
+				http.Error(w, "ttl must not be negative", http.StatusBadRequest)
+				return
+			}
+			ttl = &d
+		}
+	}
+
+	if err := a.server.grpcService.DetachShellSession(id, ttl); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// AttachShell hijacks the HTTP connection and bridges it directly to the PTY
+// of the requested shell session (replaying scrollback first).
+func (a *RESTService) AttachShell(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	if code, err := a.server.grpcService.ValidateSessionForAttach(id); err != nil {
+		http.Error(w, err.Error(), code)
+		return
+	}
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "hijack not supported", http.StatusInternalServerError)
+		return
+	}
+	conn, buf, err := hj.Hijack()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+	if buf.Reader.Buffered() > 0 {
+		extra := make([]byte, buf.Reader.Buffered())
+		_, _ = buf.Read(extra)
+		_ = extra
+	}
+	const switchProto = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: k8shell-pty\r\nConnection: Upgrade\r\n\r\n"
+	if _, err := conn.Write([]byte(switchProto)); err != nil {
+		a.logger.Error().Msgf("AttachShell write 101: %v", err)
+		return
+	}
+	if err := a.server.grpcService.ServeRESTAttach(id, conn); err != nil {
+		a.logger.Error().Msgf("AttachShell ServeRESTAttach: %v", err)
+	}
 }

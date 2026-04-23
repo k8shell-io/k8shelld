@@ -42,6 +42,10 @@ func (s *SshServiceServer) GetCWD(ctx context.Context, req *k8shelldv1.GetCWDReq
 	return s.shell.GetCWD(ctx, req)
 }
 
+func (s *SshServiceServer) AcquireSession(ctx context.Context, req *k8shelldv1.AcquireSessionRequest) (*k8shelldv1.AcquireSessionResponse, error) {
+	return s.shell.AcquireSession(ctx, req)
+}
+
 func (s *SshServiceServer) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecRequest, k8shelldv1.ExecResponse]) error {
 	return s.exec.Exec(stream)
 }
