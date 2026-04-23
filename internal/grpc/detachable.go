@@ -476,7 +476,7 @@ func (a *GRPCService) runRESTAttachLoop(session *SessionData, conn net.Conn, det
 		session.attachedSender = nil
 		session.DetachedAt = time.Now()
 		session.mu.Unlock()
-		a.logger.Info().Msgf("REST: session %s detached, process kept alive", session.Id)
+		a.logger.Info().Msgf("Session %s detached, process kept alive", session.Id)
 	}
 	doDestroy := func(reason string) {
 		session.mu.Lock()
@@ -485,7 +485,7 @@ func (a *GRPCService) runRESTAttachLoop(session *SessionData, conn net.Conn, det
 		session.cleanup()
 		session.Deleted = time.Now()
 		a.SessionStore.Delete(session.Id)
-		a.logger.Info().Msgf("REST: session %s destroyed: %s", session.Id, reason)
+		a.logger.Info().Msgf("Session %s destroyed: %s", session.Id, reason)
 	}
 
 	select {
@@ -496,7 +496,7 @@ func (a *GRPCService) runRESTAttachLoop(session *SessionData, conn net.Conn, det
 	case <-clientDetachCh:
 		doDetach()
 	case err := <-inputErrCh:
-		a.logger.Debug().Msgf("REST: session %s conn closed: %v", session.Id, err)
+		a.logger.Debug().Msgf("Session %s conn closed: %v", session.Id, err)
 		doDestroy("client disconnected without detach")
 	}
 }
