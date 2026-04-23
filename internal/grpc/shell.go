@@ -20,6 +20,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/creack/pty"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -292,6 +293,13 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 	session.Cmd.Stderr = tty
 	session.Cmd.SysProcAttr.Setctty = true
 	session.Cmd.SysProcAttr.Ctty = 1
+
+	// Disable ECHO on the PTY slave before the shell starts. The shell will
+	// reconfigure termios itself when readline initialises raw mode
+	if termios, ioctlErr := unix.IoctlGetTermios(int(tty.Fd()), unix.TCGETS); ioctlErr == nil {
+		termios.Lflag &^= unix.ECHO | unix.ECHOE | unix.ECHOK | unix.ECHONL
+		_ = unix.IoctlSetTermios(int(tty.Fd()), unix.TCSETS, termios)
+	}
 
 	unlockCreation := s.grpcApi.procWatcher.LockForCreation()
 	if err = session.Cmd.Start(); err != nil {
