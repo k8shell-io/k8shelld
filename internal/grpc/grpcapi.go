@@ -34,6 +34,7 @@ import (
 const cleanupInterval = 1 * time.Minute // The interval for cleaning up the stores
 const deleteDelay = 1 * time.Minute     // The delay after the stream was stopped before deleting an entry
 const timeFormat = time.RFC3339         // The time format for the created and deleted fields
+const sessionLockTTL = 30 * time.Second // How long an AcquireSession lock is held before auto-release
 
 type StoreRecord struct {
 	Id       string `json:"id"`
@@ -65,6 +66,8 @@ type GRPCService struct {
 	detachedSessionTTL time.Duration           // max TTL for sessions with no client; 0 = no GC
 	allowSessionDetach bool                    // whether clients may detach/attach PTY sessions
 	allowUnlimitedTTL  bool                    // whether clients may request ttl=0 (never expire)
+	SessionLockStore   *sync.Map               // stores *sessionLock keyed by lock ID
+	acquireMu          sync.Mutex              // serialises AcquireSession scan-then-store
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -134,6 +137,7 @@ func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, us
 		detachedSessionTTL: detachedTTL,
 		allowSessionDetach: config.Shells.AllowSessionDetach,
 		allowUnlimitedTTL:  config.Shells.AllowUnlimittedTTL,
+		SessionLockStore:   &sync.Map{},
 	}, nil
 }
 
@@ -182,6 +186,7 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 			select {
 			case <-ticker.C:
 				a.cleanupStreamStores()
+				a.cleanupExpiredLocks()
 			case <-ctx.Done():
 				a.logger.Info().Msgf("Cleanup goroutine exiting")
 				return

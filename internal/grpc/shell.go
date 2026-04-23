@@ -138,20 +138,31 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 		return status.Errorf(codes.InvalidArgument, "invalid shell request: %v", req)
 	}
 
-	autoDetach := shellReq.StartRequest.Attach
-	if autoDetach {
+	lockId := shellReq.StartRequest.LockId
+	if lockId != "" {
 		if !s.grpcApi.allowSessionDetach {
-			return status.Errorf(codes.PermissionDenied, "session attachment is not enabled")
+			return status.Errorf(codes.PermissionDenied, "session attachment is not enabled on this server")
 		}
 		if !shellReq.StartRequest.UsePty {
-			return status.Errorf(codes.InvalidArgument, "attach=true requires UsePty=true")
+			return status.Errorf(codes.InvalidArgument, "lock_id requires use_pty=true")
 		}
-		if v, exists := s.grpcApi.SessionStore.Load(sessionId); exists {
-			if code, validateErr := s.grpcApi.ValidateSessionForAttach(sessionId); validateErr != nil {
-				return status.Errorf(httpStatusToGRPCCode(code), "%v", validateErr)
-			}
-			return s.handleGRPCAttachExisting(stream, v.(*SessionData))
+		v, loaded := s.grpcApi.SessionLockStore.LoadAndDelete(lockId)
+		if !loaded {
+			return status.Errorf(codes.NotFound, "lock %s not found or expired", lockId)
 		}
+		lock := v.(*sessionLock)
+		if time.Now().After(lock.expiresAt) {
+			return status.Errorf(codes.DeadlineExceeded, "lock %s has expired", lockId)
+		}
+		sv, exists := s.grpcApi.SessionStore.Load(lock.sessionId)
+		if !exists {
+			return status.Errorf(codes.NotFound, "session %s no longer exists", lock.sessionId)
+		}
+		return s.handleGRPCAttachExisting(stream, sv.(*SessionData))
+	}
+
+	if _, exists := s.grpcApi.SessionStore.Load(sessionId); exists {
+		return status.Errorf(codes.AlreadyExists, "session %s already exists", sessionId)
 	}
 
 	shellUser, resolveErr := s.grpcApi.resolveShellUser(shellReq.StartRequest.AsUser, s.grpcApi.user)
@@ -217,7 +228,7 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 
 	if shellReq.StartRequest.UsePty {
 		err = s.handlePtySession(s.logger, session, stream, shellReq.StartRequest.Width,
-			shellReq.StartRequest.Height, autoDetach)
+			shellReq.StartRequest.Height, false)
 		if err != nil {
 			return fmt.Errorf("error handling PTY session: %v", err)
 		}
