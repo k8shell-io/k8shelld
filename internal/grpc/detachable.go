@@ -501,8 +501,143 @@ func (a *GRPCService) runRESTAttachLoop(session *SessionData, conn net.Conn, det
 	}
 }
 
+// stripTerminalQueryResponses removes terminal capability query response
+// sequences from PTY input. Client terminal emulators send these automatically
+// in response to queries issued by the shell or by applications (e.g. colour
+// queries, device attribute requests). They are input-direction-only sequences
+// that the shell should never see; if they reach the PTY master, the line
+// discipline ECHO will bounce them back as output and pollute the scrollback.
+//
+// Sequences removed:
+//   - CSI Pn ; Pn R        — CPR (cursor position report, response to DSR)
+//   - CSI ? Pm c           — primary device attributes response
+//   - CSI > ... c          — secondary device attributes response
+//   - CSI ? Ps $ y         — DECRPM (mode report)
+//   - OSC 10 ; ... ST/BEL  — foreground colour report
+//   - OSC 11 ; ... ST/BEL  — background colour report
+//   - DCS ... ST           — device control string responses (e.g. XTGETTCAP)
+func stripTerminalQueryResponses(data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	out := make([]byte, 0, len(data))
+	i := 0
+	for i < len(data) {
+		if data[i] != 0x1b || i+1 >= len(data) {
+			out = append(out, data[i])
+			i++
+			continue
+		}
+		// ESC found — inspect the next byte
+		switch data[i+1] {
+		case '[': // CSI
+			end, ok := scanCSIResponse(data, i)
+			if ok {
+				i = end
+			} else {
+				out = append(out, data[i])
+				i++
+			}
+		case ']': // OSC — only strip OSC 10 and OSC 11
+			end, ok := scanOSCResponse(data, i)
+			if ok {
+				i = end
+			} else {
+				out = append(out, data[i])
+				i++
+			}
+		case 'P': // DCS — strip entirely
+			end, ok := scanSTTerminated(data, i+2)
+			if ok {
+				i = end
+			} else {
+				out = append(out, data[i])
+				i++
+			}
+		default:
+			out = append(out, data[i])
+			i++
+		}
+	}
+	return out
+}
+
+// scanCSIResponse returns the index past the end of a CSI query response
+// sequence if the sequence ending matches a known response terminator,
+// otherwise returns (i, false) leaving the caller to emit data[i].
+//
+// Recognised terminators (after ESC [):
+//   - R          CPR
+//   - ? ... c    primary DA
+//   - > ... c    secondary DA
+//   - ? ... $ y  DECRPM
+func scanCSIResponse(data []byte, i int) (end int, ok bool) {
+	// i points at ESC, i+1 is '[', parameter bytes start at i+2
+	j := i + 2
+	// optional < > ? for private sequences
+	if j < len(data) && (data[j] == '?' || data[j] == '>' || data[j] == '<') {
+		j++
+	}
+	// consume parameter and intermediate bytes
+	for j < len(data) && ((data[j] >= 0x30 && data[j] <= 0x3f) || data[j] == ';') {
+		j++
+	}
+	if j >= len(data) {
+		return i, false
+	}
+	// check final byte
+	switch data[j] {
+	case 'R': // CPR
+		return j + 1, true
+	case 'c': // DA
+		return j + 1, true
+	case 'y': // DECRPM (preceded by '$')
+		if j > i+2 && data[j-1] == '$' {
+			return j + 1, true
+		}
+	}
+	return i, false
+}
+
+// scanOSCResponse returns the index past the end of an OSC sequence that
+// starts with 10; or 11; (colour query responses), terminated by BEL or ST.
+func scanOSCResponse(data []byte, i int) (end int, ok bool) {
+	// i = ESC, i+1 = ']', content starts at i+2
+	j := i + 2
+	// check for "10;" or "11;"
+	if j+3 > len(data) {
+		return i, false
+	}
+	if !(data[j] == '1' && (data[j+1] == '0' || data[j+1] == '1') && data[j+2] == ';') {
+		return i, false
+	}
+	// scan to ST (ESC \) or BEL (0x07)
+	end, ok = scanSTTerminated(data, j)
+	return end, ok
+}
+
+// scanSTTerminated scans from j for a string terminator (BEL 0x07 or ESC \).
+// Returns the index past the terminator on success.
+func scanSTTerminated(data []byte, j int) (end int, ok bool) {
+	for j < len(data) {
+		if data[j] == 0x07 {
+			return j + 1, true
+		}
+		if data[j] == 0x1b && j+1 < len(data) && data[j+1] == '\\' {
+			return j + 2, true
+		}
+		j++
+	}
+	return 0, false
+}
+
 // filterPtyInput scans data written to a PTY for the Ctrl+A D detach sequence (0x01 0x64)
+// and strips terminal query response escape sequences that the client terminal
+// sends back as input (CPR, DA, OSC colour, DECRPM). These responses should
+// never reach the shell; leaving them in would cause the PTY to echo them back
+// into the scrollback ring buffer as output.
 func filterPtyInput(data []byte, prevCtrlA *bool) (out []byte, detach bool) {
+	data = stripTerminalQueryResponses(data)
 	out = make([]byte, 0, len(data))
 	for _, b := range data {
 		if *prevCtrlA {
