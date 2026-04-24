@@ -60,25 +60,26 @@ const MaxCPUSamples = 100 // Maximum number of CPU samples to keep in history
 // Usage struct to hold CPU & Memory metrics
 // The metrics are collected from cgroups v2 files
 type SystemInfo struct {
-	CollectedAt        time.Time               // Time of collection
-	CPUUsageUsec       int64                   // CPU usage in microseconds
-	CPUUsageMillicores float64                 // CPU usage in mCPU
-	MemoryUsageMiB     float64                 // Memory usage in MiB
-	CPULimitMillicores float64                 // CPU limit in mCPU (if set)
-	MemLimitMiB        float64                 // Memory limit in MiB (if set)
-	CPUUsageSeconds    float64                 // CPU usage in seconds
-	CPUAvg1Min         float64                 // CPU usage average over 1 minute
-	CPUAvg5Min         float64                 // CPU usage average over 5 minutes
-	CPUAvg15Min        float64                 // CPU usage average over 15 minutes
-	config             *config.Config          // System configuration
-	blueprint          *commonmodels.Blueprint // Blueprint loaded from /etc/k8shell/blueprint.yaml
-	stats              *SystemStats            // System statistics
-	mu                 sync.Mutex              // Mutex for thread-safe updates
-	prevUsage          int64                   // Previous CPU usage for delta calculation
-	prevTime           time.Time               // Previous time for delta calculation
-	log                *zerolog.Logger         // Logger instance
-	cachedMounts       []k8shelld.MountUsage   // Cached mount usage (refreshed in background)
-	cachedDocker       *k8shelld.DockerUsage   // Cached docker usage (refreshed in background)
+	CollectedAt         time.Time               // Time of collection
+	CPUUsageUsec        int64                   // CPU usage in microseconds
+	CPUUsageMillicores  float64                 // CPU usage in mCPU
+	MemoryUsageMiB      float64                 // Memory usage in MiB
+	CPULimitMillicores  float64                 // CPU limit in mCPU (if set)
+	MemLimitMiB         float64                 // Memory limit in MiB (if set)
+	CPUUsageSeconds     float64                 // CPU usage in seconds
+	CPUAvg1Min          float64                 // CPU usage average over 1 minute
+	CPUAvg5Min          float64                 // CPU usage average over 5 minutes
+	CPUAvg15Min         float64                 // CPU usage average over 15 minutes
+	config              *config.Config          // System configuration
+	blueprint           *commonmodels.Blueprint // Blueprint loaded from /etc/k8shell/blueprint.yaml
+	stats               *SystemStats            // System statistics
+	mu                  sync.Mutex              // Mutex for thread-safe updates
+	prevUsage           int64                   // Previous CPU usage for delta calculation
+	prevTime            time.Time               // Previous time for delta calculation
+	log                 *zerolog.Logger         // Logger instance
+	cachedMounts        []k8shelld.MountUsage   // Cached mount usage (refreshed in background)
+	cachedDocker        *k8shelld.DockerUsage   // Cached podman/docker usage (refreshed in background)
+	cachedPodmanDetails *PodmanDetails          // Cached extra Podman details (refreshed in background)
 }
 
 func NewSystemInfo(config *config.Config, blueprint *commonmodels.Blueprint) *SystemInfo {
@@ -234,15 +235,22 @@ func (s *SystemInfo) GetDockerUsageSnapshot(_ context.Context) (*k8shelld.Docker
 	return s.cachedDocker, nil
 }
 
+// GetPodmanDetailsSnapshot returns the cached extra Podman details. Refreshed in the background by Collect.
+func (s *SystemInfo) GetPodmanDetailsSnapshot() *PodmanDetails {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cachedPodmanDetails
+}
+
 // computeDockerSnapshot performs the live docker socket queries and blueprint annotation.
-func (s *SystemInfo) computeDockerSnapshot(ctx context.Context) (*k8shelld.DockerUsage, error) {
+func (s *SystemInfo) computeDockerSnapshot(ctx context.Context) (*k8shelld.DockerUsage, *PodmanDetails, error) {
 	if s.blueprint == nil || !s.blueprint.Podman.Enabled {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	du, err := GetDockerUsage(ctx)
+	du, pd, err := GetDockerUsage(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("error getting docker usage: %v", err)
+		return nil, nil, fmt.Errorf("error getting docker usage: %v", err)
 	}
 
 	for _, stor := range s.blueprint.Podman.Storages {
@@ -260,7 +268,7 @@ func (s *SystemInfo) computeDockerSnapshot(ctx context.Context) (*k8shelld.Docke
 		}
 	}
 
-	return du, nil
+	return du, pd, nil
 }
 
 // refreshStorage updates cachedMounts and cachedDocker in parallel.
@@ -268,6 +276,7 @@ func (s *SystemInfo) refreshStorage(ctx context.Context) {
 	var (
 		mounts []k8shelld.MountUsage
 		docker *k8shelld.DockerUsage
+		podman *PodmanDetails
 		wg     sync.WaitGroup
 	)
 	wg.Add(2)
@@ -277,13 +286,14 @@ func (s *SystemInfo) refreshStorage(ctx context.Context) {
 	}()
 	go func() {
 		defer wg.Done()
-		docker, _ = s.computeDockerSnapshot(ctx)
+		docker, podman, _ = s.computeDockerSnapshot(ctx)
 	}()
 	wg.Wait()
 
 	s.mu.Lock()
 	s.cachedMounts = mounts
 	s.cachedDocker = docker
+	s.cachedPodmanDetails = podman
 	s.mu.Unlock()
 }
 

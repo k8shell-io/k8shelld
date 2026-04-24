@@ -23,6 +23,7 @@ import (
 	grpcpkg "github.com/k8shell-io/k8shelld/internal/grpc"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
+	"github.com/k8shell-io/k8shelld/internal/system"
 	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
 )
@@ -307,19 +308,28 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	docker, err := a.server.sysInfo.GetDockerUsageSnapshot(r.Context())
+	podman, err := a.server.sysInfo.GetDockerUsageSnapshot(r.Context())
 	if err != nil {
-		a.logger.Error().Msgf("Failed to get docker usage snapshot: %v", err)
-		http.Error(w, "Failed to get docker usage snapshot", http.StatusInternalServerError)
+		a.logger.Error().Msgf("Failed to get podman usage snapshot: %v", err)
+		http.Error(w, "Failed to get podman usage snapshot", http.StatusInternalServerError)
 		return
 	}
+	podmanDetails := a.server.sysInfo.GetPodmanDetailsSnapshot()
 
-	response := k8shelld.SystemInfo{
-		Time:       time.Now().Format(time.RFC3339),
-		System:     metrics,
-		Mounts:     mounts,
-		Docker:     docker,
-		Repository: repoURL(),
+	type sysInfoResp struct {
+		k8shelld.SystemInfo
+		Podman *system.PodmanDetails `json:"podman,omitempty"`
+	}
+
+	response := sysInfoResp{
+		SystemInfo: k8shelld.SystemInfo{
+			Time:       time.Now().Format(time.RFC3339),
+			System:     metrics,
+			Mounts:     mounts,
+			Docker:     podman,
+			Repository: repoURL(),
+		},
+		Podman: podmanDetails,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

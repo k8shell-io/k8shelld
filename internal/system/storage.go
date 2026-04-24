@@ -157,7 +157,19 @@ func unescapeMountInfoPath(s string) string {
 	return string(b)
 }
 
-func GetDockerUsage(ctx context.Context) (*k8shelld.DockerUsage, error) {
+// PodmanDetails carries Podman-specific metadata that has no equivalent in
+// the Docker-compat DockerUsage proto. It is populated from /libpod/info.
+type PodmanDetails struct {
+	PodmanVersion     string `json:"podmanVersion"` // e.g. "5.8.1"
+	GraphDriver       string `json:"graphDriver"`   // e.g. "overlay"
+	RunRoot           string `json:"runRoot"`       // e.g. "/tmp/storage-run-1000/containers"
+	ContainersTotal   int    `json:"containersTotal"`
+	ContainersRunning int    `json:"containersRunning"`
+	ContainersPaused  int    `json:"containersPaused"`
+	ContainersStopped int    `json:"containersStopped"`
+}
+
+func GetDockerUsage(ctx context.Context) (*k8shelld.DockerUsage, *PodmanDetails, error) {
 	// Avoid importing internal/config here (it imports system -> would cycle).
 	candidates := []string{
 		"/run/podman/podman.sock",
@@ -174,7 +186,7 @@ func GetDockerUsage(ctx context.Context) (*k8shelld.DockerUsage, error) {
 		}
 	}
 	if sock == "" {
-		return nil, errors.New("docker socket not found")
+		return nil, nil, errors.New("docker socket not found")
 	}
 
 	client := &http.Client{
@@ -188,12 +200,11 @@ func GetDockerUsage(ctx context.Context) (*k8shelld.DockerUsage, error) {
 
 	type dockerVersion struct {
 		APIVersion string `json:"ApiVersion"`
-	}
-	type dockerInfo struct {
-		DockerRootDir string `json:"DockerRootDir"`
+		Version    string `json:"Version"` // Podman's own semver, e.g. "5.8.1"
 	}
 
-	apiPrefix := ""
+	apiPrefix := ""    // Docker compat prefix, e.g. /v1.44
+	podmanPrefix := "" // Podman native prefix, e.g. /v5.8.1
 	{
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://unix/version", nil)
 		resp, err := client.Do(req)
@@ -203,6 +214,9 @@ func GetDockerUsage(ctx context.Context) (*k8shelld.DockerUsage, error) {
 			_ = json.NewDecoder(resp.Body).Decode(&v)
 			if v.APIVersion != "" {
 				apiPrefix = "/v" + v.APIVersion
+			}
+			if v.Version != "" {
+				podmanPrefix = "/v" + v.Version
 			}
 		}
 	}
@@ -221,18 +235,78 @@ func GetDockerUsage(ctx context.Context) (*k8shelld.DockerUsage, error) {
 	}
 
 	du := &k8shelld.DockerUsage{SocketPath: sock}
+	pd := &PodmanDetails{}
+	if podmanPrefix != "" {
+		pd.PodmanVersion = strings.TrimPrefix(podmanPrefix, "/v")
+	}
 
+	// Populate from the Podman-native /libpod/info endpoint.
+	// Podman computes graphRootUsed/Allocated via Statfs inside its own container,
+	// so they reflect the true on-disk footprint even when Podman runs as a sidecar.
+	var podmanStoreUsed, podmanStoreAllocated uint64
 	{
+		type podmanContainerStore struct {
+			Number  int `json:"number"`
+			Running int `json:"running"`
+			Paused  int `json:"paused"`
+			Stopped int `json:"stopped"`
+		}
+		type podmanStore struct {
+			GraphRoot          string               `json:"graphRoot"`
+			GraphRootAllocated int64                `json:"graphRootAllocated"`
+			GraphRootUsed      int64                `json:"graphRootUsed"`
+			GraphDriverName    string               `json:"graphDriverName"`
+			RunRoot            string               `json:"runRoot"`
+			ContainerStore     podmanContainerStore `json:"containerStore"`
+		}
+		type podmanInfo struct {
+			Store podmanStore `json:"store"`
+		}
+		var pi podmanInfo
+		libpodPath := "/libpod/info"
+		if podmanPrefix != "" {
+			libpodPath = podmanPrefix + "/libpod/info"
+		}
+		if err := get(libpodPath, &pi); err != nil && podmanPrefix != "" {
+			// fallback to unversioned
+			err = get("/libpod/info", &pi)
+			_ = err
+		}
+		if pi.Store.GraphRoot != "" || pi.Store.GraphRootUsed != 0 {
+			if pi.Store.GraphRoot != "" {
+				du.DockerRootDir = pi.Store.GraphRoot
+			}
+			if u, ok := u64FromNonNegI64(pi.Store.GraphRootUsed); ok {
+				podmanStoreUsed = u
+			}
+			if u, ok := u64FromNonNegI64(pi.Store.GraphRootAllocated); ok {
+				podmanStoreAllocated = u
+			}
+			pd.GraphDriver = pi.Store.GraphDriverName
+			pd.RunRoot = pi.Store.RunRoot
+			pd.ContainersTotal = pi.Store.ContainerStore.Number
+			pd.ContainersRunning = pi.Store.ContainerStore.Running
+			pd.ContainersPaused = pi.Store.ContainerStore.Paused
+			pd.ContainersStopped = pi.Store.ContainerStore.Stopped
+		}
+	}
+
+	// Fall back to the Docker-compat /info for DockerRootDir if libpod didn't provide it.
+	if du.DockerRootDir == "" {
+		type dockerInfo struct {
+			DockerRootDir string `json:"DockerRootDir"`
+		}
 		var inf dockerInfo
 		if err := get(apiPrefix+"/info", &inf); err == nil {
 			du.DockerRootDir = inf.DockerRootDir
 		} else if apiPrefix != "" {
-			// fallback to unversioned endpoints
 			if err2 := get("/info", &inf); err2 == nil {
 				du.DockerRootDir = inf.DockerRootDir
 			}
 		}
 	}
+
+	_ = podmanStoreAllocated // available if blueprint doesn't override DeclaredSize
 
 	// /system/df response shape (partial)
 	type dfImage struct {
@@ -306,14 +380,25 @@ func GetDockerUsage(ctx context.Context) (*k8shelld.DockerUsage, error) {
 	du.ContainersRootFsBytes = containersRootFs
 	du.VolumesBytes = volumes
 	du.BuildCacheBytes = cache
-	du.TotalBytes = images + containersRw + volumes + cache
+
+	// Prefer the actual on-disk usage reported by Podman's /libpod/info
+	// (store.graphRootUsed). Podman computes this via Statfs inside its own
+	// container, so it captures overlay driver overhead, internal databases,
+	// and orphaned layers that /system/df misses. This also works correctly
+	// when Podman runs as a sidecar (its storage is inaccessible to k8shelld
+	// directly). Fall back to the sum of API-reported logical sizes otherwise.
+	if podmanStoreUsed > 0 {
+		du.TotalBytes = podmanStoreUsed
+	} else {
+		du.TotalBytes = images + containersRw + volumes + cache
+	}
 
 	// Best-effort API version visibility
 	if apiPrefix != "" {
 		du.APIVersion = strings.TrimPrefix(apiPrefix, "/v")
 	}
 
-	return du, nil
+	return du, pd, nil
 }
 
 // ** helpers
