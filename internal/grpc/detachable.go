@@ -289,23 +289,6 @@ func (s *ShellHandler) handleGRPCAttachExisting(
 	return s.runAttachedClientLoop(s.logger, session, stream, detachCh, detachOnClose)
 }
 
-// httpStatusToGRPCCode maps HTTP status codes returned by ValidateSessionForAttach
-// to the nearest equivalent gRPC status code.
-func httpStatusToGRPCCode(httpCode int) codes.Code {
-	switch httpCode {
-	case 403:
-		return codes.PermissionDenied
-	case 404:
-		return codes.NotFound
-	case 409:
-		return codes.AlreadyExists
-	case 410:
-		return codes.NotFound
-	default:
-		return codes.InvalidArgument
-	}
-}
-
 // DetachShellSession triggers a detach on the currently attached client for
 // the given session, optionally setting a per-session TTL override.
 // The shell process and ring buffer stay alive.
