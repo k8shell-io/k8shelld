@@ -323,11 +323,13 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 	})
 
 	if s.grpcApi.blueprint != nil && s.grpcApi.blueprint.Splash != "" {
+		splashData := []byte("\n\r" + config.ExpandSplash(s.grpcApi.blueprint.Splash, session.user.Username) + "\n\r")
 		_ = stream.Send(&k8shelldv1.ShellResponse{
 			Response: &k8shelldv1.ShellResponse_Data{
-				Data: []byte("\n\r" + config.ExpandSplash(s.grpcApi.blueprint.Splash, session.user.Username) + "\n\r"),
+				Data: splashData,
 			},
 		})
+		session.ring.Write(splashData)
 	}
 
 	s.startPtyReadLoop(session)
