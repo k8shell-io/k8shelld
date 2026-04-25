@@ -526,8 +526,9 @@ func (s *ShellHandler) GetCWD(_ context.Context, req *k8shelldv1.GetCWDRequest) 
 	cmd := exec.Command("readlink", fmt.Sprintf("/proc/%d/cwd", session.Pid))
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
-			Uid: session.user.UID,
-			Gid: session.user.GID,
+			Uid:         session.user.UID,
+			Gid:         session.user.GID,
+			NoSetGroups: true,
 		},
 	}
 	out, err := cmd.Output()
