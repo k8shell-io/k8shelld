@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -522,11 +523,19 @@ func (s *ShellHandler) GetCWD(_ context.Context, req *k8shelldv1.GetCWDRequest) 
 			"shell session %s has no running process", req.GetShellId())
 	}
 
-	cwd, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", session.Pid))
+	cmd := exec.Command("readlink", fmt.Sprintf("/proc/%d/cwd", session.Pid))
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{
+			Uid: session.user.UID,
+			Gid: session.user.GID,
+		},
+	}
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to read CWD for shell %s: %v",
 			req.GetShellId(), err)
 	}
+	cwd := strings.TrimRight(string(out), "\n")
 
 	return &k8shelldv1.GetCWDResponse{Path: cwd}, nil
 }
