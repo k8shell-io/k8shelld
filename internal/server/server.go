@@ -27,7 +27,8 @@ import (
 )
 
 const (
-	FLAG_DIR_TEMPLATE = "%s/.k8shell/flags"
+	FLAG_DIR_TEMPLATE                   = "%s/.k8shell/flags"
+	SystemInfoCollectionIntervalSeconds = 30
 )
 
 type Server struct {
@@ -249,7 +250,7 @@ func (s *Server) Serve() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := s.sysInfo.Collect(ctx, 10)
+		err := s.sysInfo.Collect(ctx, SystemInfoCollectionIntervalSeconds)
 		if err != nil {
 			s.logger.Error().Msgf("system info collection error: %v", err)
 		}
