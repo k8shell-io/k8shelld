@@ -17,6 +17,21 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// cmdStartWithTimeout calls cmd.Start() from a goroutine and waits up to
+// timeout for it to return.  See shell.go (grpc package) for the full
+// rationale — the identical pattern is used here to guard app-supervisor
+// launches against NFS-mounted home directories blocking k8shelld.
+func cmdStartWithTimeout(cmd *exec.Cmd, timeout time.Duration) error {
+	ch := make(chan error, 1)
+	go func() { ch <- cmd.Start() }()
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(timeout):
+		return fmt.Errorf("process start timed out after %s (home directory may be unreachable)", timeout)
+	}
+}
+
 // supervisorState holds the state for a supervisor
 type AppSupervisor struct {
 	manager *AppManager
@@ -146,7 +161,7 @@ func (s *AppSupervisor) supervise() {
 
 		s.log.Info().Msg("starting app process")
 		startTime := time.Now()
-		if err := cmd.Start(); err != nil {
+		if err := cmdStartWithTimeout(cmd, 5*time.Second); err != nil {
 			s.log.Error().Err(err).Msg("failed to start app")
 
 			if !s.manager.shouldRestart(policy, true) {

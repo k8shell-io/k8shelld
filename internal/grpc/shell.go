@@ -121,6 +121,27 @@ func (s *ShellHandler) GetSessionData(ctx context.Context) (*SessionData, error)
 	return value.(*SessionData), nil
 }
 
+// cmdStartWithTimeout calls cmd.Start() from a goroutine and waits up to
+// timeout for it to return.  If it does not return in time an error is returned
+// and k8shelld continues to run normally.  The goroutine remains blocked until
+// the OS unblocks it (e.g. when NFS connectivity is restored); any process that
+// starts successfully after the deadline is reaped by the process watcher.
+//
+// The primary use-case is protecting cmd.Start() against NFS hangs: when
+// cmd.Dir points to an NFS-mounted home directory, the kernel chdir() inside
+// Go's fork-exec may block in D-state indefinitely, which would park the
+// calling goroutine forever and leave k8shelld unable to serve new requests.
+func cmdStartWithTimeout(cmd *exec.Cmd, timeout time.Duration) error {
+	ch := make(chan error, 1)
+	go func() { ch <- cmd.Start() }()
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(timeout):
+		return fmt.Errorf("process start timed out after %s (home directory may be unreachable)", timeout)
+	}
+}
+
 // Shell is a gRPC method that starts a shell session. It is a bidirectional streaming RPC
 // that sends the shell output to the client and receives the client input to send to the shell.
 func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse]) error {
@@ -197,6 +218,10 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars,
 		session.user.HomeDir)
 	session.Cmd.Env = append(session.Cmd.Env, "K8SHELL_SESSION_ID="+sessionId)
+	// Cmd.Dir is set so the shell opens in the user's home directory.
+	// cmd.Start() is called via cmdStartWithTimeout to prevent k8shelld from
+	// blocking when the home directory is on an unresponsive NFS mount.
+	session.Cmd.Dir = session.user.HomeDir
 
 	s.logger.Debug().Msgf("env: %v", session.Cmd.Env)
 
@@ -294,7 +319,7 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 	session.Cmd.SysProcAttr.Ctty = 1
 
 	unlockCreation := s.grpcApi.procWatcher.LockForCreation()
-	if err = session.Cmd.Start(); err != nil {
+	if err = cmdStartWithTimeout(session.Cmd, 5*time.Second); err != nil {
 		unlockCreation()
 		_ = ptmx.Close()
 		_ = tty.Close()
@@ -362,7 +387,7 @@ func (s *ShellHandler) handleNonPtySession(
 	}
 
 	unlockCreation := s.grpcApi.procWatcher.LockForCreation()
-	if err := session.Cmd.Start(); err != nil {
+	if err := cmdStartWithTimeout(session.Cmd, 5*time.Second); err != nil {
 		unlockCreation()
 		return fmt.Errorf("start non-pty session %s: %w", session.Id, err)
 	}
