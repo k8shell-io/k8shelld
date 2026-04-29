@@ -266,19 +266,38 @@ func (s *UnixSocketHandler) communicate(uxListener *net.UnixListener, unixsocket
 
 				// Enforce process-ancestry restriction: the connecting process must
 				// be a descendant of the shell that owns this socket.
-				if unixsocket.ShellPid > 0 {
-					if uc, ok := conn.(*net.UnixConn); ok {
-						pid, perr := peerPid(uc)
-						if perr != nil || !isProcDescendant(pid, unixsocket.ShellPid) {
-							s.logger.Warn().Msgf(
-								"unix-socket %s: rejected connection from PID %d (not descendant of shell PID %d)",
-								unixsocket.socketPath, pid, unixsocket.ShellPid)
-							conn.Close()
-							mu.Lock()
-							conn = nil
-							mu.Unlock()
-							break
+				{
+					sess := s.findShellSessionByBase(unixsocket.Id)
+					ownerPid := 0
+					if sess != nil {
+						ownerPid = sess.Pid
+					} else {
+						ownerPid = unixsocket.ShellPid
+					}
+
+					var rejectReason string
+					if sess != nil && ownerPid == 0 {
+						rejectReason = fmt.Sprintf(
+							"unix-socket %s: rejected connection (owning shell not yet started)",
+							unixsocket.socketPath)
+					} else if ownerPid > 0 {
+						if uc, ok := conn.(*net.UnixConn); ok {
+							pid, perr := peerPid(uc)
+							if perr != nil || !isProcDescendant(pid, ownerPid) {
+								rejectReason = fmt.Sprintf(
+									"unix-socket %s: rejected connection from PID %d (not descendant of shell PID %d)",
+									unixsocket.socketPath, pid, ownerPid)
+							}
 						}
+					}
+
+					if rejectReason != "" {
+						s.logger.Warn().Msg(rejectReason)
+						conn.Close()
+						mu.Lock()
+						conn = nil
+						mu.Unlock()
+						break
 					}
 				}
 
