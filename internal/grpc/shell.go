@@ -197,7 +197,6 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars,
 		session.user.HomeDir)
 	session.Cmd.Env = append(session.Cmd.Env, "K8SHELL_SESSION_ID="+sessionId)
-	session.Cmd.Dir = session.user.HomeDir
 
 	s.logger.Debug().Msgf("env: %v", session.Cmd.Env)
 

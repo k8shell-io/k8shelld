@@ -116,7 +116,6 @@ func (s *AppSupervisor) supervise() {
 		s.log.Debug().Msgf("starting app with command: %v", startCmd)
 		cmd := exec.Command(startCmd[0], startCmd[1:]...)
 		cmd.Env = env
-		cmd.Dir = s.manager.user.GetHomeDir()
 
 		s.log.Debug().Msgf("env: %v", cmd.Env)
 
