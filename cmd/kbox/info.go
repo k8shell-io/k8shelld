@@ -25,7 +25,7 @@ func init() {
 var InfoCmd = &cobra.Command{
 	Use:   "info",
 	Short: "Display workspace system info",
-	Long: `Display workspace, CPU/memory, storage mounts, and Docker usage information.
+	Long: `Display workspace, CPU/memory, storage mounts, and Podman usage information.
 
 Workspace:
   - Name: workspace name 
@@ -42,7 +42,9 @@ CPU and Memory:
 Storage:
   - Per mount: used / limit (%), plus fs type and source when available
 
-Docker (if available):
+Podman (if available):
+  - Socket, API version, Podman version, graph driver, graph root, run root
+  - Container counts (total / running / paused / stopped)
   - Images, containers (rw/rootfs), volumes, build cache
   - Total: used / limit (%)`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -131,6 +133,7 @@ Docker (if available):
 
 		if sysInfo.Docker != nil {
 			du := sysInfo.Docker
+			pd := sysInfo.Podman
 
 			totalLine := formatBytesIEC(du.TotalBytes, 0)
 			if du.DeclaredSize > 0 {
@@ -142,22 +145,63 @@ Docker (if available):
 				)
 			}
 
-			dockerLines := [][2]string{
-				{"Socket", du.SocketPath},
-				{"API version", du.APIVersion},
-				{"Images", formatBytesIEC(du.ImagesBytes, 0)},
-				{"Containers (rw)", formatBytesIEC(du.ContainersBytes, 0)},
-				{"Containers (rootfs)", formatBytesIEC(du.ContainersRootFsBytes, 0)},
-				{"Volumes", formatBytesIEC(du.VolumesBytes, 0)},
-				{"Build cache", formatBytesIEC(du.BuildCacheBytes, 0)},
-				{"Total", totalLine},
+			apiVersionLine := du.APIVersion
+			if pd != nil && pd.PodmanVersion != "" {
+				apiVersionLine = fmt.Sprintf("%s (Podman %s)", du.APIVersion, pd.PodmanVersion)
 			}
-			printGroup("Docker", dockerLines)
+
+			podmanLines := [][2]string{
+				{"Socket", du.SocketPath},
+				{"API version", apiVersionLine},
+			}
+			if pd != nil {
+				if pd.GraphDriver != "" {
+					podmanLines = append(podmanLines, [2]string{"Graph driver", pd.GraphDriver})
+				}
+				if du.DockerRootDir != "" {
+					podmanLines = append(podmanLines, [2]string{"Graph root", du.DockerRootDir})
+				}
+				if pd.RunRoot != "" {
+					podmanLines = append(podmanLines, [2]string{"Run root", pd.RunRoot})
+				}
+				containersLine := fmt.Sprintf("%d total (%d running", pd.ContainersTotal, pd.ContainersRunning)
+				if pd.ContainersPaused > 0 {
+					containersLine += fmt.Sprintf(", %d paused", pd.ContainersPaused)
+				}
+				containersLine += fmt.Sprintf(", %d stopped)", pd.ContainersStopped)
+				podmanLines = append(podmanLines, [2]string{"Containers", containersLine})
+			}
+			podmanLines = append(podmanLines,
+				[2]string{"Images", formatBytesIEC(du.ImagesBytes, 0)},
+				[2]string{"Containers (rw)", formatBytesIEC(du.ContainersBytes, 0)},
+				[2]string{"Containers (rootfs)", formatBytesIEC(du.ContainersRootFsBytes, 0)},
+				[2]string{"Volumes", formatBytesIEC(du.VolumesBytes, 0)},
+				[2]string{"Build cache", formatBytesIEC(du.BuildCacheBytes, 0)},
+				[2]string{"Total", totalLine},
+			)
+			printGroup("Podman", podmanLines)
 		}
 	},
 }
 
-func fetchSysInfo() (*k8shelld.SystemInfo, error) {
+// sysInfoResp extends k8shelld.SystemInfo with extra Podman-specific fields
+// that are returned by the REST /sysinfo endpoint but have no proto equivalent.
+type sysInfoResp struct {
+	k8shelld.SystemInfo
+	Podman *podmanExt `json:"podman,omitempty"`
+}
+
+type podmanExt struct {
+	PodmanVersion     string `json:"podmanVersion"`
+	GraphDriver       string `json:"graphDriver"`
+	RunRoot           string `json:"runRoot"`
+	ContainersTotal   int    `json:"containersTotal"`
+	ContainersRunning int    `json:"containersRunning"`
+	ContainersPaused  int    `json:"containersPaused"`
+	ContainersStopped int    `json:"containersStopped"`
+}
+
+func fetchSysInfo() (*sysInfoResp, error) {
 	resp, err := client.MakeRequest("GET", "/sysinfo", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching sysinfo: %w", err)
@@ -168,7 +212,7 @@ func fetchSysInfo() (*k8shelld.SystemInfo, error) {
 		return nil, err
 	}
 
-	var data k8shelld.SystemInfo
+	var data sysInfoResp
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, fmt.Errorf("error parsing sysinfo response: %w", err)
 	}

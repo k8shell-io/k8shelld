@@ -106,16 +106,16 @@ func (s *SystemServiceServer) SystemInfo(ctx context.Context,
 		return nil, status.Errorf(codes.Internal, "failed to get mount usage: %v", err)
 	}
 
-	docker, err := s.grpcApi.sysInfo.GetDockerUsageSnapshot(ctx)
+	podman, err := s.grpcApi.sysInfo.GetDockerUsageSnapshot(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get docker usage: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to get podman usage: %v", err)
 	}
 
 	systemInfo := k8shelld.SystemInfo{
 		Time:   time.Now().Format(time.RFC3339),
 		System: metrics,
 		Mounts: mounts,
-		Docker: docker,
+		Docker: podman,
 	}
 
 	return k8shelld.SystemInfoToProto(&systemInfo), nil
