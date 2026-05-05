@@ -211,11 +211,13 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing 'address' query parameter", http.StatusBadRequest)
 		return
 	}
+
 	credsType := r.URL.Query().Get("type")
 	if credsType == "" {
 		http.Error(w, "Missing 'type' query parameter", http.StatusBadRequest)
 		return
 	}
+
 	if credsType != "docker" && credsType != "git" {
 		http.Error(w, "Invalid 'type' query parameter, must be 'docker' or 'git'", http.StatusBadRequest)
 		return
@@ -224,45 +226,41 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 	a.logger.Debug().Msgf("Fetching %s credentials for address %s and user %s", credsType,
 		address, a.user.GetUsername())
 
-	creds, err := a.server.apiClientx.GetUserCredentials(r.Context(), a.user.GetUsername())
-	if err != nil {
-		a.logger.Warn().Msgf("Cannot retrieve user credentials: %v", err)
-		http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
+	switch credsType {
+	case "docker":
+		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "registry", address)
+		if err != nil {
+			a.logger.Warn().Msgf("Cannot retrieve docker/registry user credentials: %v", err)
+			http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
+			return
+		}
+
+		credStr := fmt.Sprintf(`{"ServerURL": "%s", "Username": "%s", "Secret": "%s"}`,
+			cred.ServiceScope, cred.Subject, cred.Secret)
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(credStr)); err != nil {
+			a.logger.Error().Msgf("Failed to write credentials response: %v", err)
+		}
+		return
+	case "git":
+		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "git", address)
+		if err != nil {
+			a.logger.Warn().Msgf("Cannot retrieve git user credentials: %v", err)
+			http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
+			return
+		}
+
+		credStr := fmt.Sprintf(`{"Username": "%s", "Password": "%s"}`, cred.Subject, cred.Secret)
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(credStr)); err != nil {
+			a.logger.Error().Msgf("Failed to write credentials response: %v", err)
+		}
+		return
+	default:
+		a.logger.Warn().Msgf("Unsupported credentials type requested: %s", credsType)
+		http.Error(w, "Unsupported credentials type", http.StatusBadRequest)
 		return
 	}
-
-	for _, cred := range creds {
-		a.logger.Debug().Msgf("Checking credential: ServiceName=%s, ServiceURL=%s, Username=%s",
-			cred.ServiceName, cred.ServiceURL, cred.ExternalID)
-		if credsType == "docker" && cred.ServiceName == "registry" && cred.ServiceURL == address {
-			credStr := fmt.Sprintf(`{"ServerURL": "%s", "Username": "%s", "Secret": "%s"}`,
-				cred.ServiceURL, cred.ExternalID, cred.ExternalToken)
-			w.Header().Set("Content-Type", "application/json")
-			if _, err := w.Write([]byte(credStr)); err != nil {
-				a.logger.Error().Msgf("Failed to write credentials response: %v", err)
-			}
-			return
-		}
-
-		credAddress := cred.ServiceURL
-		parts := strings.Split(cred.ServiceURL, "://")
-		if len(parts) == 2 && !strings.HasPrefix(address, "http") {
-			credAddress = parts[1]
-		}
-
-		if credsType == "git" && cred.ServiceName == "git" && credAddress == address {
-			credStr := fmt.Sprintf(`{"Username": "%s", "Password": "%s"}`,
-				cred.ExternalID, cred.ExternalToken)
-			w.Header().Set("Content-Type", "application/json")
-			if _, err := w.Write([]byte(credStr)); err != nil {
-				a.logger.Error().Msgf("Failed to write credentials response: %v", err)
-			}
-			return
-		}
-	}
-
-	a.logger.Warn().Msgf("No credentials found for address: %s and type: %s", address, credsType)
-	http.Error(w, "Credentials not found", http.StatusNotFound)
 }
 
 func (a *RESTService) GetStreams(w http.ResponseWriter, r *http.Request) {
