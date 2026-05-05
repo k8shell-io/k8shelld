@@ -206,15 +206,35 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	address := r.URL.Query().Get("address")
-	if address == "" {
-		http.Error(w, "Missing 'address' query parameter", http.StatusBadRequest)
-		return
-	}
-
 	credsType := r.URL.Query().Get("type")
 	if credsType == "" {
 		http.Error(w, "Missing 'type' query parameter", http.StatusBadRequest)
+		return
+	}
+
+	if credsType == "kubernetes" {
+		scope := currentPodNamespace()
+		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "kubernetes", scope)
+		if err != nil {
+			a.logger.Warn().Msgf("Cannot retrieve kubernetes user credentials: %v", err)
+			http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
+			return
+		}
+		type kubeCredResp struct {
+			Secret    string     `json:"secret"`
+			ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+		}
+		data, _ := json.Marshal(kubeCredResp{Secret: cred.Secret, ExpiresAt: cred.ExpiresAt})
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write(data); err != nil {
+			a.logger.Error().Msgf("Failed to write kubernetes credentials response: %v", err)
+		}
+		return
+	}
+
+	address := r.URL.Query().Get("address")
+	if address == "" {
+		http.Error(w, "Missing 'address' query parameter", http.StatusBadRequest)
 		return
 	}
 

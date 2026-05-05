@@ -138,14 +138,13 @@ func (s *Server) initialize() error {
 		return nil
 	}
 
-	err := exec.Command("kbox", "tools-init").Run()
-	if err != nil {
-		s.logger.Error().Msgf("Error running kbox tools-init: %v", err)
-	}
+	s.setupToolWrappers()
 
 	if err := system.CreateUser(s.user); err != nil {
 		s.logger.Fatal().Msgf("Error creating user: %v", err)
 	}
+
+	s.setupCredentialHelpers()
 
 	if s.blueprint != nil && s.blueprint.Podman.Enabled {
 		uid := int(s.user.GetUID())
@@ -186,7 +185,7 @@ func (s *Server) initialize() error {
 		}
 	}
 
-	err = s.runInitScripts(config.InitScriptsDir, s.user, func() {
+	runErr := s.runInitScripts(config.InitScriptsDir, s.user, func() {
 		s.logger.Info().Msg("Init scripts finished, running auto-start apps")
 
 		appMgr := s.appManager
@@ -211,8 +210,8 @@ func (s *Server) initialize() error {
 			}
 		}
 	})
-	if err != nil {
-		s.logger.Error().Msgf("Failed to run init scripts: %v", err)
+	if runErr != nil {
+		s.logger.Error().Msgf("Failed to run init scripts: %v", runErr)
 	}
 
 	return nil

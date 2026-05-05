@@ -43,12 +43,23 @@ var gitCredsHelperCmd = &cobra.Command{
 	},
 }
 
+var kubernetesCredsHelperCmd = &cobra.Command{
+	Use:   "kubernetes",
+	Short: "Kubernetes credentials helper",
+	Long:  "Kubernetes exec credentials helper (client.authentication.k8s.io/v1beta1)",
+	Run: func(cmd *cobra.Command, args []string) {
+		kubernetesCredsHelper(operation)
+	},
+}
+
 func init() {
 	CredentialsCmd.AddCommand(dockerCredsHelperCmd)
 	CredentialsCmd.AddCommand(gitCredsHelperCmd)
+	CredentialsCmd.AddCommand(kubernetesCredsHelperCmd)
 
 	dockerCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")
 	gitCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")
+	kubernetesCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")
 }
 
 type dockerGetResponse struct {
@@ -204,4 +215,45 @@ func extractCredsFromJSON(data []byte) (string, string) {
 		return "", ""
 	}
 	return creds.Username, creds.Password
+}
+
+// kubernetesCredsHelper implements the kubectl exec credential plugin protocol
+// (client.authentication.k8s.io/v1beta1). It fetches a token from the k8shelld
+// REST API and returns it as an ExecCredential JSON object.
+func kubernetesCredsHelper(operation string) {
+	if operation != "get" {
+		os.Exit(0)
+	}
+
+	resp, err := client.MakeRequest("GET", "/creds?type=kubernetes", map[string]string{"Accept": "application/json"}, nil)
+	if err != nil {
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		os.Exit(1)
+	}
+
+	switch resp.StatusCode {
+	case 200:
+		var cred struct {
+			Secret    string  `json:"secret"`
+			ExpiresAt *string `json:"expiresAt"` // RFC3339, optional
+		}
+		if err := json.Unmarshal(bodyBytes, &cred); err != nil || cred.Secret == "" {
+			os.Exit(1)
+		}
+		status := fmt.Sprintf(`"token":%q`, cred.Secret)
+		if cred.ExpiresAt != nil && *cred.ExpiresAt != "" {
+			status += fmt.Sprintf(`,"expirationTimestamp":%q`, *cred.ExpiresAt)
+		}
+		fmt.Printf(`{"apiVersion":"client.authentication.k8s.io/v1beta1","kind":"ExecCredential","status":{%s}}`, status)
+		os.Exit(0)
+	case 204, 404, 401, 403:
+		os.Exit(0)
+	default:
+		os.Exit(1)
+	}
 }
