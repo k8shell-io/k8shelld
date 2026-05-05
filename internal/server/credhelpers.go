@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -127,7 +128,6 @@ func (s *Server) setupKubernetesCredHelper(homeDir string) error {
 	configPath := filepath.Join(kubeDir, "config")
 
 	host := os.Getenv("KUBERNETES_SERVICE_HOST")
-	// Wrap bare IPv6 addresses in brackets so the URL is valid.
 	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
 		host = "[" + host + "]"
 	}
@@ -137,15 +137,24 @@ func (s *Server) setupKubernetesCredHelper(homeDir string) error {
 	}
 	server := fmt.Sprintf("https://%s:%s", host, port)
 
+	clusterConfig := fmt.Sprintf("    server: %s", server)
+	if caBytes, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"); err == nil {
+		caData := base64.StdEncoding.EncodeToString(caBytes)
+		clusterConfig = fmt.Sprintf("    certificate-authority-data: %s\n    server: %s", caData, server)
+	}
+
+	namespace := currentPodNamespace()
+
 	kubeconfig := fmt.Sprintf(`apiVersion: v1
 kind: Config
 clusters:
 - cluster:
-    server: %s
+%s
   name: default
 contexts:
 - context:
     cluster: default
+    namespace: %s
     user: default
   name: default
 current-context: default
@@ -156,7 +165,7 @@ users:
       apiVersion: client.authentication.k8s.io/v1beta1
       command: %s
       interactiveMode: IfAvailable
-`, server, kubectlCredHelperBin)
+`, clusterConfig, namespace, kubectlCredHelperBin)
 
 	if err := os.MkdirAll(kubeDir, 0o700); err != nil {
 		return fmt.Errorf("create .kube directory: %w", err)
