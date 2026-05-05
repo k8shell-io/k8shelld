@@ -65,14 +65,12 @@ func (s *Server) setupToolWrappers() {
 		})
 	}
 
-	if s.blueprint != nil && s.blueprint.Metadata.RepoAddress != "" {
-		if _, err := exec.LookPath("git"); err == nil {
-			wrappers = append(wrappers, wrapperSpec{
-				CommandName: "credentials git",
-				ScriptName:  "git-credential-k8shell",
-				Template:    wrapperTemplateNoHelp,
-			})
-		}
+	if _, err := exec.LookPath("git"); err == nil {
+		wrappers = append(wrappers, wrapperSpec{
+			CommandName: "credentials git",
+			ScriptName:  "git-credential-k8shell",
+			Template:    wrapperTemplateNoHelp,
+		})
 	}
 
 	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {

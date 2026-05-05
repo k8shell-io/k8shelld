@@ -44,14 +44,12 @@ func (s *Server) setupCredentialHelpers() {
 		}
 	}
 
-	if s.blueprint != nil && s.blueprint.Metadata.RepoAddress != "" {
-		if _, err := exec.LookPath("git"); err == nil {
+	if _, err := exec.LookPath("git"); err == nil {
 			if err := s.setupGitCredHelper(homeDir); err != nil {
 				s.logger.Error().Msgf("Failed to set up git credential helper: %v", err)
 			} else {
 				s.logger.Info().Msg("Git credential helper configured")
 			}
-		}
 	}
 
 	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
