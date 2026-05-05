@@ -223,12 +223,19 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.logger.Debug().Msgf("Fetching %s credentials for address %s and user %s", credsType,
-		address, a.user.GetUsername())
+	protocol := r.URL.Query().Get("protocol")
+
+	a.logger.Debug().Msgf("Fetching %s credentials: protocol=%s, address=%s, user=%s", credsType,
+		protocol, address, a.user.GetUsername())
+
+	addr := address
+	if protocol != "" {
+		addr = protocol + "://" + address
+	}
 
 	switch credsType {
 	case "docker":
-		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "registry", address)
+		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "registry", addr)
 		if err != nil {
 			a.logger.Warn().Msgf("Cannot retrieve docker/registry user credentials: %v", err)
 			http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
@@ -243,7 +250,7 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	case "git":
-		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "git", address)
+		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "git", addr)
 		if err != nil {
 			a.logger.Warn().Msgf("Cannot retrieve git user credentials: %v", err)
 			http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)

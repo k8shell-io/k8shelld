@@ -159,7 +159,8 @@ func gitCredsHelper(operation string) {
 
 	switch operation {
 	case "get":
-		url := fmt.Sprintf("/creds?type=git&address=%s", url.QueryEscape(creds["host"]))
+		url := fmt.Sprintf("/creds?type=git&protocol=%s&address=%s",
+			url.QueryEscape(creds["protocol"]), url.QueryEscape(creds["host"]))
 		resp, err := client.MakeRequest("GET", url, map[string]string{"Accept": "application/json"}, nil)
 		if err != nil {
 			fmt.Fprint(os.Stdout, "\n")
