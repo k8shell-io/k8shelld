@@ -45,11 +45,11 @@ func (s *Server) setupCredentialHelpers() {
 	}
 
 	if _, err := exec.LookPath("git"); err == nil {
-			if err := s.setupGitCredHelper(homeDir); err != nil {
-				s.logger.Error().Msgf("Failed to set up git credential helper: %v", err)
-			} else {
-				s.logger.Info().Msg("Git credential helper configured")
-			}
+		if err := s.setupGitCredHelper(homeDir); err != nil {
+			s.logger.Error().Msgf("Failed to set up git credential helper: %v", err)
+		} else {
+			s.logger.Info().Msg("Git credential helper configured")
+		}
 	}
 
 	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
@@ -125,10 +125,6 @@ func (s *Server) setupGitCredHelper(homeDir string) error {
 func (s *Server) setupKubernetesCredHelper(homeDir string) error {
 	kubeDir := filepath.Join(homeDir, ".kube")
 	configPath := filepath.Join(kubeDir, "config")
-
-	if _, err := os.Stat(configPath); err == nil {
-		return nil // already configured
-	}
 
 	host := os.Getenv("KUBERNETES_SERVICE_HOST")
 	// Wrap bare IPv6 addresses in brackets so the URL is valid.
