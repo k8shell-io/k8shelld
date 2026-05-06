@@ -53,7 +53,7 @@ func (s *Server) setupCredentialHelpers() {
 		}
 	}
 
-	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+	if s.config.SaToken.Enabled && os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
 		if err := s.setupKubernetesCredHelper(homeDir); err != nil {
 			s.logger.Error().Msgf("Failed to set up kubernetes credential helper: %v", err)
 		} else {

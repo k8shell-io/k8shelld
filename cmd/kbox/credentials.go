@@ -305,8 +305,9 @@ func kubernetesCredsHelper(operation string) {
 	switch resp.StatusCode {
 	case 200:
 		var cred struct {
-			Secret    string  `json:"secret"`
-			ExpiresAt *string `json:"expiresAt"` // RFC3339, optional
+			Secret      string  `json:"secret"`
+			ExpiresAt   *string `json:"expiresAt"` // RFC3339, optional
+			CacheTokens bool    `json:"cacheTokens"`
 		}
 		if err := json.Unmarshal(bodyBytes, &cred); err != nil || cred.Secret == "" {
 			os.Exit(1)
@@ -315,7 +316,15 @@ func kubernetesCredsHelper(operation string) {
 		if cred.ExpiresAt != nil {
 			expiry = *cred.ExpiresAt
 		}
-		saveKubeTokenCache(&kubeTokenCache{Token: cred.Secret, ExpiresAt: expiry})
+		if cred.CacheTokens {
+			saveKubeTokenCache(&kubeTokenCache{Token: cred.Secret, ExpiresAt: expiry})
+		} else {
+			// Caching is disabled; remove any previously cached token so it
+			// is not served on the next invocation.
+			if path := kubeTokenCacheFile(); path != "" {
+				_ = os.Remove(path)
+			}
+		}
 		status := fmt.Sprintf(`"token":%q`, cred.Secret)
 		if expiry != "" {
 			status += fmt.Sprintf(`,"expirationTimestamp":%q`, expiry)

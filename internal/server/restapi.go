@@ -213,6 +213,10 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if credsType == "kubernetes" {
+		if !a.server.config.SaToken.Enabled {
+			http.Error(w, "Kubernetes SA token credential helper is not enabled", http.StatusServiceUnavailable)
+			return
+		}
 		scope := currentPodNamespace()
 		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "kubernetes", scope)
 		if err != nil {
@@ -221,10 +225,11 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		type kubeCredResp struct {
-			Secret    string     `json:"secret"`
-			ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+			Secret      string     `json:"secret"`
+			ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+			CacheTokens bool       `json:"cacheTokens"`
 		}
-		data, _ := json.Marshal(kubeCredResp{Secret: cred.Secret, ExpiresAt: cred.ExpiresAt})
+		data, _ := json.Marshal(kubeCredResp{Secret: cred.Secret, ExpiresAt: cred.ExpiresAt, CacheTokens: a.server.config.SaToken.CacheTokens})
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write(data); err != nil {
 			a.logger.Error().Msgf("Failed to write kubernetes credentials response: %v", err)
