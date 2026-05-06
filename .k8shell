@@ -5,10 +5,11 @@ blueprint:
     cpu: 8
     memory: 8Gi
   network:
-    networkPolicy: system
+    networkPolicyClass: system
 
   initScripts:
-    - init_repo@&: |
+    - name: repo-setup
+      script: |
         go env -w GOPRIVATE=github.com/k8shell-io/*
         cd $HOME/$GIT_REPONAME
         GOPATH="$HOME/go" go mod tidy
