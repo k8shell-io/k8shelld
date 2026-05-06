@@ -150,7 +150,7 @@ func (a *RESTService) loggingMiddleware(next http.Handler) http.Handler {
 
 func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 	if a.server.apiClientx == nil {
-		http.Error(w, "API server not configured.", http.StatusBadRequest)
+		http.Error(w, "API server not configured.", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -202,7 +202,7 @@ func (a *RESTService) Shutdown(w http.ResponseWriter, r *http.Request) {
 
 func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 	if a.server.apiClientx == nil {
-		http.Error(w, "API server not configured.", http.StatusBadRequest)
+		http.Error(w, "API server not configured.", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -489,7 +489,7 @@ func (a *RESTService) GetLogs(w http.ResponseWriter, r *http.Request) {
 
 func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Request) {
 	if a.server.apiClientx == nil {
-		http.Error(w, "API server not configured.", http.StatusBadRequest)
+		http.Error(w, "API server not configured.", http.StatusServiceUnavailable)
 		return
 	}
 

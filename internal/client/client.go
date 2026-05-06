@@ -41,7 +41,7 @@ func MakeRequest(method string, url string, headers map[string]string, data io.R
 
 	if resp.StatusCode >= 500 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API call failed with status %d: %s", resp.StatusCode, bodyBytes)
+		return nil, fmt.Errorf("%s", strings.TrimSpace(string(bodyBytes)))
 	}
 	return resp, nil
 }

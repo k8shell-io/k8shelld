@@ -35,6 +35,11 @@ func currentPodNamespace() string {
 // setupCredentialHelpers configures git, docker, and kubernetes credential helpers
 // in the user's home directory based on which services are available.
 func (s *Server) setupCredentialHelpers() {
+	if !s.config.System.ApiServer.Enabled {
+		s.logger.Info().Msg("API server not enabled, skipping credential helper setup")
+		return
+	}
+
 	homeDir := s.user.GetHomeDir()
 
 	if s.blueprint != nil && s.blueprint.Podman.Enabled {
