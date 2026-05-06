@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -323,20 +324,15 @@ func (s *Server) runInitScripts(
 		return fmt.Errorf("failed to list init scripts: %s", scriptsDir)
 	}
 
-	s.logger.Info().Msgf("Running %d init scripts in background.", len(scripts))
-	var wg sync.WaitGroup
-	for _, scriptPath := range scripts {
-		wg.Add(1)
-		go func(sp string) {
-			defer wg.Done()
+	sort.Strings(scripts)
+	s.logger.Info().Msgf("Running %d init scripts sequentially in background.", len(scripts))
+	go func() {
+		for _, sp := range scripts {
 			s.logger.Info().Msgf("Running %s.", sp)
 			if err := s.runScriptHelper(scriptsDir, sp, flagDir, []string{}); err != nil {
 				s.logger.Error().Msgf("Failed to run init script %s: %v", sp, err)
 			}
-		}(scriptPath)
-	}
-	go func() {
-		wg.Wait()
+		}
 		s.logger.Info().Msg("All init scripts completed.")
 		if onComplete != nil {
 			onComplete()
