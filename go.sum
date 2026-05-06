@@ -43,8 +43,12 @@ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/k8shell-io/api-server v0.14.5-0.20260505140434-2191f411da24 h1:0EYnRvijHkZw/yPiGdP/v/QHgVYSf7WvYSsP2uhh6y4=
 github.com/k8shell-io/api-server v0.14.5-0.20260505140434-2191f411da24/go.mod h1:kBB9+UrkiGvWcX0FlgeRqz76OCHJSSAcRAKPbdz21ts=
+github.com/k8shell-io/api-server v0.14.5-0.20260506105527-2c896a4c028c h1:t/58gUCkot2ZX6BmE/aBLZPlxWkHGJ3WCupwy3uRKE8=
+github.com/k8shell-io/api-server v0.14.5-0.20260506105527-2c896a4c028c/go.mod h1:whg/iUlyI8JcSq5/l/Rwt5FWOAkF88qElUibLWdWWe4=
 github.com/k8shell-io/common v0.18.10 h1:MqhUg5mf1xSplGXTOUAthZ532u5ovlUfwOJfjnyUhio=
 github.com/k8shell-io/common v0.18.10/go.mod h1:E8dsb9ta4v3ne61AJgtRyTTbTkMMmKeCMAcXD+/9+cY=
+github.com/k8shell-io/common v0.18.11 h1:uRVKIK8JCR8YesviwULABf2cpDatSBDaTFbY9+lElpU=
+github.com/k8shell-io/common v0.18.11/go.mod h1:E8dsb9ta4v3ne61AJgtRyTTbTkMMmKeCMAcXD+/9+cY=
 github.com/kr/fs v0.1.0 h1:Jskdu9ieNAYnjxsi0LbQp1ulIKZV1LAFgK1tWhpZgl8=
 github.com/kr/fs v0.1.0/go.mod h1:FFnZGqtBN9Gxj7eW1uZ42v5BccTP0vu6NEaFoC2HwRg=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=

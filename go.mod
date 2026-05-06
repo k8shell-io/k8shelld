@@ -7,8 +7,8 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/gorilla/mux v1.8.1
-	github.com/k8shell-io/api-server v0.14.5-0.20260505140434-2191f411da24
-	github.com/k8shell-io/common v0.18.10
+	github.com/k8shell-io/api-server v0.14.5-0.20260506105527-2c896a4c028c
+	github.com/k8shell-io/common v0.18.11
 	github.com/pkg/sftp v1.13.10
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.9.1
