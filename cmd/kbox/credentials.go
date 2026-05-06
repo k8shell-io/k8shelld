@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/client"
 	"github.com/spf13/cobra"
@@ -217,11 +219,75 @@ func extractCredsFromJSON(data []byte) (string, string) {
 	return creds.Username, creds.Password
 }
 
+// kubeTokenCacheFile returns the path used to cache the kubernetes token
+// between kubectl invocations. Returns "" if the home directory is unavailable.
+func kubeTokenCacheFile() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".kube", "cache", "k8shell-credential.json")
+}
+
+type kubeTokenCache struct {
+	Token     string `json:"token"`
+	ExpiresAt string `json:"expiresAt,omitempty"` // RFC3339
+}
+
+// loadKubeTokenCache returns a cached token if it expires more than 60 seconds
+// from now, otherwise nil.
+func loadKubeTokenCache() *kubeTokenCache {
+	path := kubeTokenCacheFile()
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var ct kubeTokenCache
+	if err := json.Unmarshal(data, &ct); err != nil || ct.Token == "" {
+		return nil
+	}
+	if ct.ExpiresAt != "" {
+		if t, err := time.Parse(time.RFC3339, ct.ExpiresAt); err == nil {
+			if time.Until(t) <= 60*time.Second {
+				return nil // expiring soon, force refresh
+			}
+		}
+	}
+	return &ct
+}
+
+// saveKubeTokenCache writes the token to the cache file, ignoring errors.
+func saveKubeTokenCache(ct *kubeTokenCache) {
+	path := kubeTokenCacheFile()
+	if path == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	data, err := json.Marshal(ct)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, data, 0o600)
+}
+
 // kubernetesCredsHelper implements the kubectl exec credential plugin protocol
 // (client.authentication.k8s.io/v1beta1). It fetches a token from the k8shelld
 // REST API and returns it as an ExecCredential JSON object.
 func kubernetesCredsHelper(operation string) {
 	if operation != "get" {
+		os.Exit(0)
+	}
+
+	// Return cached token if still valid (more than 60s until expiry).
+	if cached := loadKubeTokenCache(); cached != nil {
+		status := fmt.Sprintf(`"token":%q`, cached.Token)
+		if cached.ExpiresAt != "" {
+			status += fmt.Sprintf(`,"expirationTimestamp":%q`, cached.ExpiresAt)
+		}
+		fmt.Printf(`{"apiVersion":"client.authentication.k8s.io/v1beta1","kind":"ExecCredential","status":{%s}}`, status)
 		os.Exit(0)
 	}
 
@@ -245,9 +311,14 @@ func kubernetesCredsHelper(operation string) {
 		if err := json.Unmarshal(bodyBytes, &cred); err != nil || cred.Secret == "" {
 			os.Exit(1)
 		}
+		expiry := ""
+		if cred.ExpiresAt != nil {
+			expiry = *cred.ExpiresAt
+		}
+		saveKubeTokenCache(&kubeTokenCache{Token: cred.Secret, ExpiresAt: expiry})
 		status := fmt.Sprintf(`"token":%q`, cred.Secret)
-		if cred.ExpiresAt != nil && *cred.ExpiresAt != "" {
-			status += fmt.Sprintf(`,"expirationTimestamp":%q`, *cred.ExpiresAt)
+		if expiry != "" {
+			status += fmt.Sprintf(`,"expirationTimestamp":%q`, expiry)
 		}
 		fmt.Printf(`{"apiVersion":"client.authentication.k8s.io/v1beta1","kind":"ExecCredential","status":{%s}}`, status)
 		os.Exit(0)
