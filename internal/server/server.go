@@ -59,19 +59,9 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		apiClient = client.NewClient(cfg.System.ApiServer.Address, "")
 	}
 
-	var jwtVerifier *authz.JWTVerifier
-	var err error
-	if !testMode {
-		if cfg.Identity.TokenPath == "" || cfg.Identity.PublicKeyPath == "" || cfg.Identity.SigningMethod == "" {
-			return nil, fmt.Errorf("identity config is incomplete: tokenPath, publicKeyPath and signingMethod are all required")
-		}
-		jwtVerifier, err = authz.NewJWTVerifier(authz.JWTVerifierConfig{
-			SigningMethod: cfg.Identity.SigningMethod,
-			PublicKeyFile: cfg.Identity.PublicKeyPath,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("create JWT verifier: %w", err)
-		}
+	jwtVerifier, err := newJWTVerifier()
+	if err != nil {
+		return nil, fmt.Errorf("error creating JWT verifier: %v", err)
 	}
 
 	s := &Server{
@@ -90,14 +80,14 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	s.blueprint = bp
 	s.sysInfo = system.NewSystemInfo(cfg, bp)
 
-	err = s.loadIdentity()
-	if err != nil {
-		return nil, fmt.Errorf("error loading identity: %v", err)
-	}
-
 	s.workspace = os.Getenv("WORKSPACE")
 	if s.workspace == "" {
 		return nil, fmt.Errorf("cannot get the workspace name from WORKSPACE environment variable")
+	}
+
+	err = s.loadIdentity()
+	if err != nil {
+		return nil, fmt.Errorf("error loading identity: %v", err)
 	}
 
 	if !s.testMode {
@@ -115,7 +105,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	}
 
 	s.grpcService, err = grpc.NewGRPCService(cfg, s.blueprint, s.user, s.jwtVerifier,
-		s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
+		s.procWatcher, s.apiClientx, s.appManager, s.sysInfo, s.RefreshFromToken)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
@@ -269,24 +259,19 @@ func (s *Server) Serve() {
 		}()
 	}
 
-	shutdownReason := make(chan string, 1)
 	if s.jwtVerifier != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.watchIdentity(ctx, shutdownReason)
+			s.watchIdentity(ctx)
 		}()
 	}
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 
-	select {
-	case sig := <-sigChan:
-		s.logger.Info().Msgf("Received signal: %s. Initiating shutdown...", sig)
-	case reason := <-shutdownReason:
-		s.logger.Warn().Msgf("Initiating shutdown: %s", reason)
-	}
+	sig := <-sigChan
+	s.logger.Info().Msgf("Received signal: %s. Initiating shutdown...", sig)
 
 	if !s.testMode {
 		wg.Add(1)

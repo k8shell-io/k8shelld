@@ -34,11 +34,6 @@ var (
 			PProf:    false,
 			LogLevel: DEFAULT_LOG_LEVEL,
 		},
-		Identity: config.Identity{
-			TokenPath:     "/run/secrets/identity-token",
-			PublicKeyPath: "/run/secrets/identity-public-key",
-			SigningMethod: "rs256",
-		},
 		TerminateOrphans: config.TerminateOrphans{
 			Enabled:       true,
 			CheckInterval: 10,
