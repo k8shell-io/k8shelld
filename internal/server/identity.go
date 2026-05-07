@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strings"
@@ -30,7 +31,11 @@ func newJWTVerifier() (*authz.JWTVerifier, error) {
 	if signingMethod == "hs256" {
 		jwtCfg.SecretKey = publicKey
 	} else {
-		jwtCfg.PublicKey = publicKey
+		decoded, err := base64.StdEncoding.DecodeString(publicKey)
+		if err != nil {
+			return nil, fmt.Errorf("base64-decode %s: %w", JWT_VERIFIER_PUBLIC_KEY_ENV, err)
+		}
+		jwtCfg.PublicKey = string(decoded)
 	}
 	jwtVerifier, err := authz.NewJWTVerifier(jwtCfg)
 	if err != nil {
