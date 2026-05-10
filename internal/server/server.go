@@ -38,6 +38,7 @@ type Server struct {
 	user        *models.User
 	config      *config.Config
 	blueprint   *commonmodels.Blueprint
+	username    string
 	workspace   string
 	restService *RESTService
 	grpcService *grpc.GRPCService
@@ -80,6 +81,11 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	s.blueprint = bp
 	s.sysInfo = system.NewSystemInfo(cfg, bp)
 
+	s.username = os.Getenv("USERNAME")
+	if s.username == "" {
+		return nil, fmt.Errorf("cannot get the username from USERNAME environment variable")
+	}
+
 	s.workspace = os.Getenv("WORKSPACE")
 	if s.workspace == "" {
 		return nil, fmt.Errorf("cannot get the workspace name from WORKSPACE environment variable")
@@ -105,7 +111,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	}
 
 	s.grpcService, err = grpc.NewGRPCService(cfg, s.blueprint, s.user, s.jwtVerifier,
-		s.procWatcher, s.apiClientx, s.appManager, s.sysInfo, s.RefreshFromToken)
+		s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
@@ -213,7 +219,6 @@ func (s *Server) Serve() {
 	defer cancel()
 	var wg sync.WaitGroup
 
-	// gRPC handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -222,21 +227,18 @@ func (s *Server) Serve() {
 		}
 	}()
 
-	// REST handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		s.restService.Serve(ctx)
 	}()
 
-	// process watcher handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		s.procWatcher.Run(ctx)
 	}()
 
-	// system info handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -246,7 +248,6 @@ func (s *Server) Serve() {
 		}
 	}()
 
-	// pprof if enabled
 	if s.pprof {
 		wg.Add(1)
 		go func() {
@@ -259,7 +260,7 @@ func (s *Server) Serve() {
 		}()
 	}
 
-	if s.jwtVerifier != nil {
+	if s.jwtVerifier != nil && s.apiClientx != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

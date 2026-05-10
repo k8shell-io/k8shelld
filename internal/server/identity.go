@@ -55,14 +55,9 @@ func (s *Server) loadIdentity() error {
 		return nil
 	}
 
-	username := usernameFromWorkspace(s.workspace)
-	if username == "" {
-		return fmt.Errorf("cannot derive username from WORKSPACE=%q", s.workspace)
-	}
-
-	tokenStr, err := s.apiClientx.IssueUserToken(context.Background(), username)
+	tokenStr, err := s.apiClientx.IssueUserToken(context.Background(), s.username)
 	if err != nil {
-		return fmt.Errorf("issue identity token for user %s: %w", username, err)
+		return fmt.Errorf("issue identity token for user %s: %w", s.username, err)
 	}
 
 	claims, err := s.jwtVerifier.VerifyToken(tokenStr)
@@ -70,8 +65,8 @@ func (s *Server) loadIdentity() error {
 		return fmt.Errorf("verify identity token: %w", err)
 	}
 
-	if claims.Subject != username {
-		return fmt.Errorf("issued token subject %q does not match workspace user %q", claims.Subject, username)
+	if claims.Subject != s.username {
+		return fmt.Errorf("issued token subject %q does not match workspace user %q", claims.Subject, s.username)
 	}
 
 	s.user = models.NewUser(claims, tokenStr)
@@ -79,15 +74,6 @@ func (s *Server) loadIdentity() error {
 	s.logger.Debug().Msg("Identity token loaded: " + s.user.String())
 
 	return nil
-}
-
-func usernameFromWorkspace(workspace string) string {
-	workspace = strings.TrimSpace(workspace)
-	if workspace == "" {
-		return ""
-	}
-	parts := strings.SplitN(workspace, "-", 2)
-	return parts[0]
 }
 
 // watchIdentity monitors the in-memory token expiry at a fixed interval.
@@ -124,8 +110,7 @@ func (s *Server) renewIdentityTokenIfNeeded(ctx context.Context) error {
 		return nil
 	}
 
-	claims := s.user.ClaimsSnapshot()
-	if time.Until(claims.ExpiresAt.Time) > identityRenewBeforeExpiry {
+	if time.Until(s.user.ClaimsSnapshot().ExpiresAt.Time) > identityRenewBeforeExpiry {
 		return nil
 	}
 
@@ -135,7 +120,21 @@ func (s *Server) renewIdentityTokenIfNeeded(ctx context.Context) error {
 		return fmt.Errorf("issue token for user %s: %w", username, err)
 	}
 
-	return s.RefreshFromToken(tokenStr)
+	claims, err := s.jwtVerifier.VerifyToken(tokenStr)
+	if err != nil {
+		return fmt.Errorf("verify token: %w", err)
+	}
+
+	_, err = s.user.Update(claims, tokenStr)
+	if err != nil {
+		return fmt.Errorf("update user from refresh token: %w", err)
+	}
+
+	s.logger.Info().Msgf("Identity token refreshed, expires at: %s",
+		claims.ExpiresAt.Time.UTC().Format(time.RFC3339))
+	s.apiClientx.UpdateToken(tokenStr)
+
+	return nil
 }
 
 // checkTokenExpiry returns a non-empty reason string when the current in-memory
@@ -146,32 +145,4 @@ func (s *Server) checkTokenExpiry() string {
 		return fmt.Sprintf("identity token is no longer valid: %v", err)
 	}
 	return ""
-}
-
-// RefreshFromToken is called on every Handshake to replace the in-memory
-// token with the one provided by the client. It verifies the token, then
-// calls User.Update to atomically swap claims and propagate sudo changes.
-func (s *Server) RefreshFromToken(tokenStr string) error {
-	if s.jwtVerifier == nil {
-		return nil // test mode
-	}
-
-	claims, err := s.jwtVerifier.VerifyToken(tokenStr)
-	if err != nil {
-		return fmt.Errorf("verify token: %w", err)
-	}
-
-	updated, err := s.user.Update(claims, tokenStr)
-	if err != nil {
-		return fmt.Errorf("update user from refresh token: %w", err)
-	}
-	if updated {
-		s.logger.Info().Msgf("Identity token refreshed, expires at: %s",
-			claims.ExpiresAt.Time.UTC().Format(time.RFC3339))
-		if s.apiClientx != nil {
-			s.apiClientx.UpdateToken(tokenStr)
-		}
-	}
-
-	return nil
 }

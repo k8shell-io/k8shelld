@@ -63,7 +63,6 @@ type GRPCService struct {
 	CommandService     *CommandServiceServer   // The command service
 	sysInfo            *system.SystemInfo      // The system information
 	jwtVerifier        *authz.JWTVerifier      // The JWT verifier for the identity token
-	updateToken        func(string) error      // Called on each token refresh
 	detachedSessionTTL time.Duration           // max TTL for sessions with no client; 0 = no GC
 	allowSessionDetach bool                    // whether clients may detach/attach PTY sessions
 	allowUnlimitedTTL  bool                    // whether clients may request ttl=0 (never expire)
@@ -105,7 +104,7 @@ func getSessionStatus(session *SessionData) string {
 // NewGRPCAPI creates a new GRPCApiService
 func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, user *models.User,
 	jwtVerifier *authz.JWTVerifier, procWatcher *system.ProcessWatcher, apiClient *apiClient.Client,
-	appManager *apps.AppManager, sysInfo *system.SystemInfo, updateToken func(string) error) (*GRPCService, error) {
+	appManager *apps.AppManager, sysInfo *system.SystemInfo) (*GRPCService, error) {
 
 	logger := logger.NewLogger("grpc")
 
@@ -135,7 +134,6 @@ func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, us
 		CommandService:     NewCommandServiceServer(),
 		sysInfo:            sysInfo,
 		jwtVerifier:        jwtVerifier,
-		updateToken:        updateToken,
 		detachedSessionTTL: detachedTTL,
 		allowSessionDetach: config.Shells.AllowSessionDetach,
 		allowUnlimitedTTL:  config.Shells.AllowUnlimittedTTL,
@@ -253,13 +251,6 @@ func (s *GRPCService) callerValidationInterceptor() grpc.UnaryServerInterceptor 
 		if !s.user.TokenEqual(tokenStr) {
 			return nil, status.Errorf(codes.PermissionDenied, "invalid token: caller token does not match workspace token")
 		}
-
-		if s.updateToken != nil {
-			if err := s.updateToken(tokenStr); err != nil {
-				return nil, status.Errorf(codes.PermissionDenied, "token validation failed: %v", err)
-			}
-		}
-
 		return handler(ctx, req)
 	}
 }
