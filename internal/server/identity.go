@@ -13,9 +13,9 @@ import (
 )
 
 const identityRefreshInterval = 15 * time.Second
+const identityRenewBeforeExpiry = 2 * time.Minute
 const JWT_VERIFIER_SIGNING_METHOD_ENV = "JWT_VERIFIER_SIGNING_METHOD"
 const JWT_VERIFIER_PUBLIC_KEY_ENV = "JWT_VERIFIER_PUBLIC_KEY"
-const IDENTITY_TOKEN_ENV = "IDENTITY_TOKEN"
 
 // newJWTVerifier creates a JWTVerifier based on environment variables.
 func newJWTVerifier() (*authz.JWTVerifier, error) {
@@ -44,16 +44,25 @@ func newJWTVerifier() (*authz.JWTVerifier, error) {
 	return jwtVerifier, nil
 }
 
-// loadIdentity reads the identity JWT from the IDENTITY_TOKEN environment
-// variable, verifies it and initialises s.user with the verified claims.
+// loadIdentity retrieves the identity JWT from the API server, verifies it and
+// initializes s.user with the verified claims.
 func (s *Server) loadIdentity() error {
 	if s.testMode {
 		return nil
 	}
+	if s.apiClientx == nil {
+		s.logger.Warn().Msg("API server is not enabled, skipping identity load")
+		return nil
+	}
 
-	tokenStr := strings.TrimSpace(os.Getenv(IDENTITY_TOKEN_ENV))
-	if tokenStr == "" {
-		return fmt.Errorf(" %s environment variable is required", IDENTITY_TOKEN_ENV)
+	username := usernameFromWorkspace(s.workspace)
+	if username == "" {
+		return fmt.Errorf("cannot derive username from WORKSPACE=%q", s.workspace)
+	}
+
+	tokenStr, err := s.apiClientx.IssueUserToken(context.Background(), username)
+	if err != nil {
+		return fmt.Errorf("issue identity token for user %s: %w", username, err)
 	}
 
 	claims, err := s.jwtVerifier.VerifyToken(tokenStr)
@@ -61,13 +70,24 @@ func (s *Server) loadIdentity() error {
 		return fmt.Errorf("verify identity token: %w", err)
 	}
 
-	s.user = models.NewUser(claims, tokenStr)
-	if s.apiClientx != nil {
-		s.apiClientx.UpdateToken(tokenStr)
+	if claims.Subject != username {
+		return fmt.Errorf("issued token subject %q does not match workspace user %q", claims.Subject, username)
 	}
+
+	s.user = models.NewUser(claims, tokenStr)
+	s.apiClientx.UpdateToken(tokenStr)
 	s.logger.Debug().Msg("Identity token loaded: " + s.user.String())
 
 	return nil
+}
+
+func usernameFromWorkspace(workspace string) string {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return ""
+	}
+	parts := strings.SplitN(workspace, "-", 2)
+	return parts[0]
 }
 
 // watchIdentity monitors the in-memory token expiry at a fixed interval.
@@ -83,6 +103,9 @@ func (s *Server) watchIdentity(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if err := s.renewIdentityTokenIfNeeded(ctx); err != nil {
+				s.logger.Warn().Msgf("Failed to renew identity token: %v", err)
+			}
 			if reason := s.checkTokenExpiry(); reason != "" {
 				if !expiryReported {
 					s.logger.Warn().Msgf("Identity token expired: %s", reason)
@@ -94,6 +117,25 @@ func (s *Server) watchIdentity(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (s *Server) renewIdentityTokenIfNeeded(ctx context.Context) error {
+	if s.apiClientx == nil || s.user == nil {
+		return nil
+	}
+
+	claims := s.user.ClaimsSnapshot()
+	if time.Until(claims.ExpiresAt.Time) > identityRenewBeforeExpiry {
+		return nil
+	}
+
+	username := s.user.GetUsername()
+	tokenStr, err := s.apiClientx.IssueUserToken(ctx, username)
+	if err != nil {
+		return fmt.Errorf("issue token for user %s: %w", username, err)
+	}
+
+	return s.RefreshFromToken(tokenStr)
 }
 
 // checkTokenExpiry returns a non-empty reason string when the current in-memory
