@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -173,6 +174,9 @@ func (s *CommandServiceServer) SendCommand(ctx context.Context, command string) 
 	// Wait for the reply or cancellation.
 	select {
 	case reply := <-replyCh:
+		if strings.HasPrefix(reply, "error:") {
+			return "", errors.New(strings.TrimSpace(strings.TrimPrefix(reply, "error:")))
+		}
 		return reply, nil
 	case <-ctx.Done():
 		s.mu.Lock()
