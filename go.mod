@@ -8,7 +8,7 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/gorilla/mux v1.8.1
 	github.com/k8shell-io/api-server v0.14.5-0.20260510163015-954d37605e03
-	github.com/k8shell-io/common v0.20.9
+	github.com/k8shell-io/common v0.20.20
 	github.com/pkg/sftp v1.13.10
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.9.1
