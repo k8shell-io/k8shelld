@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -37,6 +38,7 @@ type Server struct {
 	user        *models.User
 	config      *config.Config
 	blueprint   *commonmodels.Blueprint
+	username    string
 	workspace   string
 	restService *RESTService
 	grpcService *grpc.GRPCService
@@ -58,19 +60,9 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		apiClient = client.NewClient(cfg.System.ApiServer.Address, "")
 	}
 
-	var jwtVerifier *authz.JWTVerifier
-	var err error
-	if !testMode {
-		if cfg.Identity.TokenPath == "" || cfg.Identity.PublicKeyPath == "" || cfg.Identity.SigningMethod == "" {
-			return nil, fmt.Errorf("identity config is incomplete: tokenPath, publicKeyPath and signingMethod are all required")
-		}
-		jwtVerifier, err = authz.NewJWTVerifier(authz.JWTVerifierConfig{
-			SigningMethod: cfg.Identity.SigningMethod,
-			PublicKeyFile: cfg.Identity.PublicKeyPath,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("create JWT verifier: %w", err)
-		}
+	jwtVerifier, err := newJWTVerifier()
+	if err != nil {
+		return nil, fmt.Errorf("error creating JWT verifier: %v", err)
 	}
 
 	s := &Server{
@@ -89,14 +81,19 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	s.blueprint = bp
 	s.sysInfo = system.NewSystemInfo(cfg, bp)
 
-	err = s.loadIdentity()
-	if err != nil {
-		return nil, fmt.Errorf("error loading identity: %v", err)
+	s.username = os.Getenv("USERNAME")
+	if s.username == "" {
+		return nil, fmt.Errorf("cannot get the username from USERNAME environment variable")
 	}
 
 	s.workspace = os.Getenv("WORKSPACE")
 	if s.workspace == "" {
 		return nil, fmt.Errorf("cannot get the workspace name from WORKSPACE environment variable")
+	}
+
+	err = s.loadIdentity()
+	if err != nil {
+		return nil, fmt.Errorf("error loading identity: %v", err)
 	}
 
 	if !s.testMode {
@@ -138,14 +135,13 @@ func (s *Server) initialize() error {
 		return nil
 	}
 
-	err := exec.Command("kbox", "tools-init").Run()
-	if err != nil {
-		s.logger.Error().Msgf("Error running kbox tools-init: %v", err)
-	}
+	s.setupToolWrappers()
 
 	if err := system.CreateUser(s.user); err != nil {
 		s.logger.Fatal().Msgf("Error creating user: %v", err)
 	}
+
+	s.setupCredentialHelpers()
 
 	if s.blueprint != nil && s.blueprint.Podman.Enabled {
 		uid := int(s.user.GetUID())
@@ -186,7 +182,7 @@ func (s *Server) initialize() error {
 		}
 	}
 
-	err = s.runInitScripts(config.InitScriptsDir, s.user, func() {
+	runErr := s.runInitScripts(config.InitScriptsDir, s.user, func() {
 		s.logger.Info().Msg("Init scripts finished, running auto-start apps")
 
 		appMgr := s.appManager
@@ -211,8 +207,8 @@ func (s *Server) initialize() error {
 			}
 		}
 	})
-	if err != nil {
-		s.logger.Error().Msgf("Failed to run init scripts: %v", err)
+	if runErr != nil {
+		s.logger.Error().Msgf("Failed to run init scripts: %v", runErr)
 	}
 
 	return nil
@@ -223,7 +219,6 @@ func (s *Server) Serve() {
 	defer cancel()
 	var wg sync.WaitGroup
 
-	// gRPC handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -232,21 +227,18 @@ func (s *Server) Serve() {
 		}
 	}()
 
-	// REST handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		s.restService.Serve(ctx)
 	}()
 
-	// process watcher handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		s.procWatcher.Run(ctx)
 	}()
 
-	// system info handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -256,7 +248,6 @@ func (s *Server) Serve() {
 		}
 	}()
 
-	// pprof if enabled
 	if s.pprof {
 		wg.Add(1)
 		go func() {
@@ -269,24 +260,19 @@ func (s *Server) Serve() {
 		}()
 	}
 
-	shutdownReason := make(chan string, 1)
-	if s.jwtVerifier != nil {
+	if s.jwtVerifier != nil && s.apiClientx != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.watchIdentity(ctx, shutdownReason)
+			s.watchIdentity(ctx)
 		}()
 	}
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 
-	select {
-	case sig := <-sigChan:
-		s.logger.Info().Msgf("Received signal: %s. Initiating shutdown...", sig)
-	case reason := <-shutdownReason:
-		s.logger.Warn().Msgf("Initiating shutdown: %s", reason)
-	}
+	sig := <-sigChan
+	s.logger.Info().Msgf("Received signal: %s. Initiating shutdown...", sig)
 
 	if !s.testMode {
 		wg.Add(1)
@@ -324,20 +310,15 @@ func (s *Server) runInitScripts(
 		return fmt.Errorf("failed to list init scripts: %s", scriptsDir)
 	}
 
-	s.logger.Info().Msgf("Running %d init scripts in background.", len(scripts))
-	var wg sync.WaitGroup
-	for _, scriptPath := range scripts {
-		wg.Add(1)
-		go func(sp string) {
-			defer wg.Done()
+	sort.Strings(scripts)
+	s.logger.Info().Msgf("Running %d init scripts sequentially in background.", len(scripts))
+	go func() {
+		for _, sp := range scripts {
 			s.logger.Info().Msgf("Running %s.", sp)
 			if err := s.runScriptHelper(scriptsDir, sp, flagDir, []string{}); err != nil {
 				s.logger.Error().Msgf("Failed to run init script %s: %v", sp, err)
 			}
-		}(scriptPath)
-	}
-	go func() {
-		wg.Wait()
+		}
 		s.logger.Info().Msg("All init scripts completed.")
 		if onComplete != nil {
 			onComplete()

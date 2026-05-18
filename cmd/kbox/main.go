@@ -31,7 +31,6 @@ func init() {
 	})
 
 	kboxCmd.AddCommand(CredentialsCmd)
-	kboxCmd.AddCommand(ToolsInitCmd)
 	kboxCmd.AddCommand(UptimeCmd)
 	kboxCmd.AddCommand(InfoCmd)
 	kboxCmd.AddCommand(StreamsCmd)

@@ -80,6 +80,9 @@ func (u *User) Update(claims *authz.UserClaims, token string) (bool, error) {
 	if claims.Subject != u.username {
 		return false, fmt.Errorf("cannot update user subject from %s to %s", u.username, claims.Subject)
 	}
+	if claims.Source != u.claims.Source {
+		return false, fmt.Errorf("cannot update user source from %s to %s", u.claims.Source, claims.Source)
+	}
 	if claims.UID != u.uid || claims.GID != u.gid {
 		return false, fmt.Errorf("cannot update user UID/GID from %d/%d to %d/%d", u.uid, u.gid, claims.UID, claims.GID)
 	}
@@ -94,13 +97,29 @@ func (u *User) TokenEqual(token string) bool {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
 	eq := token == u.userToken
-	if !eq && token == u.previousToken {
-		// previous token must not have expired yet to be considered equal
-		_, err := authz.ParseUnverifiedClaims(token, true)
-		if err == nil {
-			eq = true
+
+	if !eq {
+		// token was verified before calling TokenEqual
+		claims1, err1 := authz.ParseUnverifiedClaims(token, true)
+		if err1 != nil {
+			return false
 		}
+		claims2, err2 := authz.ParseUnverifiedClaims(u.previousToken, false)
+		if err2 != nil {
+			return false
+		}
+		// previous token might be expired, but if the claims match then we can consider it equal
+		eq = claims1.Subject == claims2.Subject && claims1.Source == claims2.Source &&
+			claims1.UID == claims2.UID && claims1.GID == claims2.GID
 	}
+
+	// if !eq && token == u.previousToken {
+	// 	// previous token must not have expired yet to be considered equal
+	// 	_, err := authz.ParseUnverifiedClaims(token, true)
+	// 	if err == nil {
+	// 		eq = true
+	// 	}
+	// }
 	return eq
 }
 

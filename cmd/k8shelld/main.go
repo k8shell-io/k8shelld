@@ -33,7 +33,8 @@ func main() {
 		}
 
 		if os.Getpid() != 1 {
-			logger.Fatal().Msg("k8shelld must run as PID 1.")
+			logger.Warn().Msg("k8shelld is not running as PID 1.")
+			// logger.Fatal().Msg("k8shelld must run as PID 1.")
 		}
 	}
 

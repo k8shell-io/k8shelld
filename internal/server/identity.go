@@ -2,53 +2,86 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/k8shell-io/common/pkg/authz"
 	"github.com/k8shell-io/k8shelld/internal/models"
-	"github.com/k8shell-io/k8shelld/internal/system"
 )
 
 const identityRefreshInterval = 15 * time.Second
+const identityRenewBeforeExpiry = 2 * time.Minute
+const JWT_VERIFIER_SIGNING_METHOD_ENV = "JWT_VERIFIER_SIGNING_METHOD"
+const JWT_VERIFIER_PUBLIC_KEY_ENV = "JWT_VERIFIER_PUBLIC_KEY"
 
-// loadIdentity reads the identity JWT from the path configured in
-// cfg.Identity, verifies it using the configured public key and signing method,
-// and populates cfg.User with the verified claims.
+// newJWTVerifier creates a JWTVerifier based on environment variables.
+func newJWTVerifier() (*authz.JWTVerifier, error) {
+	signingMethod := strings.TrimSpace(os.Getenv(JWT_VERIFIER_SIGNING_METHOD_ENV))
+	if signingMethod == "" {
+		return nil, fmt.Errorf("identity signing method is required (set %s or identity.signingMethod in config)", JWT_VERIFIER_SIGNING_METHOD_ENV)
+	}
+	publicKey := strings.TrimSpace(os.Getenv(JWT_VERIFIER_PUBLIC_KEY_ENV))
+	if publicKey == "" {
+		return nil, fmt.Errorf(" %s environment variable is required", JWT_VERIFIER_PUBLIC_KEY_ENV)
+	}
+	jwtCfg := authz.JWTVerifierConfig{SigningMethod: signingMethod}
+	if signingMethod == "hs256" {
+		jwtCfg.SecretKey = publicKey
+	} else {
+		decoded, err := base64.StdEncoding.DecodeString(publicKey)
+		if err != nil {
+			return nil, fmt.Errorf("base64-decode %s: %w", JWT_VERIFIER_PUBLIC_KEY_ENV, err)
+		}
+		jwtCfg.PublicKey = string(decoded)
+	}
+	jwtVerifier, err := authz.NewJWTVerifier(jwtCfg)
+	if err != nil {
+		return nil, fmt.Errorf("create JWT verifier: %w", err)
+	}
+	return jwtVerifier, nil
+}
+
+// loadIdentity retrieves the identity JWT from the API server, verifies it and
+// initializes s.user with the verified claims.
 func (s *Server) loadIdentity() error {
 	if s.testMode {
 		return nil
 	}
-
-	tokenBytes, err := os.ReadFile(s.config.Identity.TokenPath)
-	if err != nil {
-		return fmt.Errorf("read identity token: %w", err)
+	if s.apiClientx == nil {
+		s.logger.Warn().Msg("API server is not enabled, skipping identity load")
+		return nil
 	}
-	tokenStr := strings.TrimSpace(string(tokenBytes))
+
+	tokenStr, err := s.apiClientx.IssueUserToken(context.Background(), s.username)
+	if err != nil {
+		return fmt.Errorf("issue identity token for user %s: %w", s.username, err)
+	}
 
 	claims, err := s.jwtVerifier.VerifyToken(tokenStr)
 	if err != nil {
 		return fmt.Errorf("verify identity token: %w", err)
 	}
 
-	s.user = models.NewUser(claims, tokenStr)
-	if s.apiClientx != nil {
-		s.apiClientx.UpdateToken(tokenStr)
+	if claims.Subject != s.username {
+		return fmt.Errorf("issued token subject %q does not match workspace user %q", claims.Subject, s.username)
 	}
+
+	s.user = models.NewUser(claims, tokenStr)
+	s.apiClientx.UpdateToken(tokenStr)
 	s.logger.Debug().Msg("Identity token loaded: " + s.user.String())
 
 	return nil
 }
 
-// watchIdentityToken polls the identity token file at a fixed interval.  When
-// it detects that the token is no longer valid (expired or unreadable) it sends
-// a human-readable shutdown reason to the provided channel and returns.
-//
-// The goroutine also returns cleanly when ctx is cancelled so that normal
-// signal-driven shutdowns do not leave it running.
-func (s *Server) watchIdentity(ctx context.Context, shutdown chan<- string) {
+// watchIdentity monitors the in-memory token expiry at a fixed interval.
+// When the current token has expired it sends a shutdown reason and returns.
+// The goroutine exits cleanly when ctx is cancelled.
+func (s *Server) watchIdentity(ctx context.Context) {
 	ticker := time.NewTicker(identityRefreshInterval)
+	expiryReported := false
 	defer ticker.Stop()
 
 	for {
@@ -56,57 +89,60 @@ func (s *Server) watchIdentity(ctx context.Context, shutdown chan<- string) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if reason := s.refreshIdentity(); reason != "" {
-				s.logger.Warn().Msgf("Identity token refresh failed: %s", reason)
-				select {
-				case shutdown <- reason:
-				default:
+			if err := s.renewIdentityTokenIfNeeded(ctx); err != nil {
+				s.logger.Warn().Msgf("Failed to renew identity token: %v", err)
+			}
+			if reason := s.checkTokenExpiry(); reason != "" {
+				if !expiryReported {
+					s.logger.Warn().Msgf("Identity token expired: %s", reason)
+					expiryReported = true
 				}
-				return
+			} else if expiryReported {
+				s.logger.Info().Msg("Identity token is valid again")
+				expiryReported = false
 			}
 		}
 	}
 }
 
-// checkIdentityToken reads the current identity token file and verifies it
-// using the stored JWTVerifier.  Returns a non-empty reason string when the
-// token is expired or otherwise invalid, empty string when all is well.
-func (s *Server) refreshIdentity() string {
-	data, err := os.ReadFile(s.config.Identity.TokenPath)
+func (s *Server) renewIdentityTokenIfNeeded(ctx context.Context) error {
+	if s.apiClientx == nil || s.user == nil {
+		return nil
+	}
+
+	if time.Until(s.user.ClaimsSnapshot().ExpiresAt.Time) > identityRenewBeforeExpiry {
+		return nil
+	}
+
+	username := s.user.GetUsername()
+	tokenStr, err := s.apiClientx.IssueUserToken(ctx, username)
 	if err != nil {
-		return fmt.Sprintf("failed to read identity token: %v", err)
+		return fmt.Errorf("issue token for user %s: %w", username, err)
 	}
 
-	tokenStr := strings.TrimSpace(string(data))
-	token, err := s.jwtVerifier.VerifyToken(tokenStr)
+	claims, err := s.jwtVerifier.VerifyToken(tokenStr)
 	if err != nil {
-		s.logger.Error().Msg("Identity token is not valid: " + err.Error())
-		return ""
+		return fmt.Errorf("verify token: %w", err)
 	}
 
-	oldSudo := s.user.SudoEnabled()
-
-	updated, err := s.user.Update(token, tokenStr)
+	_, err = s.user.Update(claims, tokenStr)
 	if err != nil {
-		return fmt.Sprintf("failed to update user information from new token: %v", err)
-	}
-	if updated {
-		s.logger.Info().Msg("Identity token has been refreshed, will expire at: " + token.ExpiresAt.Time.UTC().Format(time.RFC3339))
-		if token.Sudo != oldSudo {
-			if err := system.ApplySudo(s.user.GetUsername(), token.Sudo); err != nil {
-				s.logger.Error().Msgf("Failed to apply sudo change for user %s: %v", s.user.GetUsername(), err)
-			} else {
-				action := "disabled"
-				if token.Sudo {
-					action = "enabled"
-				}
-				s.logger.Info().Msgf("Sudo %s for user %s", action, s.user.GetUsername())
-			}
-		}
-
-		// update the token in the API client to use the refreshed token for any API calls
-		s.apiClientx.UpdateToken(tokenStr)
+		return fmt.Errorf("update user from refresh token: %w", err)
 	}
 
+	s.logger.Info().Msgf("Identity token refreshed, expires at: %s",
+		claims.ExpiresAt.Time.UTC().Format(time.RFC3339))
+	s.apiClientx.UpdateToken(tokenStr)
+
+	return nil
+}
+
+// checkTokenExpiry returns a non-empty reason string when the current in-memory
+// token is expired, empty string when all is well.
+func (s *Server) checkTokenExpiry() string {
+	tokenStr := s.user.GetUserToken()
+	if _, err := s.jwtVerifier.VerifyToken(tokenStr); err != nil {
+		return fmt.Sprintf("identity token is no longer valid: %v", err)
+	}
 	return ""
 }

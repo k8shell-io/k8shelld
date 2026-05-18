@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/k8shell-io/k8shelld/internal/client"
 	"github.com/spf13/cobra"
@@ -43,12 +45,23 @@ var gitCredsHelperCmd = &cobra.Command{
 	},
 }
 
+var kubernetesCredsHelperCmd = &cobra.Command{
+	Use:   "kubernetes",
+	Short: "Kubernetes credentials helper",
+	Long:  "Kubernetes exec credentials helper (client.authentication.k8s.io/v1beta1)",
+	Run: func(cmd *cobra.Command, args []string) {
+		kubernetesCredsHelper(operation)
+	},
+}
+
 func init() {
 	CredentialsCmd.AddCommand(dockerCredsHelperCmd)
 	CredentialsCmd.AddCommand(gitCredsHelperCmd)
+	CredentialsCmd.AddCommand(kubernetesCredsHelperCmd)
 
 	dockerCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")
 	gitCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")
+	kubernetesCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")
 }
 
 type dockerGetResponse struct {
@@ -159,7 +172,8 @@ func gitCredsHelper(operation string) {
 
 	switch operation {
 	case "get":
-		url := fmt.Sprintf("/creds?type=git&address=%s", url.QueryEscape(creds["host"]))
+		url := fmt.Sprintf("/creds?type=git&protocol=%s&address=%s",
+			url.QueryEscape(creds["protocol"]), url.QueryEscape(creds["host"]))
 		resp, err := client.MakeRequest("GET", url, map[string]string{"Accept": "application/json"}, nil)
 		if err != nil {
 			fmt.Fprint(os.Stdout, "\n")
@@ -203,4 +217,123 @@ func extractCredsFromJSON(data []byte) (string, string) {
 		return "", ""
 	}
 	return creds.Username, creds.Password
+}
+
+// kubeTokenCacheFile returns the path used to cache the kubernetes token
+// between kubectl invocations. Returns "" if the home directory is unavailable.
+func kubeTokenCacheFile() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".kube", "cache", "k8shell-credential.json")
+}
+
+type kubeTokenCache struct {
+	Token     string `json:"token"`
+	ExpiresAt string `json:"expiresAt,omitempty"` // RFC3339
+}
+
+// loadKubeTokenCache returns a cached token if it expires more than 60 seconds
+// from now, otherwise nil.
+func loadKubeTokenCache() *kubeTokenCache {
+	path := kubeTokenCacheFile()
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var ct kubeTokenCache
+	if err := json.Unmarshal(data, &ct); err != nil || ct.Token == "" {
+		return nil
+	}
+	if ct.ExpiresAt != "" {
+		if t, err := time.Parse(time.RFC3339, ct.ExpiresAt); err == nil {
+			if time.Until(t) <= 60*time.Second {
+				return nil // expiring soon, force refresh
+			}
+		}
+	}
+	return &ct
+}
+
+// saveKubeTokenCache writes the token to the cache file, ignoring errors.
+func saveKubeTokenCache(ct *kubeTokenCache) {
+	path := kubeTokenCacheFile()
+	if path == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	data, err := json.Marshal(ct)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, data, 0o600)
+}
+
+// kubernetesCredsHelper implements the kubectl exec credential plugin protocol
+// (client.authentication.k8s.io/v1beta1). It fetches a token from the k8shelld
+// REST API and returns it as an ExecCredential JSON object.
+func kubernetesCredsHelper(operation string) {
+	if operation != "get" {
+		os.Exit(0)
+	}
+
+	// Return cached token if still valid (more than 60s until expiry).
+	if cached := loadKubeTokenCache(); cached != nil {
+		status := fmt.Sprintf(`"token":%q`, cached.Token)
+		if cached.ExpiresAt != "" {
+			status += fmt.Sprintf(`,"expirationTimestamp":%q`, cached.ExpiresAt)
+		}
+		fmt.Printf(`{"apiVersion":"client.authentication.k8s.io/v1beta1","kind":"ExecCredential","status":{%s}}`, status)
+		os.Exit(0)
+	}
+
+	resp, err := client.MakeRequest("GET", "/creds?type=kubernetes", map[string]string{"Accept": "application/json"}, nil)
+	if err != nil {
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		os.Exit(1)
+	}
+
+	switch resp.StatusCode {
+	case 200:
+		var cred struct {
+			Secret      string  `json:"secret"`
+			ExpiresAt   *string `json:"expiresAt"` // RFC3339, optional
+			CacheTokens bool    `json:"cacheTokens"`
+		}
+		if err := json.Unmarshal(bodyBytes, &cred); err != nil || cred.Secret == "" {
+			os.Exit(1)
+		}
+		expiry := ""
+		if cred.ExpiresAt != nil {
+			expiry = *cred.ExpiresAt
+		}
+		if cred.CacheTokens {
+			saveKubeTokenCache(&kubeTokenCache{Token: cred.Secret, ExpiresAt: expiry})
+		} else {
+			// Caching is disabled; remove any previously cached token so it
+			// is not served on the next invocation.
+			if path := kubeTokenCacheFile(); path != "" {
+				_ = os.Remove(path)
+			}
+		}
+		status := fmt.Sprintf(`"token":%q`, cred.Secret)
+		if expiry != "" {
+			status += fmt.Sprintf(`,"expirationTimestamp":%q`, expiry)
+		}
+		fmt.Printf(`{"apiVersion":"client.authentication.k8s.io/v1beta1","kind":"ExecCredential","status":{%s}}`, status)
+		os.Exit(0)
+	case 204, 404, 401, 403:
+		os.Exit(0)
+	default:
+		os.Exit(1)
+	}
 }

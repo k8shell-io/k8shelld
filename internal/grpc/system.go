@@ -58,8 +58,10 @@ func (s *SystemServiceServer) Handshake(ctx context.Context,
 		}
 	}
 
+	username := s.grpcApi.user.GetUsername()
+
 	s.logger.Info().Msgf("Handshake accepted for user %s (client version: %s, server version: %s)",
-		s.grpcApi.user.GetUsername(), req.ClientVersion, serverVersion)
+		username, req.ClientVersion, serverVersion)
 
 	return &k8shelldv1.HandshakeResponse{
 		Accepted:      true,
