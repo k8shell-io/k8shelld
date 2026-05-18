@@ -47,6 +47,8 @@ github.com/k8shell-io/api-server v0.14.5-0.20260506105527-2c896a4c028c h1:t/58gU
 github.com/k8shell-io/api-server v0.14.5-0.20260506105527-2c896a4c028c/go.mod h1:whg/iUlyI8JcSq5/l/Rwt5FWOAkF88qElUibLWdWWe4=
 github.com/k8shell-io/api-server v0.14.5-0.20260510163015-954d37605e03 h1:23SjDpWiqDsyGpO7Nuy6KjWN6ccxGXVIdvso1nPh/9Q=
 github.com/k8shell-io/api-server v0.14.5-0.20260510163015-954d37605e03/go.mod h1:d4ORIzw5XiNsKyOnPMIZDPdFVD9JswIi2FTbM5BoIIQ=
+github.com/k8shell-io/api-server v0.15.0 h1:FyBgblQAE5FJfPLDf+0khW9zESxCf5WrwzMtPH8hoW8=
+github.com/k8shell-io/api-server v0.15.0/go.mod h1:OIUI93twcGf0qQVdWCRTK+rkDFYLhTnkC+SDxfa5AqU=
 github.com/k8shell-io/common v0.18.10 h1:MqhUg5mf1xSplGXTOUAthZ532u5ovlUfwOJfjnyUhio=
 github.com/k8shell-io/common v0.18.10/go.mod h1:E8dsb9ta4v3ne61AJgtRyTTbTkMMmKeCMAcXD+/9+cY=
 github.com/k8shell-io/common v0.18.11 h1:uRVKIK8JCR8YesviwULABf2cpDatSBDaTFbY9+lElpU=
