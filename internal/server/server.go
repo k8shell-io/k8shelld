@@ -48,6 +48,7 @@ type Server struct {
 	sysInfo     *system.SystemInfo
 	appManager  *apps.AppManager
 	jwtVerifier *authz.JWTVerifier
+	initTracker *models.InitTracker
 }
 
 func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
@@ -72,6 +73,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		pprof:       cfg.System.PProf,
 		apiClientx:  apiClient,
 		jwtVerifier: jwtVerifier,
+		initTracker: models.NewInitTracker(),
 	}
 
 	bp, err := config.LoadBlueprint(config.BlueprintPath)
@@ -115,6 +117,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
 	}
+	s.grpcService.SetInitTracker(s.initTracker)
 
 	s.restService, err = NewRESTService(restApiUnixSocketPath, s.user, s)
 	if err != nil {
@@ -311,6 +314,13 @@ func (s *Server) runInitScripts(
 	}
 
 	sort.Strings(scripts)
+
+	scriptNames := make([]string, 0, len(scripts))
+	for _, sp := range scripts {
+		scriptNames = append(scriptNames, filepath.Base(sp))
+	}
+	s.initTracker.RegisterAll(scriptNames)
+
 	s.logger.Info().Msgf("Running %d init scripts sequentially in background.", len(scripts))
 	go func() {
 		for _, sp := range scripts {
@@ -335,9 +345,11 @@ func (s *Server) runScriptHelper(scriptsDir, scriptPath string, flagDir string, 
 	flagFile := filepath.Join(flagDir, scriptName)
 	if _, err := os.Stat(flagFile); err == nil {
 		s.logger.Info().Msgf("Flag file exists for %s. Skipping execution.", scriptName)
+		s.initTracker.SetCompleted(scriptName, false)
 		return nil
 	}
 
+	s.initTracker.SetRunning(scriptName)
 	return s.runScript(scriptsDir, scriptName, flagFile, envVars)
 }
 
@@ -425,6 +437,8 @@ func (s *Server) runScript(scriptsDir, scriptName, flagFile string, envVars []st
 // checkScriptState checks the state of a script after it has finished executing.
 func (s *Server) checkScriptState(cmd *exec.Cmd, flagFile string, scriptName string) {
 	status := cmd.ProcessState.ExitCode()
+	hasError := status != 0
+	s.initTracker.SetCompleted(scriptName, hasError)
 	if status == 0 {
 		if flagFile != "" {
 			if err := os.WriteFile(flagFile, []byte{}, 0644); err == nil {

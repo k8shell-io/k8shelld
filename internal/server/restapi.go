@@ -104,6 +104,7 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/shells/{id}/detach", a.DetachShell).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/shells/{id}/attach", a.AttachShell).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/shells/{id}/resize", a.ResizeShell).Methods(http.MethodPost)
+	apiRouter.HandleFunc("/initscripts", a.GetInitScripts).Methods(http.MethodGet)
 
 	a.logRoutes(router)
 	return router
@@ -349,7 +350,7 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	type sysInfoResp struct {
 		k8shelld.SystemInfo
 		Podman  *system.PodmanDetails `json:"podman,omitempty"`
-		Version string               `json:"version"`
+		Version string                `json:"version"`
 	}
 
 	response := sysInfoResp{
@@ -922,5 +923,14 @@ func (a *RESTService) AttachShell(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := a.server.grpcService.ServeRESTAttach(id, conn); err != nil {
 		a.logger.Error().Msgf("AttachShell ServeRESTAttach: %v", err)
+	}
+}
+
+// GetInitScripts returns a JSON snapshot of all init script states.
+func (a *RESTService) GetInitScripts(w http.ResponseWriter, r *http.Request) {
+	states := a.server.initTracker.GetAll()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(states); err != nil {
+		a.logger.Error().Msgf("GetInitScripts encode: %v", err)
 	}
 }
