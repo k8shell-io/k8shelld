@@ -259,7 +259,7 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 
 	if shellReq.StartRequest.UsePty {
 		err = s.handlePtySession(s.logger, session, stream, shellReq.StartRequest.Width,
-			shellReq.StartRequest.Height, detachOnClose)
+			shellReq.StartRequest.Height, detachOnClose, shellReq.StartRequest.GetShowInitScriptStatus())
 		if err != nil {
 			return fmt.Errorf("error handling PTY session: %v", err)
 		}
@@ -301,9 +301,8 @@ func (s *ShellHandler) cleanUpSession(session *SessionData) {
 // session-owned PTY read loop and the attached-client loop.
 func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *SessionData,
 	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
-	width uint32, height uint32, autoDetach bool) error {
+	width uint32, height uint32, autoDetach bool, showInitScriptStatus bool) error {
 
-	// Always allocate scrollback buffer and shell-exit channel for PTY sessions.
 	session.ring = newRingBuffer(detachableRingBufSize)
 	session.ptyDone = make(chan struct{})
 
@@ -360,22 +359,28 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 
 	s.startPtyReadLoop(session)
 
-	// If init scripts are still running, display their progress before handing
-	// the terminal over to the user.  showInitProgress returns a pre-read channel
-	// so that no stream messages are lost during the progress phase.
+	var showProgress bool
+	if showInitScriptStatus {
+		if s.grpcApi.blueprint != nil && s.grpcApi.blueprint.ShowInitScriptStatus {
+			showProgress = true
+		} else {
+			logger.Warn().Msg("client requested show_init_script_status but blueprint has showInitScriptStatus=false; init script progress will not be displayed")
+		}
+	}
+
 	var preReadCh <-chan shellRecvMsg
-	if s.grpcApi.initTracker != nil && s.grpcApi.initTracker.HasPendingOrRunning() {
-		// Mark the ring buffer position so we can replay only the PTY output
-		// accumulated during the progress display, not the splash sent earlier.
+	if showProgress && s.grpcApi.initTracker != nil && s.grpcApi.initTracker.HasPendingOrRunning() {
 		session.ring.Mark()
 		preReadCh = s.showInitProgress(stream, session)
-		// Replay PTY output (shell prompt, .bashrc, etc.) that buffered while
-		// attachedSender was nil — but not the splash, which was already sent.
 		if scrollback := session.ring.SnapshotSinceMark(); len(scrollback) > 0 {
 			_ = stream.Send(&k8shelldv1.ShellResponse{
 				Response: &k8shelldv1.ShellResponse_Data{Data: stripTerminalQueryResponses(scrollback)},
 			})
 		}
+		for _, l := range display.RenderInitProgress(s.grpcApi.initTracker.GetAll(), "", true, true) {
+			session.ring.Write([]byte(l + "\r\n"))
+		}
+		session.ring.Write([]byte("\r\n"))
 	}
 
 	detachCh := session.doAttach(&grpcStreamSender{stream: stream})
