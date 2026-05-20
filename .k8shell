@@ -1,6 +1,6 @@
 blueprint:
   template: development
-  image: workspaces/dev:1.10
+  image: workspaces/dev-go:1.0
   resources:
     cpu: 8
     memory: 8Gi
@@ -14,7 +14,3 @@ blueprint:
         cd $HOME/$GIT_REPONAME
         GOPATH="$HOME/go" go mod tidy
 
-  apps:
-    vscode:
-      enabled: true
-      
