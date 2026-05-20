@@ -348,7 +348,8 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 
 	type sysInfoResp struct {
 		k8shelld.SystemInfo
-		Podman *system.PodmanDetails `json:"podman,omitempty"`
+		Podman  *system.PodmanDetails `json:"podman,omitempty"`
+		Version string               `json:"version"`
 	}
 
 	response := sysInfoResp{
@@ -359,7 +360,8 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 			Docker:     podman,
 			Repository: repoURL(),
 		},
-		Podman: podmanDetails,
+		Podman:  podmanDetails,
+		Version: fmt.Sprintf("%s-%s", config.K8SHELLD_VERSION, config.K8SHELLD_COMMIT),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -30,7 +30,8 @@ var InfoCmd = &cobra.Command{
 Workspace:
   - Name: workspace name
   - Start time: workspace start time
-  - Provisioner: provisioner version 
+  - Provisioner: provisioner version
+  - k8shelld: server version
   - Image: workspace image reference
   - Blueprint: workspace blueprint
   - Repository: linked source repository
@@ -84,10 +85,16 @@ Podman (if available):
 			repoName = "n/a"
 		}
 
+		k8shelldVersion := sysInfo.Version
+		if k8shelldVersion == "" {
+			k8shelldVersion = "n/a"
+		}
+
 		workspace := [][2]string{
 			{"Name", env("WORKSPACE", "n/a")},
 			{"Start time", startTime.Local().Format("2006-01-02 15:04:05 MST")},
 			{"Provisioner", env("PROVISIONER_VERSION", "n/a")},
+			{"k8shelld", k8shelldVersion},
 			{"Image", env("IMAGE", "n/a")},
 			{"Blueprint", env("BLUEPRINT", "n/a")},
 			{"Repository", repoName},
@@ -191,7 +198,8 @@ Podman (if available):
 // that are returned by the REST /sysinfo endpoint but have no proto equivalent.
 type sysInfoResp struct {
 	k8shelld.SystemInfo
-	Podman *podmanExt `json:"podman,omitempty"`
+	Podman  *podmanExt `json:"podman,omitempty"`
+	Version string     `json:"version"`
 }
 
 type podmanExt struct {
