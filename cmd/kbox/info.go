@@ -28,11 +28,13 @@ var InfoCmd = &cobra.Command{
 	Long: `Display workspace, CPU/memory, storage mounts, and Podman usage information.
 
 Workspace:
-  - Name: workspace name 
-  - Start time: workspace start time (RFC3339)
+  - Name: workspace name
+  - Start time: workspace start time
+  - Provisioner: provisioner version 
   - Image: workspace image reference
   - Blueprint: workspace blueprint
-  - Users: active sessions 
+  - Repository: linked source repository
+  - Users: active sessions
 
 CPU and Memory:
   - CPU usage: used millicores / limit millicores (%)
@@ -85,6 +87,7 @@ Podman (if available):
 		workspace := [][2]string{
 			{"Name", env("WORKSPACE", "n/a")},
 			{"Start time", startTime.Local().Format("2006-01-02 15:04:05 MST")},
+			{"Provisioner", env("PROVISIONER_VERSION", "n/a")},
 			{"Image", env("IMAGE", "n/a")},
 			{"Blueprint", env("BLUEPRINT", "n/a")},
 			{"Repository", repoName},
