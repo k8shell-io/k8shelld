@@ -366,6 +366,13 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 	var preReadCh <-chan shellRecvMsg
 	if s.grpcApi.initTracker != nil && s.grpcApi.initTracker.HasPendingOrRunning() {
 		preReadCh = s.showInitProgress(stream, session)
+		// Replay PTY output that accumulated (shell prompt, .bashrc output, etc.)
+		// while the progress display was running and attachedSender was still nil.
+		if scrollback := session.ring.Snapshot(); len(scrollback) > 0 {
+			_ = stream.Send(&k8shelldv1.ShellResponse{
+				Response: &k8shelldv1.ShellResponse_Data{Data: stripTerminalQueryResponses(scrollback)},
+			})
+		}
 	}
 
 	detachCh := session.doAttach(&grpcStreamSender{stream: stream})
@@ -583,7 +590,7 @@ func (s *ShellHandler) showInitProgress(
 		if lastLineCount > 0 {
 			display.ClearLines(writer, lastLineCount)
 		}
-		lines := display.RenderInitProgress(tracker.GetAll(), spin, true)
+		lines := display.RenderInitProgress(tracker.GetAll(), spin, true, !final)
 		for _, l := range lines {
 			_, _ = writer.Write([]byte(l + "\r\n"))
 		}
@@ -600,13 +607,17 @@ loop:
 				break loop
 			}
 			if data := msg.req.GetData(); data != nil {
+				ctrlC := false
 				for _, b := range data {
-					if b == 0x03 { // Ctrl+C — exit display immediately
-						// Write Ctrl+C to PTY so the shell can also see it if needed.
-						_, _ = session.Ptmx.Write(data)
-						break loop
+					if b == 0x03 { // Ctrl+C — exit display without touching the shell
+						ctrlC = true
+						break
 					}
 				}
+				if ctrlC {
+					break loop
+				}
+				// Forward any other user input to the PTY.
 				_, _ = session.Ptmx.Write(data)
 			}
 			if tracker.AllDone() {

@@ -20,9 +20,14 @@ func SpinnerFrame(tick int) string {
 // RenderInitProgress formats a list of init script states into display lines.
 // spinner is the current spinner character used for running scripts (pass "" for a final/static render).
 // useAnsi controls whether ANSI colour codes are included.
+// showHeader prepends a "Running init scripts..." header line when true.
 // Each returned string is one line without a trailing newline.
-func RenderInitProgress(states []models.InitScriptState, spinner string, useAnsi bool) []string {
-	lines := make([]string, 0, len(states))
+func RenderInitProgress(states []models.InitScriptState, spinner string, useAnsi bool, showHeader bool) []string {
+	var lines []string
+	if showHeader {
+		header := "Running init scripts... (Ctrl+C to skip)"
+		lines = append(lines, ansiWrap(header, "2", useAnsi))
+	}
 	for _, s := range states {
 		lines = append(lines, formatScriptLine(s, spinner, useAnsi))
 	}
@@ -68,11 +73,11 @@ func formatScriptLine(s models.InitScriptState, spinner string, useAnsi bool) st
 		if s.HasError {
 			mark := ansiWrap("✗", "31", useAnsi) // red cross
 			label := ansiWrap(name, "31", useAnsi)
-			return fmt.Sprintf("  [%s] %s: %s", mark, label, dur)
+			return fmt.Sprintf("[%s] %s: %s", mark, label, dur)
 		}
 		mark := ansiWrap("✓", "32", useAnsi) // green tick
 		label := ansiWrap(name, "32", useAnsi)
-		return fmt.Sprintf("  [%s] %s: %s", mark, label, dur)
+		return fmt.Sprintf("[%s] %s: %s", mark, label, dur)
 
 	case models.InitScriptRunning:
 		spin := spinner
@@ -81,11 +86,11 @@ func formatScriptLine(s models.InitScriptState, spinner string, useAnsi bool) st
 		}
 		mark := ansiWrap(spin, "33", useAnsi) // yellow spinner
 		label := ansiWrap(name, "33", useAnsi)
-		return fmt.Sprintf("  [%s] %s: running...", mark, label)
+		return fmt.Sprintf("[%s] %s: running...", mark, label)
 
 	default: // pending
 		mark := ansiWrap("-", "2", useAnsi) // dim dash
 		label := ansiWrap(name, "2", useAnsi)
-		return fmt.Sprintf("  [%s] %s: waiting...", mark, label)
+		return fmt.Sprintf("[%s] %s: waiting...", mark, label)
 	}
 }

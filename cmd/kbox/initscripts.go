@@ -9,113 +9,158 @@ import (
 
 	"github.com/k8shell-io/k8shelld/internal/client"
 	"github.com/k8shell-io/k8shelld/internal/display"
+	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/spf13/cobra"
 )
 
-var InitScriptsCmd = &cobra.Command{
-	Use:   "initscripts",
-	Short: "Show the progress of workspace init scripts",
-	Long: `Show the progress of workspace init scripts.
+var InitCmd = &cobra.Command{
+	Use:   "init",
+	Short: "Show the status of workspace init scripts",
+	Long: `Show the status of workspace init scripts.
 
-Each script is listed with its current state:
-  pending   — not yet started
-  running   — currently executing (animated spinner)
-  done      — completed (tick for success, cross for failure) with elapsed time
+By default a single snapshot of all scripts is printed and the command exits.
 
-By default the command polls until all scripts have finished.
-Press Ctrl+C at any time to exit the display early; running scripts
-are not interrupted.`,
+Use --progress to watch live progress with animated spinners until all scripts
+have finished.  Press Ctrl+C at any time to exit the display early; running
+scripts are not interrupted.
+
+Use --errors to show only scripts that completed with an error.`,
 
 	RunE: func(cmd *cobra.Command, args []string) error {
 		noAnsi, _ := cmd.Flags().GetBool("no-ansi")
-		noWait, _ := cmd.Flags().GetBool("no-wait")
+		progress, _ := cmd.Flags().GetBool("progress")
+		errorsOnly, _ := cmd.Flags().GetBool("errors")
 
-		// One-shot snapshot mode.
-		if noWait {
+		// filterStates applies the --errors flag.
+		filterStates := func(states []models.InitScriptState) []models.InitScriptState {
+			if !errorsOnly {
+				return states
+			}
+			out := states[:0:0]
+			for _, s := range states {
+				if s.HasError {
+					out = append(out, s)
+				}
+			}
+			return out
+		}
+
+		// --progress: live polling with animated spinner until all done or Ctrl+C.
+		if progress {
 			states, err := client.GetInitScripts()
 			if err != nil {
-				return fmt.Errorf("initscripts: %w", err)
+				return fmt.Errorf("init: %w", err)
 			}
-			if len(states) == 0 {
-				fmt.Println("No init scripts registered.")
-				return nil
-			}
-			lines := display.RenderInitProgress(states, "", !noAnsi)
-			for _, l := range lines {
-				fmt.Println(l)
-			}
-			return nil
-		}
 
-		// Polling mode: update in-place until all done or Ctrl+C.
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		defer signal.Stop(sigCh)
-
-		ticker := time.NewTicker(200 * time.Millisecond)
-		defer ticker.Stop()
-
-		var lastLineCount int
-		spinTick := 0
-
-		// Initial fetch and render before the first tick so the output appears
-		// immediately rather than after 200 ms.
-		states, err := client.GetInitScripts()
-		if err != nil {
-			return fmt.Errorf("initscripts: %w", err)
-		}
-		if len(states) == 0 {
-			fmt.Println("No init scripts registered.")
-			return nil
-		}
-
-		renderFrame := func(final bool) {
-			spin := ""
-			if !final {
-				spin = display.SpinnerFrame(spinTick)
-				spinTick++
-			}
-			if lastLineCount > 0 {
-				display.ClearLines(os.Stdout, lastLineCount)
-			}
-			lines := display.RenderInitProgress(states, spin, !noAnsi)
-			for _, l := range lines {
-				fmt.Println(l)
-			}
-			lastLineCount = len(lines)
-		}
-
-		renderFrame(false)
-
-		for {
-			select {
-			case <-sigCh:
-				// Exit display; do not cancel scripts.
-				return nil
-
-			case <-ticker.C:
-				states, err = client.GetInitScripts()
-				if err != nil {
-					// Server may not yet have the endpoint; just keep waiting.
-					continue
+			// Check if all scripts are already done before starting the live loop.
+			allDoneAlready := true
+			for _, s := range states {
+				if s.Status == models.InitScriptPending || s.Status == models.InitScriptRunning {
+					allDoneAlready = false
+					break
 				}
-				allDone := true
-				for _, s := range states {
-					if s.Status == "pending" || s.Status == "running" {
-						allDone = false
-						break
+			}
+
+			if !allDoneAlready {
+				sigCh := make(chan os.Signal, 1)
+				signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+				defer signal.Stop(sigCh)
+
+				ticker := time.NewTicker(200 * time.Millisecond)
+				defer ticker.Stop()
+
+				var lastLineCount int
+				spinTick := 0
+
+				renderFrame := func(final bool) {
+					spin := ""
+					if !final {
+						spin = display.SpinnerFrame(spinTick)
+						spinTick++
+					}
+					if lastLineCount > 0 {
+						display.ClearLines(os.Stdout, lastLineCount)
+					}
+					// Show the header only while scripts are still running.
+					lines := display.RenderInitProgress(filterStates(states), spin, !noAnsi, !final)
+					for _, l := range lines {
+						fmt.Println(l)
+					}
+					lastLineCount = len(lines)
+				}
+
+				renderFrame(false)
+
+			loop:
+				for {
+					select {
+					case <-sigCh:
+						return nil
+					case <-ticker.C:
+						states, err = client.GetInitScripts()
+						if err != nil {
+							continue
+						}
+						done := true
+						for _, s := range states {
+							if s.Status == models.InitScriptPending || s.Status == models.InitScriptRunning {
+								done = false
+								break
+							}
+						}
+						renderFrame(done)
+						if done {
+							break loop
+						}
 					}
 				}
-				renderFrame(allDone)
-				if allDone {
-					return nil
-				}
+
+				return nil
 			}
+
+			// All already done — fall through to the static snapshot below.
+			states, _ = client.GetInitScripts()
+			filtered := filterStates(states)
+			if len(filtered) == 0 {
+				if errorsOnly {
+					fmt.Println("No init script errors.")
+				} else {
+					fmt.Println("No init scripts registered.")
+				}
+				return nil
+			}
+			lines := display.RenderInitProgress(filtered, "", !noAnsi, false)
+			for _, l := range lines {
+				fmt.Println(l)
+			}
+			return nil
 		}
+
+		// Default: single static snapshot.
+		states, err := client.GetInitScripts()
+		if err != nil {
+			return fmt.Errorf("init: %w", err)
+		}
+		filtered := filterStates(states)
+		if len(filtered) == 0 {
+			if errorsOnly {
+				fmt.Println("No init script errors.")
+			} else {
+				fmt.Println("No init scripts registered.")
+			}
+			return nil
+		}
+		lines := display.RenderInitProgress(filtered, "", !noAnsi, false)
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+		return nil
 	},
 }
 
 func init() {
-	InitScriptsCmd.Flags().Bool("no-ansi", false, "Disable ANSI colour codes and spinner")
-	InitScriptsCmd.Flags().Bool("no-wait", false, "Print a one-shot snapshot and exit immediately")
+	InitCmd.Flags().Bool("no-ansi", false, "Disable ANSI colour codes and spinner")
+	InitCmd.Flags().Bool("progress", false, "Watch live progress until all scripts finish")
+	InitCmd.Flags().Bool("errors", false, "Show only scripts that completed with an error")
+
 }
