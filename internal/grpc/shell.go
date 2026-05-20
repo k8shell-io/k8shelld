@@ -365,10 +365,13 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 	// so that no stream messages are lost during the progress phase.
 	var preReadCh <-chan shellRecvMsg
 	if s.grpcApi.initTracker != nil && s.grpcApi.initTracker.HasPendingOrRunning() {
+		// Mark the ring buffer position so we can replay only the PTY output
+		// accumulated during the progress display, not the splash sent earlier.
+		session.ring.Mark()
 		preReadCh = s.showInitProgress(stream, session)
-		// Replay PTY output that accumulated (shell prompt, .bashrc output, etc.)
-		// while the progress display was running and attachedSender was still nil.
-		if scrollback := session.ring.Snapshot(); len(scrollback) > 0 {
+		// Replay PTY output (shell prompt, .bashrc, etc.) that buffered while
+		// attachedSender was nil — but not the splash, which was already sent.
+		if scrollback := session.ring.SnapshotSinceMark(); len(scrollback) > 0 {
 			_ = stream.Send(&k8shelldv1.ShellResponse{
 				Response: &k8shelldv1.ShellResponse_Data{Data: stripTerminalQueryResponses(scrollback)},
 			})

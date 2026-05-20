@@ -25,8 +25,7 @@ func SpinnerFrame(tick int) string {
 func RenderInitProgress(states []models.InitScriptState, spinner string, useAnsi bool, showHeader bool) []string {
 	var lines []string
 	if showHeader {
-		header := "Running init scripts... (Ctrl+C to skip)"
-		lines = append(lines, ansiWrap(header, "2", useAnsi))
+		lines = append(lines, "Running init scripts... (Ctrl+C to skip)")
 	}
 	for _, s := range states {
 		lines = append(lines, formatScriptLine(s, spinner, useAnsi))
@@ -91,6 +90,7 @@ func formatScriptLine(s models.InitScriptState, spinner string, useAnsi bool) st
 	default: // pending
 		mark := ansiWrap("-", "2", useAnsi) // dim dash
 		label := ansiWrap(name, "2", useAnsi)
-		return fmt.Sprintf("[%s] %s: waiting...", mark, label)
+		status := ansiWrap("waiting...", "2", useAnsi)
+		return fmt.Sprintf("[%s] %s: %s", mark, label, status)
 	}
 }

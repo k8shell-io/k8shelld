@@ -14,7 +14,7 @@ import (
 )
 
 var InitCmd = &cobra.Command{
-	Use:   "init",
+	Use:   "init-status",
 	Short: "Show the status of workspace init scripts",
 	Long: `Show the status of workspace init scripts.
 
