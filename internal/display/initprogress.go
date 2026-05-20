@@ -83,9 +83,15 @@ func formatScriptLine(s models.InitScriptState, spinner string, useAnsi bool) st
 		if spin == "" {
 			spin = "*"
 		}
+		now := time.Now()
+		dur := elapsed(s.StartedAt, &now)
+		runText := "running..."
+		if dur != "" {
+			runText = "running... " + dur
+		}
 		mark := ansiWrap(spin, "33", useAnsi) // yellow spinner
 		label := ansiWrap(name, "33", useAnsi)
-		return fmt.Sprintf("[%s] %s: running...", mark, label)
+		return fmt.Sprintf("[%s] %s: %s", mark, label, runText)
 
 	default: // pending
 		mark := ansiWrap("-", "2", useAnsi) // dim dash

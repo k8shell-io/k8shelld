@@ -593,7 +593,7 @@ func (s *ShellHandler) showInitProgress(
 		if lastLineCount > 0 {
 			display.ClearLines(writer, lastLineCount)
 		}
-		lines := display.RenderInitProgress(tracker.GetAll(), spin, true, !final)
+		lines := display.RenderInitProgress(tracker.GetAll(), spin, true, true)
 		for _, l := range lines {
 			_, _ = writer.Write([]byte(l + "\r\n"))
 		}

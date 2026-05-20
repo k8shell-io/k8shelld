@@ -82,7 +82,7 @@ Use --errors to show only scripts that completed with an error.`,
 						display.ClearLines(os.Stdout, lastLineCount)
 					}
 					// Show the header only while scripts are still running.
-					lines := display.RenderInitProgress(filterStates(states), spin, !noAnsi, !final)
+					lines := display.RenderInitProgress(filterStates(states), spin, !noAnsi, true)
 					for _, l := range lines {
 						fmt.Println(l)
 					}
