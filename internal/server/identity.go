@@ -51,7 +51,13 @@ func (s *Server) loadIdentity() error {
 		return nil
 	}
 	if s.apiClientx == nil {
-		s.logger.Warn().Msg("API server is not enabled, skipping identity load")
+		s.logger.Warn().Msg("API server is not enabled, loading identity from OS user database")
+		user, err := models.NewUserFromOS(s.username)
+		if err != nil {
+			return fmt.Errorf("load OS identity for user %q: %w", s.username, err)
+		}
+		s.user = user
+		s.logger.Debug().Msgf("OS identity loaded: uid=%d gid=%d", user.GetUID(), user.GetGID())
 		return nil
 	}
 
