@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,8 @@ const identityRefreshInterval = 15 * time.Second
 const identityRenewBeforeExpiry = 2 * time.Minute
 const JWT_VERIFIER_SIGNING_METHOD_ENV = "JWT_VERIFIER_SIGNING_METHOD"
 const JWT_VERIFIER_PUBLIC_KEY_ENV = "JWT_VERIFIER_PUBLIC_KEY"
+const USER_UID_ENV = "USER_UID"
+const USER_GID_ENV = "USER_GID"
 
 // newJWTVerifier creates a JWTVerifier based on environment variables.
 func newJWTVerifier() (*authz.JWTVerifier, error) {
@@ -51,13 +54,27 @@ func (s *Server) loadIdentity() error {
 		return nil
 	}
 	if s.apiClientx == nil {
-		s.logger.Warn().Msg("API server is not enabled, loading identity from OS user database")
-		user, err := models.NewUserFromOS(s.username)
-		if err != nil {
-			return fmt.Errorf("load OS identity for user %q: %w", s.username, err)
+		s.logger.Warn().Msg("API server is not enabled, loading identity from environment variables")
+		uidStr := strings.TrimSpace(os.Getenv(USER_UID_ENV))
+		if uidStr == "" {
+			return fmt.Errorf("API server is disabled but %s is not set", USER_UID_ENV)
 		}
-		s.user = user
-		s.logger.Debug().Msgf("OS identity loaded: uid=%d gid=%d", user.GetUID(), user.GetGID())
+		gidStr := strings.TrimSpace(os.Getenv(USER_GID_ENV))
+		if gidStr == "" {
+			return fmt.Errorf("API server is disabled but %s is not set", USER_GID_ENV)
+		}
+		uid64, err := strconv.ParseUint(uidStr, 10, 32)
+		if err != nil {
+			return fmt.Errorf("parse %s=%q: %w", USER_UID_ENV, uidStr, err)
+		}
+		gid64, err := strconv.ParseUint(gidStr, 10, 32)
+		if err != nil {
+			return fmt.Errorf("parse %s=%q: %w", USER_GID_ENV, gidStr, err)
+		}
+		claims := &authz.UserClaims{UID: uint32(uid64), GID: uint32(gid64)}
+		claims.Subject = s.username
+		s.user = models.NewUser(claims, "")
+		s.logger.Debug().Msgf("Environment identity loaded: uid=%d gid=%d", uid64, gid64)
 		return nil
 	}
 

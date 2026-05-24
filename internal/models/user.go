@@ -2,8 +2,6 @@ package models
 
 import (
 	"fmt"
-	osuser "os/user"
-	"strconv"
 	"sync"
 	"time"
 
@@ -38,35 +36,6 @@ type User struct {
 	claims        *authz.UserClaims
 	userToken     string
 	previousToken string
-}
-
-// NewUserFromOS creates a User by looking up username in the OS user database.
-// It is used as a fallback when no API server is available to issue a JWT.
-func NewUserFromOS(username string) (*User, error) {
-	u, err := osuser.Lookup(username)
-	if err != nil {
-		return nil, fmt.Errorf("os user lookup for %q: %w", username, err)
-	}
-	uid64, err := strconv.ParseUint(u.Uid, 10, 32)
-	if err != nil {
-		return nil, fmt.Errorf("parse uid %q: %w", u.Uid, err)
-	}
-	gid64, err := strconv.ParseUint(u.Gid, 10, 32)
-	if err != nil {
-		return nil, fmt.Errorf("parse gid %q: %w", u.Gid, err)
-	}
-	claims := &authz.UserClaims{
-		UID: uint32(uid64),
-		GID: uint32(gid64),
-	}
-	claims.Subject = username
-	return &User{
-		username: username,
-		uid:      uint32(uid64),
-		gid:      uint32(gid64),
-		homeDir:  u.HomeDir,
-		claims:   claims,
-	}, nil
 }
 
 // NewUser creates a User from a verified JWT claims set and the raw token string.
