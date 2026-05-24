@@ -1,6 +1,6 @@
 module github.com/k8shell-io/k8shelld
 
-go 1.26.3
+go 1.24.5
 
 require (
 	github.com/creack/pty v1.1.24
