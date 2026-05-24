@@ -114,31 +114,54 @@ func (s *ShellHandler) startPtyReadLoop(session *SessionData) {
 	}()
 }
 
+// shellRecvMsg bundles a received ShellRequest with any receive error so that
+// a single pre-read channel can carry both the data and stream-close signals.
+type shellRecvMsg struct {
+	req *k8shelldv1.ShellRequest
+	err error
+}
+
 // runAttachedClientLoop forwards gRPC client input to the PTY.
 // Ctrl+A D triggers a detach (handled by filterPtyInput).  The loop also listens
 // for detachCh (explicit detach), session.ptyDone (shell exit), and stream errors.
 // When autoDetach is true, a gRPC context close (client disconnect) detaches the
 // session rather than destroying it, keeping the shell alive.
+//
+// preReadCh, when non-nil, is an already-running receive channel (e.g. from
+// showInitProgress) that must be drained before new stream.Recv calls are made.
+// When nil a fresh receive goroutine is started.
 func (s *ShellHandler) runAttachedClientLoop(
 	logger *zerolog.Logger,
 	session *SessionData,
 	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
 	detachCh <-chan struct{},
 	autoDetach bool,
+	preReadCh <-chan shellRecvMsg,
 ) error {
 	ctx := stream.Context()
-	reqCh := make(chan *k8shelldv1.ShellRequest, 8)
-	recvErrCh := make(chan error, 1)
+
+	// msgCh carries all incoming messages regardless of whether they originate
+	// from a pre-read buffer or from a fresh Recv goroutine.
+	msgCh := make(chan shellRecvMsg, 8)
 
 	go func() {
-		defer close(reqCh)
+		defer close(msgCh)
+		// Drain pre-read messages first (if any).
+		if preReadCh != nil {
+			for msg := range preReadCh {
+				msgCh <- msg
+				if msg.err != nil {
+					return
+				}
+			}
+		}
+		// Continue reading from the live stream.
 		for {
 			req, err := stream.Recv()
+			msgCh <- shellRecvMsg{req, err}
 			if err != nil {
-				recvErrCh <- err
 				return
 			}
-			reqCh <- req
 		}
 	}()
 
@@ -156,7 +179,7 @@ func (s *ShellHandler) runAttachedClientLoop(
 		logger.Info().Msgf("Session %s: detached, process kept alive", session.Id)
 	}
 
-	prevCtrlA := false // cctrlA key press carried across successive Recv calls
+	prevCtrlA := false
 
 	for {
 		select {
@@ -181,19 +204,20 @@ func (s *ShellHandler) runAttachedClientLoop(
 			doDetach()
 			return nil
 
-		case err := <-recvErrCh:
-			clearAttached()
-			if err == io.EOF {
-				logger.Debug().Msgf("Session %s: gRPC EOF, destroying", session.Id)
-				return nil
-			}
-			return fmt.Errorf("stream error: %w", err)
-
-		case req, ok := <-reqCh:
+		case msg, ok := <-msgCh:
 			if !ok {
 				clearAttached()
 				return nil
 			}
+			if msg.err != nil {
+				clearAttached()
+				if msg.err == io.EOF {
+					logger.Debug().Msgf("Session %s: gRPC EOF, destroying", session.Id)
+					return nil
+				}
+				return fmt.Errorf("stream error: %w", msg.err)
+			}
+			req := msg.req
 			if data := req.GetData(); data != nil {
 				filtered, detach := filterPtyInput(data, &prevCtrlA)
 				if len(filtered) > 0 {
@@ -286,7 +310,7 @@ func (s *ShellHandler) handleGRPCAttachExisting(
 	}
 
 	detachCh := session.doAttach(&grpcStreamSender{stream: stream})
-	return s.runAttachedClientLoop(s.logger, session, stream, detachCh, detachOnClose)
+	return s.runAttachedClientLoop(s.logger, session, stream, detachCh, detachOnClose, nil)
 }
 
 // DetachShellSession triggers a detach on the currently attached client for

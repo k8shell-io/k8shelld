@@ -14,6 +14,7 @@ import (
 
 	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
 	"github.com/k8shell-io/k8shelld/internal/config"
+	"github.com/k8shell-io/k8shelld/internal/display"
 	"github.com/k8shell-io/k8shelld/internal/logger"
 	"github.com/k8shell-io/k8shelld/internal/models"
 	"github.com/k8shell-io/k8shelld/internal/system"
@@ -258,7 +259,7 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 
 	if shellReq.StartRequest.UsePty {
 		err = s.handlePtySession(s.logger, session, stream, shellReq.StartRequest.Width,
-			shellReq.StartRequest.Height, detachOnClose)
+			shellReq.StartRequest.Height, detachOnClose, shellReq.StartRequest.GetShowInitScriptStatus())
 		if err != nil {
 			return fmt.Errorf("error handling PTY session: %v", err)
 		}
@@ -300,9 +301,8 @@ func (s *ShellHandler) cleanUpSession(session *SessionData) {
 // session-owned PTY read loop and the attached-client loop.
 func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *SessionData,
 	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
-	width uint32, height uint32, autoDetach bool) error {
+	width uint32, height uint32, autoDetach bool, showInitScriptStatus bool) error {
 
-	// Always allocate scrollback buffer and shell-exit channel for PTY sessions.
 	session.ring = newRingBuffer(detachableRingBufSize)
 	session.ptyDone = make(chan struct{})
 
@@ -358,8 +358,33 @@ func (s *ShellHandler) handlePtySession(logger *zerolog.Logger, session *Session
 	}
 
 	s.startPtyReadLoop(session)
+
+	var showProgress bool
+	if showInitScriptStatus {
+		if s.grpcApi.blueprint != nil && s.grpcApi.blueprint.ShowInitScriptStatus {
+			showProgress = true
+		} else {
+			logger.Warn().Msg("client requested show_init_script_status but blueprint has showInitScriptStatus=false; init script progress will not be displayed")
+		}
+	}
+
+	var preReadCh <-chan shellRecvMsg
+	if showProgress && s.grpcApi.initTracker != nil && s.grpcApi.initTracker.HasPendingOrRunning() {
+		session.ring.Mark()
+		preReadCh = s.showInitProgress(stream, session)
+		if scrollback := session.ring.SnapshotSinceMark(); len(scrollback) > 0 {
+			_ = stream.Send(&k8shelldv1.ShellResponse{
+				Response: &k8shelldv1.ShellResponse_Data{Data: stripTerminalQueryResponses(scrollback)},
+			})
+		}
+		for _, l := range display.RenderInitProgress(s.grpcApi.initTracker.GetAll(), "", true, true) {
+			session.ring.Write([]byte(l + "\r\n"))
+		}
+		session.ring.Write([]byte("\r\n"))
+	}
+
 	detachCh := session.doAttach(&grpcStreamSender{stream: stream})
-	return s.runAttachedClientLoop(logger, session, stream, detachCh, autoDetach)
+	return s.runAttachedClientLoop(logger, session, stream, detachCh, autoDetach, preReadCh)
 }
 
 // handleNonPtySession handles a shell session without PTY. It creates pipes for the stdin, stdout and stderr of the
@@ -526,6 +551,100 @@ func (s *ShellHandler) ResizeTerminal(ctx context.Context,
 		s.logger.Error().Msgf("Failed to resize terminal: %v", err)
 	}
 	return &k8shelldv1.ResizeTerminalResponse{}, nil
+}
+
+// showInitProgress renders init script progress directly on the gRPC stream
+// until all scripts complete or the user presses Ctrl+C.  It returns a
+// pre-read channel that runAttachedClientLoop must use so no stream bytes
+// are lost during the progress phase.
+func (s *ShellHandler) showInitProgress(
+	stream grpc.BidiStreamingServer[k8shelldv1.ShellRequest, k8shelldv1.ShellResponse],
+	session *SessionData,
+) <-chan shellRecvMsg {
+	recvCh := make(chan shellRecvMsg, 32)
+
+	go func() {
+		for {
+			req, err := stream.Recv()
+			select {
+			case recvCh <- shellRecvMsg{req, err}:
+			default:
+				// Buffer full: write input directly to PTY so keystrokes are
+				// not lost even if the progress loop is slow to drain.
+				if err == nil && req.GetData() != nil {
+					_, _ = session.Ptmx.Write(req.GetData())
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	writer := &streamWriter{stream: stream}
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+
+	tracker := s.grpcApi.initTracker
+	spinTick := 0
+	lastLineCount := 0
+
+	renderFrame := func(final bool) {
+		spin := ""
+		if !final {
+			spin = display.SpinnerFrame(spinTick)
+			spinTick++
+		}
+		if lastLineCount > 0 {
+			display.ClearLines(writer, lastLineCount)
+		}
+		lines := display.RenderInitProgress(tracker.GetAll(), spin, true, true)
+		for _, l := range lines {
+			_, _ = writer.Write([]byte(l + "\r\n"))
+		}
+		lastLineCount = len(lines)
+	}
+
+	renderFrame(false)
+
+loop:
+	for {
+		select {
+		case msg, ok := <-recvCh:
+			if !ok || msg.err != nil {
+				break loop
+			}
+			if data := msg.req.GetData(); data != nil {
+				ctrlC := false
+				for _, b := range data {
+					if b == 0x03 { // Ctrl+C — exit display without touching the shell
+						ctrlC = true
+						break
+					}
+				}
+				if ctrlC {
+					break loop
+				}
+				// Forward any other user input to the PTY.
+				_, _ = session.Ptmx.Write(data)
+			}
+			if tracker.AllDone() {
+				break loop
+			}
+
+		case <-ticker.C:
+			if tracker.AllDone() {
+				break loop
+			}
+			renderFrame(false)
+		}
+	}
+
+	// Final render showing completed states.
+	renderFrame(true)
+	_, _ = writer.Write([]byte("\r\n"))
+
+	return recvCh
 }
 
 // GetCWD returns the current working directory of the shell process identified

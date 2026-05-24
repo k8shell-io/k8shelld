@@ -3,6 +3,7 @@ package client
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -109,3 +110,20 @@ func (b *bufferedConn) RemoteAddr() net.Addr               { return b.conn.Remot
 func (b *bufferedConn) SetDeadline(t time.Time) error      { return b.conn.SetDeadline(t) }
 func (b *bufferedConn) SetReadDeadline(t time.Time) error  { return b.conn.SetReadDeadline(t) }
 func (b *bufferedConn) SetWriteDeadline(t time.Time) error { return b.conn.SetWriteDeadline(t) }
+
+// GetInitScripts fetches a snapshot of all init script states from the daemon.
+func GetInitScripts() ([]models.InitScriptState, error) {
+	resp, err := MakeRequest("GET", "/initscripts", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if err := CheckApplicationError(resp); err != nil {
+		return nil, err
+	}
+	var states []models.InitScriptState
+	if err := json.NewDecoder(resp.Body).Decode(&states); err != nil {
+		return nil, fmt.Errorf("decode initscripts response: %w", err)
+	}
+	return states, nil
+}

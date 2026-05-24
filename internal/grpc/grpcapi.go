@@ -68,6 +68,7 @@ type GRPCService struct {
 	allowUnlimitedTTL  bool                    // whether clients may request ttl=0 (never expire)
 	SessionLockStore   *sync.Map               // stores *sessionLock keyed by lock ID
 	acquireMu          sync.Mutex              // serialises AcquireSession scan-then-store
+	initTracker        *models.InitTracker     // live state of init scripts (nil if none registered)
 }
 
 // Helper function to get the deletion date as a string or empty if not set
@@ -139,6 +140,12 @@ func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, us
 		allowUnlimitedTTL:  config.Shells.AllowUnlimittedTTL,
 		SessionLockStore:   &sync.Map{},
 	}, nil
+}
+
+// SetInitTracker wires the init script tracker into the gRPC service so that
+// new PTY shell sessions can display init progress before handing off to the shell.
+func (a *GRPCService) SetInitTracker(t *models.InitTracker) {
+	a.initTracker = t
 }
 
 // NumSessions returns the number of active sessions

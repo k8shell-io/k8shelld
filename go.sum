@@ -45,6 +45,8 @@ github.com/k8shell-io/api-server v0.15.0 h1:FyBgblQAE5FJfPLDf+0khW9zESxCf5WrwzMt
 github.com/k8shell-io/api-server v0.15.0/go.mod h1:OIUI93twcGf0qQVdWCRTK+rkDFYLhTnkC+SDxfa5AqU=
 github.com/k8shell-io/common v0.20.21 h1:iBCYv4L/2MfgwK+qp6XauDS5rW7uCu9XrzlkWG/aNMw=
 github.com/k8shell-io/common v0.20.21/go.mod h1:E8dsb9ta4v3ne61AJgtRyTTbTkMMmKeCMAcXD+/9+cY=
+github.com/k8shell-io/common v0.21.0 h1:EOwaQOFnHQJsHcDLDVEAwNnJJe7uvQCqcOiI6BTu3GE=
+github.com/k8shell-io/common v0.21.0/go.mod h1:E8dsb9ta4v3ne61AJgtRyTTbTkMMmKeCMAcXD+/9+cY=
 github.com/kr/fs v0.1.0 h1:Jskdu9ieNAYnjxsi0LbQp1ulIKZV1LAFgK1tWhpZgl8=
 github.com/kr/fs v0.1.0/go.mod h1:FFnZGqtBN9Gxj7eW1uZ42v5BccTP0vu6NEaFoC2HwRg=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
