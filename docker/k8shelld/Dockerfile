@@ -13,7 +13,7 @@ LABEL COMMIT_ID=$COMMIT_ID
 
 WORKDIR /go/src/k8shelld
 
-COPY files .
+COPY . .
 ENV GOFLAGS="-mod=vendor"
 
 RUN CGO_ENABLED=0 go build -gcflags="all=-N -l" \
@@ -35,7 +35,7 @@ ARG COMMIT_ID
 
 WORKDIR /go/src/k8shelld
 
-COPY files .
+COPY . .
 ENV GOFLAGS="-mod=vendor"
 
 RUN CGO_ENABLED=0 go build \
@@ -56,7 +56,7 @@ FROM registry.k8shell.io/docker/library/alpine:3.21.3 AS alpine
 COPY --from=build-debug /go/bin/k8shelld /k8shell/dist/
 COPY --from=build-debug /go/bin/kbox /k8shell/dist/
 COPY --from=build-debug /go/bin/sftp /k8shell/dist/
-COPY files/scripts /k8shell/dist/scripts
+COPY scripts /k8shell/dist/scripts
 
 # -- Runtime stage (Alpine / release) ------------------------------------------
 FROM registry.k8shell.io/docker/library/alpine:3.21.3 AS release
@@ -64,4 +64,4 @@ FROM registry.k8shell.io/docker/library/alpine:3.21.3 AS release
 COPY --from=build-release /go/bin/k8shelld /k8shell/dist/
 COPY --from=build-release /go/bin/kbox /k8shell/dist/
 COPY --from=build-release /go/bin/sftp /k8shell/dist/
-COPY files/scripts /k8shell/dist/scripts
+COPY scripts /k8shell/dist/scripts

@@ -1,0 +1,7 @@
+bin/
+reports/
+docker/
+tests/
+.git/
+.github/
+*.md
