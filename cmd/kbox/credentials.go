@@ -98,6 +98,11 @@ func validateDockerCredsJSON(body []byte) ([]byte, bool) {
 	return canonical, true
 }
 
+// errCredentialsNotFound is the exact string Docker requires when a credential
+// helper cannot find credentials for a registry. Docker distinguishes this from
+// hard errors by matching the message exactly.
+const errCredentialsNotFound = "credentials not found in native keychain"
+
 // dockerCredsHelper implements Docker credentials helper protocol
 // It reads from stdin and writes to stdout as per Docker's credentials helper protocol.
 func dockerCredsHelper(operation string) {
@@ -105,7 +110,7 @@ func dockerCredsHelper(operation string) {
 	case "get":
 		scanner := bufio.NewScanner(os.Stdin)
 		if !scanner.Scan() {
-			fmt.Fprintln(os.Stderr, "No address provided.")
+			fmt.Fprintln(os.Stderr, "no address provided")
 			os.Exit(1)
 		}
 		address := strings.TrimSpace(scanner.Text())
@@ -115,12 +120,14 @@ func dockerCredsHelper(operation string) {
 
 		resp, err := client.MakeRequest("GET", urlPath, headers, nil)
 		if err != nil {
+			fmt.Fprintln(os.Stderr, errCredentialsNotFound)
 			os.Exit(1)
 		}
 		defer resp.Body.Close()
 
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to read response: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -130,14 +137,19 @@ func dockerCredsHelper(operation string) {
 				fmt.Print(string(canonical))
 				os.Exit(0)
 			}
-			fmt.Print("{}")
-			os.Exit(0)
+			fmt.Fprintln(os.Stderr, errCredentialsNotFound)
+			os.Exit(1)
 
-		case 204, 404, 401, 403:
-			fmt.Print("{}")
-			os.Exit(0)
+		case 204, 404:
+			fmt.Fprintln(os.Stderr, errCredentialsNotFound)
+			os.Exit(1)
+
+		case 401, 403:
+			fmt.Fprintf(os.Stderr, "credential store returned HTTP %d for %s\n", resp.StatusCode, address)
+			os.Exit(1)
 
 		default:
+			fmt.Fprintf(os.Stderr, "credential store returned unexpected HTTP %d for %s\n", resp.StatusCode, address)
 			os.Exit(1)
 		}
 
@@ -168,6 +180,10 @@ func gitCredsHelper(operation string) {
 		if len(parts) == 2 {
 			creds[parts[0]] = parts[1]
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to scan stdin: %v\n", err)
+		return
 	}
 
 	switch operation {
