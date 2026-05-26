@@ -106,7 +106,7 @@ jobs:
             VERSION=$(git describe --tags --match 'v*' | sed 's/-g.*//')
             IMAGE_TAG="$VERSION"
             IMAGE_TAG_LATEST="latest"
-            RUNTIME="distroless"
+            RUNTIME="release"
           fi
 
           echo "REPO_NAME=$(grep -v '^#' docker/${{ github.event.repository.name }}/BUILD | tail -1)" >> $GITHUB_ENV

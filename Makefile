@@ -82,7 +82,7 @@ image-release: image             ##@ Shorthand for: RUNTIME=release make image
 image:  ##@ Build Docker image
         ##@ Builds container image with version tagging
         ##@ Accepts VERSION, COMMIT_ID, IMAGE_TAG, RUNTIME from environment or auto-detects from git
-        ##@ RUNTIME selects the runtime stage: alpine (default) or distroless
+        ##@ RUNTIME selects the runtime stage: alpine (default) or release
         ##@ Loads into local docker by default; set PUSH=1 to push to registry instead
 image: vendor
 	@echo "Building $(SERVICE_NAME) docker image..."
