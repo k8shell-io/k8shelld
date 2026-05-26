@@ -9,3 +9,4 @@ tests/kbox
 .nfs*
 reports/
 .nfs*
+bin

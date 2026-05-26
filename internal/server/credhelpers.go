@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	kubectlCredHelperBin = "kubectl-credential-k8shell"
+	kubectlCredHelperBin = "kubectl-credential-k8shell" // #nosec G101 -- this is a binary name, not a credential
 )
 
 // currentPodNamespace returns the Kubernetes namespace this pod is running in.
@@ -179,7 +179,7 @@ users:
 		return fmt.Errorf("chown .kube directory: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, []byte(kubeconfig), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0o600); err != nil { // #nosec -- configPath is derived from server-controlled user home dir, not user input
 		return fmt.Errorf("write kubeconfig: %w", err)
 	}
 	return os.Chown(configPath, int(s.user.GetUID()), int(s.user.GetGID()))

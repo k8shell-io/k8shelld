@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -496,16 +497,24 @@ func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	filename := r.URL.Query().Get("file")
-	if filename == "" {
+	filename := filepath.Clean(r.URL.Query().Get("file"))
+	if filename == "" || filename == "." {
 		http.Error(w, "Missing 'file' query parameter", http.StatusBadRequest)
+		return
+	}
+	if !filepath.IsAbs(filename) {
+		http.Error(w, "file path must be absolute", http.StatusBadRequest)
+		return
+	}
+	if homeDir := a.server.user.GetHomeDir(); !strings.HasPrefix(filename, homeDir+"/") {
+		http.Error(w, "file path must be within the home directory", http.StatusForbidden)
 		return
 	}
 	compose := r.URL.Query().Get("compose") == "true"
 
 	a.logger.Debug().Msgf("Validating k8shell file: %s", filename)
 
-	k8shellFileYAML, err := os.ReadFile(filename)
+	k8shellFileYAML, err := os.ReadFile(filename) // #nosec -- path validated to be absolute and within user home dir
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to read file %s", filename), http.StatusBadRequest)
 		return
@@ -628,6 +637,12 @@ func (a *RESTService) GetAppLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate name is a registered app to prevent path traversal via user-supplied name.
+	if _, err := a.server.appManager.GetApp(name); err != nil {
+		http.Error(w, "App not found", http.StatusNotFound)
+		return
+	}
+
 	follow := r.URL.Query().Get("follow") == "true"
 	logPath, err := a.server.appManager.GetLastLogPath(name, logType)
 	if err != nil {
@@ -641,7 +656,7 @@ func (a *RESTService) GetAppLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !follow {
-		logText, err := os.ReadFile(logPath)
+		logText, err := os.ReadFile(logPath) // #nosec -- logPath is within server-controlled state dir; name validated against registered apps
 		if err != nil {
 			a.logger.Error().Msgf("Failed to read %s logs for app %s: %v", logType, name, err)
 			http.Error(w, fmt.Sprintf("Failed to read %s logs: %v", logType, err), http.StatusInternalServerError)
@@ -653,7 +668,7 @@ func (a *RESTService) GetAppLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if (logType == "install" && !a.server.appManager.IsInstalling(name)) || (logType == "app" && !a.server.appManager.IsRunning(name)) {
-		logText, err := os.ReadFile(logPath)
+		logText, err := os.ReadFile(logPath) // #nosec -- same as above
 		if err != nil {
 			a.logger.Error().Msgf("Failed to read %s logs for app %s: %v", logType, name, err)
 			http.Error(w, fmt.Sprintf("Failed to read %s logs: %v", logType, err), http.StatusInternalServerError)
@@ -674,7 +689,7 @@ func (a *RESTService) GetAppLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f, err := os.Open(logPath)
+	f, err := os.Open(logPath) // #nosec -- same as above
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to open log file: %v", err), http.StatusInternalServerError)
 		return
@@ -711,7 +726,7 @@ func (a *RESTService) GetAppLogs(w http.ResponseWriter, r *http.Request) {
 func (a *RESTService) Serve(ctx context.Context) {
 	router := a.initializeRouter()
 	if a.unixSocketPath != "" {
-		go a.manageUnixSocket(ctx, router)
+		go a.manageUnixSocket(ctx, router) // #nosec -- ctx is the server lifecycle context derived from context.WithCancel, not a raw context.Background()
 	}
 }
 
