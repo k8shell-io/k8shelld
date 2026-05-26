@@ -627,6 +627,9 @@ func GetPIDListeningOnPort(port int) (int, error) {
 				}
 			}
 		}
+		if err := sc.Err(); err != nil {
+			return 0, err
+		}
 		return 0, nil
 	}
 

@@ -58,7 +58,7 @@ test-binary: ##@ Run binary smoke tests
              ##@ Validates that built binaries execute successfully (basic sanity check)
 test-binary: build
 	@echo "Running binary smoke tests..."
-	@./bin/k8shelld --version > /dev/null 2>&1 || (echo "k8shelld smoke test failed" && exit 1)
+	@./bin/k8shelld -v > /dev/null 2>&1 || (echo "k8shelld smoke test failed" && exit 1)
 	@./bin/kbox --version > /dev/null 2>&1 || (echo "kbox smoke test failed" && exit 1)
 	@echo "Binary smoke tests passed!"
 

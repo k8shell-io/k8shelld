@@ -301,7 +301,7 @@ func ApplyShell(username, shell string) error {
 	}
 
 	tmpPath := passwdPath + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+	if err := os.WriteFile(tmpPath, []byte(strings.Join(lines, "\n")), 0644); err != nil { // #nosec -- tmpPath is derived from the hard-coded constant "/etc/passwd", not user input
 		return fmt.Errorf("failed to write temporary /etc/passwd: %v", err)
 	}
 	if err := os.Rename(tmpPath, passwdPath); err != nil {
