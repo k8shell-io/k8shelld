@@ -48,15 +48,19 @@ test: install-test-deps
 
 build:      ##@ Build binaries
 	@echo "Building binaries..."
-	go build -o bin/$(SERVICE_NAME) main.go
+	@mkdir -p bin
+	go build -ldflags="-s -w" -o bin/k8shelld ./cmd/k8shelld
+	go build -ldflags="-s -w" -o bin/kbox ./cmd/kbox
+	go build -ldflags="-s -w" -o bin/sftp ./sftp
 	@echo "Build complete!"
 
 test-binary: ##@ Run binary smoke tests
              ##@ Validates that built binaries execute successfully (basic sanity check)
 test-binary: build
 	@echo "Running binary smoke tests..."
-	@./bin/$(SERVICE_NAME) -h > /dev/null 2>&1 || (echo "$(SERVICE_NAME) help failed" && exit 1)
-	@echo "$(SERVICE_NAME) smoke tests passed!"
+	@./bin/k8shelld --version > /dev/null 2>&1 || (echo "k8shelld smoke test failed" && exit 1)
+	@./bin/kbox --version > /dev/null 2>&1 || (echo "kbox smoke test failed" && exit 1)
+	@echo "Binary smoke tests passed!"
 
 test-self:  ##@ Run all self-tests
             ##@ Executes static analysis, unit tests, build, and binary smoke tests
@@ -69,11 +73,11 @@ vendor:  ##@ Vendor Go modules
 	@echo "Vendoring Go modules..."
 	@go mod vendor
 
-image-debug: RUNTIME=alpine   ##@ Build debug image (alpine, with debug symbols, while-loop entrypoint)
+image-debug: RUNTIME=alpine   ##@ Build debug image (alpine, with debug symbols)
 image-debug: image            ##@ Shorthand for: RUNTIME=alpine make image
 
-image-release: RUNTIME=distroless  ##@ Build release image (distroless, stripped binary)
-image-release: image               ##@ Shorthand for: RUNTIME=distroless make image
+image-release: RUNTIME=release  ##@ Build release image (stripped binary)
+image-release: image             ##@ Shorthand for: RUNTIME=release make image
 
 image:  ##@ Build Docker image
         ##@ Builds container image with version tagging
@@ -105,7 +109,7 @@ coverage:  ##@ Calculate test coverage percentage from coverage.out
 
 clean: ##@ Clean up generated files
 	rm -rf $(REPORTS_DIR)
-	rm -f bin/$(SERVICE_NAME)
+	rm -rf bin/
 	rm -rf vendor/
 
 

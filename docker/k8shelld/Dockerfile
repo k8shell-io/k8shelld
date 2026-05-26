@@ -59,7 +59,7 @@ COPY --from=build-debug /go/bin/sftp /k8shell/dist/
 COPY files/scripts /k8shell/dist/scripts
 
 # -- Runtime stage (Alpine / release) ------------------------------------------
-FROM registry.k8shell.io/docker/library/alpine:3.21.3
+FROM registry.k8shell.io/docker/library/alpine:3.21.3 AS release
 
 COPY --from=build-release /go/bin/k8shelld /k8shell/dist/
 COPY --from=build-release /go/bin/kbox /k8shell/dist/
