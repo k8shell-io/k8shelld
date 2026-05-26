@@ -213,7 +213,7 @@ jobs:
 
       # Authenticate to Harbor registry
       - name: Login to Docker Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4  # v4.2.0 SHA:650006c6eb7dba73a995cc03b0b2d7f5ca915bee
         with:
           registry: registry.k8shell.io
           username: ${{ secrets.HARBOR_USER }}
