@@ -420,10 +420,16 @@ func (s *Server) runScript(scriptsDir, scriptName, flagFile string, envVars []st
 		for scannerOut.Scan() {
 			s.logger.Debug().Msgf("script=%s, msg=%s", scriptName, scannerOut.Text())
 		}
+		if err := scannerOut.Err(); err != nil {
+			s.logger.Error().Msgf("script=%s, failed to scan stdout: %v", scriptName, err)
+		}
 	}()
 	go func() {
 		for scannerErr.Scan() {
 			s.logger.Debug().Msgf("script=%s, msg=%s", scriptName, scannerErr.Text())
+		}
+		if err := scannerErr.Err(); err != nil {
+			s.logger.Error().Msgf("script=%s, failed to scan stderr: %v", scriptName, err)
 		}
 	}()
 

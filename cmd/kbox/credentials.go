@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	doccredentials "github.com/docker/docker-credential-helpers/credentials"
 	"github.com/k8shell-io/k8shelld/internal/client"
 	"github.com/spf13/cobra"
 )
@@ -32,7 +33,14 @@ var dockerCredsHelperCmd = &cobra.Command{
 	Short: "Docker credentials helper",
 	Long:  "Docker credentials helper",
 	Run: func(cmd *cobra.Command, args []string) {
-		dockerCredsHelper(operation)
+		action := doccredentials.ActionGet
+		if len(args) > 0 {
+			action = args[0]
+		}
+		if err := doccredentials.HandleCommand(&k8shellDockerHelper{}, action, os.Stdin, os.Stdout); err != nil {
+			_, _ = fmt.Fprintln(os.Stdout, err)
+			os.Exit(1)
+		}
 	},
 }
 
@@ -59,7 +67,6 @@ func init() {
 	CredentialsCmd.AddCommand(gitCredsHelperCmd)
 	CredentialsCmd.AddCommand(kubernetesCredsHelperCmd)
 
-	dockerCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")
 	gitCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")
 	kubernetesCredsHelperCmd.Flags().StringVarP(&operation, "oper", "o", "get", "Operation to perform")
 }
@@ -67,6 +74,48 @@ func init() {
 type dockerGetResponse struct {
 	Username string `json:"Username"`
 	Secret   string `json:"Secret"`
+}
+
+// k8shellDockerHelper implements credentials.Helper for the docker-credential-k8shell helper.
+// Get fetches credentials from the k8shelld REST API. Add and Delete are no-ops
+// because k8shell is a read-only credential store.
+type k8shellDockerHelper struct{}
+
+func (h *k8shellDockerHelper) Add(creds *doccredentials.Credentials) error { return nil }
+func (h *k8shellDockerHelper) Delete(serverURL string) error               { return nil }
+func (h *k8shellDockerHelper) List() (map[string]string, error)            { return map[string]string{}, nil }
+
+func (h *k8shellDockerHelper) Get(serverURL string) (string, string, error) {
+	urlPath := fmt.Sprintf("/creds?type=docker&address=%s", url.QueryEscape(serverURL))
+	headers := map[string]string{"Accept": "application/json"}
+
+	resp, err := client.MakeRequest("GET", urlPath, headers, nil)
+	if err != nil {
+		return "", "", doccredentials.NewErrCredentialsNotFound()
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case 200:
+		var cred dockerGetResponse
+		if canonical, ok := validateDockerCredsJSON(bodyBytes); ok {
+			if err := json.Unmarshal(canonical, &cred); err == nil {
+				return cred.Username, cred.Secret, nil
+			}
+		}
+		return "", "", doccredentials.NewErrCredentialsNotFound()
+	case 204, 404:
+		return "", "", doccredentials.NewErrCredentialsNotFound()
+	case 401, 403:
+		return "", "", fmt.Errorf("credential store returned HTTP %d for %s", resp.StatusCode, serverURL)
+	default:
+		return "", "", fmt.Errorf("credential store returned unexpected HTTP %d for %s", resp.StatusCode, serverURL)
+	}
 }
 
 // validateDockerCredsJSON enforces what Docker expects from a credential helper "get":
@@ -98,62 +147,6 @@ func validateDockerCredsJSON(body []byte) ([]byte, bool) {
 	return canonical, true
 }
 
-// dockerCredsHelper implements Docker credentials helper protocol
-// It reads from stdin and writes to stdout as per Docker's credentials helper protocol.
-func dockerCredsHelper(operation string) {
-	switch operation {
-	case "get":
-		scanner := bufio.NewScanner(os.Stdin)
-		if !scanner.Scan() {
-			fmt.Fprintln(os.Stderr, "No address provided.")
-			os.Exit(1)
-		}
-		address := strings.TrimSpace(scanner.Text())
-
-		urlPath := fmt.Sprintf("/creds?type=docker&address=%s", url.QueryEscape(address))
-		headers := map[string]string{"Accept": "application/json"}
-
-		resp, err := client.MakeRequest("GET", urlPath, headers, nil)
-		if err != nil {
-			os.Exit(1)
-		}
-		defer resp.Body.Close()
-
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			os.Exit(1)
-		}
-
-		switch resp.StatusCode {
-		case 200:
-			if canonical, ok := validateDockerCredsJSON(bodyBytes); ok {
-				fmt.Print(string(canonical))
-				os.Exit(0)
-			}
-			fmt.Print("{}")
-			os.Exit(0)
-
-		case 204, 404, 401, 403:
-			fmt.Print("{}")
-			os.Exit(0)
-
-		default:
-			os.Exit(1)
-		}
-
-	case "list":
-		fmt.Print("{}")
-		os.Exit(0)
-
-	case "store", "erase":
-		os.Exit(0)
-
-	default:
-		fmt.Fprintf(os.Stderr, "Invalid operation: %s\n", operation)
-		os.Exit(1)
-	}
-}
-
 // gitCredsHelper implements Git credential helper protocol
 func gitCredsHelper(operation string) {
 	creds := map[string]string{}
@@ -168,6 +161,10 @@ func gitCredsHelper(operation string) {
 		if len(parts) == 2 {
 			creds[parts[0]] = parts[1]
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to scan stdin: %v\n", err)
+		return
 	}
 
 	switch operation {
