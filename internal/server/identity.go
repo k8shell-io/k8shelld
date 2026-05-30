@@ -19,8 +19,8 @@ const JWT_VERIFIER_SIGNING_METHOD_ENV = "JWT_VERIFIER_SIGNING_METHOD"
 const JWT_VERIFIER_PUBLIC_KEY_ENV = "JWT_VERIFIER_PUBLIC_KEY"
 const USER_UID_ENV = "USER_UID"
 const USER_GID_ENV = "USER_GID"
-const USER_DISPLAY_NAME_ENV = "USER_DISPLAY_NAME"
-const USER_EMAIL_ENV = "USER_EMAIL"
+const USER_DISPLAY_NAME_ENV = "USERFULLNAME"
+const USER_EMAIL_ENV = "USEREMAIL"
 
 // newJWTVerifier creates a JWTVerifier based on environment variables.
 func newJWTVerifier() (*authz.JWTVerifier, error) {
