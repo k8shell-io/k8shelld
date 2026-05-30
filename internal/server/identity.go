@@ -19,6 +19,8 @@ const JWT_VERIFIER_SIGNING_METHOD_ENV = "JWT_VERIFIER_SIGNING_METHOD"
 const JWT_VERIFIER_PUBLIC_KEY_ENV = "JWT_VERIFIER_PUBLIC_KEY"
 const USER_UID_ENV = "USER_UID"
 const USER_GID_ENV = "USER_GID"
+const USER_DISPLAY_NAME_ENV = "USER_DISPLAY_NAME"
+const USER_EMAIL_ENV = "USER_EMAIL"
 
 // newJWTVerifier creates a JWTVerifier based on environment variables.
 func newJWTVerifier() (*authz.JWTVerifier, error) {
@@ -73,6 +75,11 @@ func (s *Server) loadIdentity() error {
 		}
 		claims := &authz.UserClaims{UID: uint32(uid64), GID: uint32(gid64)}
 		claims.Subject = s.username
+		claims.Name = strings.TrimSpace(os.Getenv(USER_DISPLAY_NAME_ENV))
+		if claims.Name == "" {
+			claims.Name = s.username
+		}
+		claims.Email = strings.TrimSpace(os.Getenv(USER_EMAIL_ENV))
 		s.user = models.NewUser(claims, "")
 		s.logger.Debug().Msgf("Environment identity loaded: uid=%d gid=%d", uid64, gid64)
 		return nil
