@@ -263,13 +263,10 @@ func (s *GRPCService) callerValidationInterceptor() grpc.UnaryServerInterceptor 
 }
 
 // resolveShellUser determines which OS user the shell session should run as.
-// Priority: explicit "root" (requires sudo) > named user lookup > default user.
+// Priority: explicit "root" > named user lookup > default user.
 func (s *GRPCService) resolveShellUser(reqUser string, callerUser *models.User) (models.ShellUser, error) {
 	if reqUser == "root" {
-		if callerUser.SudoEnabled() {
-			return models.ShellUser{Username: "root", UID: 0, GID: 0, HomeDir: "/root"}, nil
-		}
-		return models.ShellUser{}, fmt.Errorf("user %s does not have sudo privileges", callerUser.GetUsername())
+		return models.ShellUser{Username: "root", UID: 0, GID: 0, HomeDir: "/root"}, nil
 	}
 
 	if reqUser != "" && reqUser != callerUser.GetUsername() {

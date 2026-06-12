@@ -90,6 +90,9 @@ func isValidShell(shell string) bool {
 				return true
 			}
 		}
+		if scanner.Err() != nil {
+			return false
+		}
 	}
 	return false
 }
