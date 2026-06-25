@@ -1,3 +1,6 @@
+// Use of this source code is governed by a AGPLv3
+// license that can be found in the LICENSE file.
+
 package main
 
 import (
@@ -219,7 +222,6 @@ var AppsStartCmd = &cobra.Command{
 	},
 }
 
-// NEW: stop app (stop supervising and stop process)
 var AppsStopCmd = &cobra.Command{
 	Use:   "stop <app-name>",
 	Short: "Stop an app and its supervision",

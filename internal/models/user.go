@@ -1,3 +1,6 @@
+// Use of this source code is governed by a AGPLv3
+// license that can be found in the LICENSE file.
+
 package models
 
 import (
@@ -113,13 +116,6 @@ func (u *User) TokenEqual(token string) bool {
 			claims1.UID == claims2.UID && claims1.GID == claims2.GID
 	}
 
-	// if !eq && token == u.previousToken {
-	// 	// previous token must not have expired yet to be considered equal
-	// 	_, err := authz.ParseUnverifiedClaims(token, true)
-	// 	if err == nil {
-	// 		eq = true
-	// 	}
-	// }
 	return eq
 }
 

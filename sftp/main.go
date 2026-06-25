@@ -1,6 +1,9 @@
-package main
+// Use of this source code is governed by a AGPLv3
+// license that can be found in the LICENSE file.
 
-// a wrapper around sftp server that allows it to be used as a separate process by k8ahelld
+// Command sftp is a wrapper around the sftp server that allows it to be used
+// as a separate process by k8shelld.
+package main
 
 import (
 	"fmt"

@@ -1,8 +1,9 @@
-// grpcapi.go, copyright 2025 the k8shell.io authors
+// Use of this source code is governed by a AGPLv3
+// license that can be found in the LICENSE file.
 
-// gRPC API service creates a gRPC server, registers the services, sets up the TLS configuration,
-// and the interceptor. It uses the tokenAuthInterceptor to authenticate the client using the token
-// in the metadata.
+// Package grpc implements the k8shelld gRPC API service. It creates a gRPC server,
+// registers all service handlers, sets up TLS, and enforces JWT-based caller authentication
+// via a unary server interceptor.
 
 package grpc
 

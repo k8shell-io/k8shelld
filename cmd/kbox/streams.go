@@ -1,3 +1,6 @@
+// Use of this source code is governed by a AGPLv3
+// license that can be found in the LICENSE file.
+
 package main
 
 import (
@@ -109,14 +112,12 @@ Use the --sort flag to sort the output by one or more fields. Prefix the field n
 			t = table.NewTable(tableFields, rowColorFunc)
 		}
 
-		// Parse the JSON data
 		err = t.ParseJsonData(bodyBytes)
 		if err != nil {
 			fmt.Printf("Error parsing JSON data: %v\n", err)
 			return
 		}
 
-		// Sort the table
 		sort := cmd.Flag("sort").Value.String()
 		err = t.Sort(strings.Split(sort, ","))
 		if err != nil {
@@ -124,7 +125,6 @@ Use the --sort flag to sort the output by one or more fields. Prefix the field n
 			return
 		}
 
-		// Display the table
 		if json, _ := cmd.Flags().GetBool("json"); json {
 			if err := t.DisplayJSON(); err != nil {
 				fmt.Printf("Error displaying JSON: %v\n", err)

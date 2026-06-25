@@ -1,3 +1,6 @@
+// Use of this source code is governed by a AGPLv3
+// license that can be found in the LICENSE file.
+
 package grpc
 
 import (
@@ -21,7 +24,6 @@ type SystemServiceServer struct {
 	grpcApi        *GRPCService
 	logger         *zerolog.Logger
 	initScriptsRun bool
-	//handshakeMu    sync.Mutex
 	k8shelldv1.UnimplementedSystemServiceServer
 }
 

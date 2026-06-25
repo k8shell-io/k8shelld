@@ -1,3 +1,6 @@
+// Use of this source code is governed by a AGPLv3
+// license that can be found in the LICENSE file.
+
 package grpc
 
 import (
@@ -89,7 +92,7 @@ func (s *AppServiceServer) InstallApp(ctx context.Context,
 	return &k8shelldv1.InstallAppResponse{}, nil
 }
 
-// StopApp stops the specified application by name.
+// StartApp starts the specified application by name.
 func (s *AppServiceServer) StartApp(ctx context.Context,
 	req *k8shelldv1.StartAppRequest) (*k8shelldv1.StartAppResponse, error) {
 	if s.appManager == nil {

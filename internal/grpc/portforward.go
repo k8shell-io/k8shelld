@@ -1,7 +1,6 @@
-// portforward.go, copyright 2025 the k8shell.io authors
+// Use of this source code is governed by a AGPLv3
+// license that can be found in the LICENSE file.
 
-// Port-forwarding service server. It creates a new port-forwarding instance, starts the TCP connection, and
-// streams data between the client and the destination.
 
 package grpc
 

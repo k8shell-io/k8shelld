@@ -1,3 +1,6 @@
+// Use of this source code is governed by a AGPLv3
+// license that can be found in the LICENSE file.
+
 // acquire.go — AcquireSession RPC and session lock management.
 //
 // The acquire/attach flow:
