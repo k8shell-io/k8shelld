@@ -10,13 +10,11 @@ This repository also contains **`kbox`** — a CLI utility that runs inside the 
 
 ### Blueprint
 
-The blueprint is a YAML document mounted at `/etc/k8shell/blueprint.yaml` that describes what the workspace should look like at runtime. `k8shelld` reads it at startup and uses it to configure:
+The blueprint is a YAML document mounted at `/etc/k8shell/blueprint.yaml`. It is provided into the workspace by the k8Shell provisioner service before `k8shelld` starts — `k8shelld` does not create or modify it. On startup, `k8shelld` reads the blueprint to determine:
 
 - Whether Podman-in-container is enabled (and whether to create a `/var/run/docker.sock` symlink)
 - Which apps are available and which start automatically
 - Workspace splash configuration
-
-If no blueprint is present, `k8shelld` starts with defaults and skips app management entirely.
 
 ### Init scripts
 
