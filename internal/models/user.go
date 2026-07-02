@@ -86,10 +86,6 @@ func (u *User) Update(claims *authz.UserClaims, token string) (bool, error) {
 	if claims.Source != u.claims.Source {
 		return false, fmt.Errorf("cannot update user source from %s to %s", u.claims.Source, claims.Source)
 	}
-	if claims.UID != u.uid || claims.GID != u.gid {
-		return false, fmt.Errorf("cannot update user UID/GID from %d/%d to %d/%d", u.uid, u.gid, claims.UID, claims.GID)
-	}
-
 	u.claims = claims
 	u.previousToken = u.userToken
 	u.userToken = token

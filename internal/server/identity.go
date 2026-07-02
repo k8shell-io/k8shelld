@@ -158,6 +158,17 @@ func (s *Server) renewIdentityTokenIfNeeded(ctx context.Context) error {
 		return fmt.Errorf("verify token: %w", err)
 	}
 
+	if !s.uidGIDMismatchWarned {
+		snap := s.user.ClaimsSnapshot()
+		if claims.UID != s.user.GetUID() || claims.GID != s.user.GetGID() {
+			s.logger.Warn().Msgf(
+				"Refreshed token has different UID/GID (%d/%d → %d/%d); keeping existing OS identity, not changing workspace user",
+				snap.UID, snap.GID, claims.UID, claims.GID,
+			)
+			s.uidGIDMismatchWarned = true
+		}
+	}
+
 	_, err = s.user.Update(claims, tokenStr)
 	if err != nil {
 		return fmt.Errorf("update user from refresh token: %w", err)
