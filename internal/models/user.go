@@ -107,9 +107,10 @@ func (u *User) TokenEqual(token string) bool {
 		if err2 != nil {
 			return false
 		}
-		// previous token might be expired, but if the claims match then we can consider it equal
-		eq = claims1.Subject == claims2.Subject && claims1.Source == claims2.Source &&
-			claims1.UID == claims2.UID && claims1.GID == claims2.GID
+		// previous token might be expired, but if the claims match then we can consider it equal.
+		// UID/GID are excluded: they are POSIX attributes that can legitimately change on renewal
+		// (see User.Update). Subject+Source are sufficient to identify the workspace user.
+		eq = claims1.Subject == claims2.Subject && claims1.Source == claims2.Source
 	}
 
 	return eq
