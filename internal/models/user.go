@@ -36,9 +36,8 @@ type User struct {
 	groups   []Group
 
 	// Mutable — replaced atomically on token renewal; requires mu.
-	claims        *authz.UserClaims
-	userToken     string
-	previousToken string
+	claims    *authz.UserClaims
+	userToken string
 }
 
 // NewUser creates a User from a verified JWT claims set and the raw token string.
@@ -87,7 +86,6 @@ func (u *User) Update(claims *authz.UserClaims, token string) (bool, error) {
 		return false, fmt.Errorf("cannot update user source from %s to %s", u.claims.Source, claims.Source)
 	}
 	u.claims = claims
-	u.previousToken = u.userToken
 	u.userToken = token
 	return true, nil
 }
@@ -95,25 +93,19 @@ func (u *User) Update(claims *authz.UserClaims, token string) (bool, error) {
 func (u *User) TokenEqual(token string) bool {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
-	eq := token == u.userToken
 
-	if !eq {
-		// token was verified before calling TokenEqual
-		claims1, err1 := authz.ParseUnverifiedClaims(token, true)
-		if err1 != nil {
-			return false
-		}
-		claims2, err2 := authz.ParseUnverifiedClaims(u.previousToken, false)
-		if err2 != nil {
-			return false
-		}
-		// previous token might be expired, but if the claims match then we can consider it equal.
-		// UID/GID are excluded: they are POSIX attributes that can legitimately change on renewal
-		// (see User.Update). Subject+Source are sufficient to identify the workspace user.
-		eq = claims1.Subject == claims2.Subject && claims1.Source == claims2.Source
+	if token == u.userToken {
+		return true
 	}
 
-	return eq
+	// The caller's token was already verified (signature + expiry) by the interceptor.
+	// Accept any valid token whose Subject+Source match the workspace identity.
+	// Both fields are immutable: Subject is set in NewUser; Source is validated in Update.
+	claims, err := authz.ParseUnverifiedClaims(token, true)
+	if err != nil {
+		return false
+	}
+	return claims.Subject == u.username && claims.Source == u.claims.Source
 }
 
 // HasRole checks if the user has a specific role.
