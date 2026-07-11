@@ -170,8 +170,8 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.logger.Debug().Msgf("Fetching last %d sessions for workspace %s", n, a.server.workspace)
-	sessions, err := a.server.apiClientx.ListUserSessions(r.Context(), a.user.GetUsername(),
-		a.server.workspace, n, 0, true)
+	sessions, err := a.server.apiClientx.ListSessions(r.Context(), a.user.GetUsername(),
+		a.server.workspace, n, false)
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot retrieve workspace sessions: %v", err)
 		http.Error(w, "Failed to retrieve sessions", http.StatusBadGateway)
@@ -223,7 +223,7 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		scope := currentPodNamespace()
-		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "kubernetes", scope)
+		cred, err := a.server.apiClientx.ResolveUserCredential(r.Context(), a.user.GetUsername(), "kubernetes", scope)
 		if err != nil {
 			a.logger.Warn().Msgf("Cannot retrieve kubernetes user credentials: %v", err)
 			http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
@@ -265,7 +265,7 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 
 	switch credsType {
 	case "docker":
-		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "registry", addr)
+		cred, err := a.server.apiClientx.ResolveUserCredential(r.Context(), a.user.GetUsername(), "registry", addr)
 		if err != nil {
 			a.logger.Warn().Msgf("Cannot retrieve docker/registry user credentials: %v", err)
 			http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
@@ -280,7 +280,7 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	case "git":
-		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "git", addr)
+		cred, err := a.server.apiClientx.ResolveUserCredential(r.Context(), a.user.GetUsername(), "git", addr)
 		if err != nil {
 			a.logger.Warn().Msgf("Cannot retrieve git user credentials: %v", err)
 			http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)

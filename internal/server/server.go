@@ -18,9 +18,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/api-server/pkg/client"
 	"github.com/k8shell-io/common/pkg/authz"
 	commonmodels "github.com/k8shell-io/common/pkg/models"
+	"github.com/k8shell-io/k8shelld/internal/apiclient"
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
@@ -46,7 +46,7 @@ type Server struct {
 	restService *RESTService
 	grpcService *grpc.GRPCService
 	procWatcher *system.ProcessWatcher
-	apiClientx  *client.Client
+	apiClientx  *apiclient.Client
 	pprof       bool
 	sysInfo     *system.SystemInfo
 	appManager  *apps.AppManager
@@ -58,12 +58,12 @@ type Server struct {
 
 func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
 
-	var apiClient *client.Client
+	var apiClient *apiclient.Client
 	if cfg.System.ApiServer.Enabled {
 		if cfg.System.ApiServer.Address == "" {
 			return nil, fmt.Errorf("api server is enabled but address is empty")
 		}
-		apiClient = client.NewClient(cfg.System.ApiServer.Address, "")
+		apiClient = apiclient.New(cfg.System.ApiServer.Address)
 	}
 
 	jwtVerifier, err := newJWTVerifier()
