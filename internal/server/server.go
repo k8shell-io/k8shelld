@@ -52,8 +52,6 @@ type Server struct {
 	appManager  *apps.AppManager
 	jwtVerifier *authz.JWTVerifier
 	initTracker *models.InitTracker
-
-	uidGIDMismatchWarned bool
 }
 
 func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
@@ -62,6 +60,9 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 	if cfg.System.ApiServer.Enabled {
 		if cfg.System.ApiServer.Address == "" {
 			return nil, fmt.Errorf("api server is enabled but address is empty")
+		}
+		if strings.TrimSpace(os.Getenv(apiclient.PATTokenEnv)) == "" {
+			return nil, fmt.Errorf("api server is enabled but %s is not set", apiclient.PATTokenEnv)
 		}
 		apiClient = apiclient.New(cfg.System.ApiServer.Address)
 	}
@@ -265,14 +266,6 @@ func (s *Server) Serve() {
 				s.logger.Error().Msgf("pprof error: %v", err)
 			}
 			s.logger.Info().Msg("pprof stopped")
-		}()
-	}
-
-	if s.jwtVerifier != nil && s.apiClientx != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			s.watchIdentity(ctx)
 		}()
 	}
 
