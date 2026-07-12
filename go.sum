@@ -46,6 +46,8 @@ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/k8shell-io/common v0.32.2 h1:C/lQycVaYVqXIoAzPJuVV0jqq7FuPk6O2RtbeNndJ/4=
 github.com/k8shell-io/common v0.32.2/go.mod h1:40c5GkpS7Y0/aOFa37Lq8z/mLUn3k3GV/AHtFJFL28k=
+github.com/k8shell-io/common v0.33.0 h1:2PehtiDOG2i88pUwnPUce0HufJjgBJylcIIZkWePafU=
+github.com/k8shell-io/common v0.33.0/go.mod h1:40c5GkpS7Y0/aOFa37Lq8z/mLUn3k3GV/AHtFJFL28k=
 github.com/k8shell-io/k8shell-go v0.2.1 h1:6n88ijXkzP39//lIy4ai3XqtpSUXzoa/dVaWogHQYf4=
 github.com/k8shell-io/k8shell-go v0.2.1/go.mod h1:j1JHgUIKIbaiRaitx6Pzw37ahqS4Hu9OcM4uvJ7BP4g=
 github.com/kr/fs v0.1.0 h1:Jskdu9ieNAYnjxsi0LbQp1ulIKZV1LAFgK1tWhpZgl8=

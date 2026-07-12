@@ -46,7 +46,7 @@ go test ./internal/utils/... -run TestFunctionName -v
 
 **REST API** is a Unix-socket HTTP server (`internal/server/restapi.go`). It is only accessible inside the container and is the sole transport used by `kbox`.
 
-**Identity lifecycle**: the workspace user's profile is loaded once at startup (`loadProfile` in `identity.go`) from `/etc/k8shell/profile.yaml` (`config.LoadProfile`). There is no token issuance, renewal, or live API-server fetch involved; `models.User` is immutable for the process lifetime.
+**Identity lifecycle**: the workspace user's profile is loaded once at startup (`loadProfile` in `identity.go`) from `/etc/k8shell/profile.yaml` (`config.LoadProfile`). There is no token issuance or renewal involved. UID, GID, home directory, and groups are fixed for the process lifetime — they're baked into the OS user created at startup. The rest of the profile can be refreshed live: `GET /profile` re-fetches it from the API server (via PAT) when `apiServer.enabled: true` and updates `models.User` in place (`UpdateProfile`), falling back to the cached copy on fetch failure. `models.User` is safe for concurrent reads/updates from any goroutine (guarded internally by a mutex).
 
 **Build produces three binaries**: `k8shelld`, `kbox`, `sftp` — all `CGO_ENABLED=0`. The Dockerfile has two runtime stages (`alpine` for debug, `release` for production) on top of two build stages.
 

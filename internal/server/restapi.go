@@ -378,10 +378,22 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetProfile returns the workspace user's profile, as loaded at startup
-// (from the API server via PAT when configured, otherwise from environment
-// variables — see loadIdentity).
+// GetProfile returns the workspace user's profile. When the API server is
+// configured, the profile is re-fetched live and the in-memory copy is
+// refreshed (see models.User.UpdateProfile) so it stays current for
+// subsequent requests; on fetch failure it falls back to the last known
+// copy. Without an API server, it returns the profile loaded at startup from
+// /etc/k8shell/profile.yaml.
 func (a *RESTService) GetProfile(w http.ResponseWriter, r *http.Request) {
+	if a.server.apiClientx != nil {
+		fresh, err := a.server.apiClientx.GetUserProfile(r.Context(), a.user.GetUsername())
+		if err != nil {
+			a.logger.Warn().Msgf("Cannot refresh user profile from API server, using cached copy: %v", err)
+		} else {
+			a.user.UpdateProfile(*fresh)
+		}
+	}
+
 	profile := a.user.ProfileSnapshot()
 
 	roleStrs := make([]string, len(profile.Roles))

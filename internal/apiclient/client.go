@@ -58,6 +58,11 @@ func (c *Client) ComposeBlueprint(ctx context.Context, username string, k8shellF
 	return c.sdk.ComposeBlueprint(ctx, username, k8shellFile)
 }
 
+// GetUserProfile delegates to the underlying SDK client's profile lookup.
+func (c *Client) GetUserProfile(ctx context.Context, username string) (*models.UserProfile, error) {
+	return c.sdk.GetUserProfile(ctx, username)
+}
+
 // SetUserPassword delegates to the underlying SDK client's password update.
 // currentPassword is required by the API server when a non-sudo user is
 // changing their own password, and ignored otherwise; pass "" when not needed.
