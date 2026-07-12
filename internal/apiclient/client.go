@@ -35,9 +35,17 @@ func New(server string) *Client {
 	}
 }
 
-// ListSessions delegates to the underlying SDK client's session listing.
+// ListSessions delegates to the underlying SDK client's session listing,
+// reversing the order returned by the API server.
 func (c *Client) ListSessions(ctx context.Context, username, workspace string, limit int, all bool) ([]models.SSHSession, error) {
-	return c.sdk.ListSessions(ctx, username, workspace, limit, all)
+	sessions, err := c.sdk.ListSessions(ctx, username, workspace, limit, all)
+	if err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(sessions)-1; i < j; i, j = i+1, j-1 {
+		sessions[i], sessions[j] = sessions[j], sessions[i]
+	}
+	return sessions, nil
 }
 
 // ResolveUserCredential delegates to the underlying SDK client's credential resolution.

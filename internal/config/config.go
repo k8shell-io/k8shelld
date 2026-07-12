@@ -4,7 +4,9 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"strconv"
 
 	k8shelld "github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	commonmodels "github.com/k8shell-io/common/pkg/models"
@@ -56,6 +58,23 @@ func LoadBlueprint(path string) (*commonmodels.Blueprint, error) {
 	return &wrapper.Blueprint, nil
 }
 
+// numericID unmarshals a YAML uid/gid field that the provisioner may emit as
+// either a bare integer or a quoted string.
+type numericID uint32
+
+func (n *numericID) UnmarshalYAML(value *yaml.Node) error {
+	var s string
+	if err := value.Decode(&s); err != nil {
+		return err
+	}
+	v, err := strconv.ParseUint(s, 10, 32)
+	if err != nil {
+		return fmt.Errorf("invalid id %q: %w", s, err)
+	}
+	*n = numericID(v)
+	return nil
+}
+
 // profileYAML mirrors commonmodels.UserProfile with explicit yaml tags, since
 // UserProfile itself only carries json tags (it is the API server's wire type).
 // Field names match those json tags (snake_case for the lock fields) since
@@ -65,8 +84,8 @@ type profileYAML struct {
 	Organization        string              `yaml:"organization,omitempty"`
 	Fullname            string              `yaml:"fullname,omitempty"`
 	Email               string              `yaml:"email,omitempty"`
-	UID                 uint32              `yaml:"uid"`
-	GID                 uint32              `yaml:"gid"`
+	UID                 numericID           `yaml:"uid"`
+	GID                 numericID           `yaml:"gid"`
 	Shell               string              `yaml:"shell,omitempty"`
 	Sudo                bool                `yaml:"sudo,omitempty"`
 	Source              string              `yaml:"source,omitempty"`
@@ -98,8 +117,8 @@ func LoadProfile(path string) (*commonmodels.UserProfile, error) {
 		Organization:        p.Organization,
 		Fullname:            p.Fullname,
 		Email:               p.Email,
-		UID:                 p.UID,
-		GID:                 p.GID,
+		UID:                 uint32(p.UID),
+		GID:                 uint32(p.GID),
 		Shell:               p.Shell,
 		Sudo:                p.Sudo,
 		Source:              p.Source,
