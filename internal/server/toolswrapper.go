@@ -58,6 +58,7 @@ func (s *Server) setupToolWrappers() {
 		{"uptime", "uptime", wrapperTemplateHelp},
 		{"last", "last", wrapperTemplateHelp},
 		{"shutdown", "shutdown", wrapperTemplateHelp},
+		{"passwd", "passwd", wrapperTemplateHelp},
 	}
 
 	if s.blueprint != nil && s.blueprint.Podman.Enabled {

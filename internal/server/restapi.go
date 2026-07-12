@@ -109,6 +109,7 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/shells/{id}/attach", a.AttachShell).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/shells/{id}/resize", a.ResizeShell).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/initscripts", a.GetInitScripts).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/password", a.SetPassword).Methods(http.MethodPut)
 
 	a.logRoutes(router)
 	return router
@@ -943,4 +944,35 @@ func (a *RESTService) GetInitScripts(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(states); err != nil {
 		a.logger.Error().Msgf("GetInitScripts encode: %v", err)
 	}
+}
+
+// SetPassword sets the workspace user's password via the API server.
+// CurrentPassword is required by the API server when the caller is a
+// non-sudo change of the user's own password, and ignored otherwise.
+func (a *RESTService) SetPassword(w http.ResponseWriter, r *http.Request) {
+	if a.server.apiClientx == nil {
+		http.Error(w, "API server not configured.", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		Password        string `json:"password"`
+		CurrentPassword string `json:"currentPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if req.Password == "" {
+		http.Error(w, "Missing 'password'", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := a.server.apiClientx.SetUserPassword(r.Context(), a.user.GetUsername(), req.Password, req.CurrentPassword); err != nil {
+		a.logger.Warn().Msgf("Cannot set user password: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to set password: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

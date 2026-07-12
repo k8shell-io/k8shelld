@@ -57,3 +57,10 @@ func (c *Client) ResolveUserCredential(ctx context.Context, username, serviceNam
 func (c *Client) ComposeBlueprint(ctx context.Context, username string, k8shellFile *models.K8shellFile) (*models.Blueprint, error) {
 	return c.sdk.ComposeBlueprint(ctx, username, k8shellFile)
 }
+
+// SetUserPassword delegates to the underlying SDK client's password update.
+// currentPassword is required by the API server when a non-sudo user is
+// changing their own password, and ignored otherwise; pass "" when not needed.
+func (c *Client) SetUserPassword(ctx context.Context, username, password, currentPassword string) (*models.User, error) {
+	return c.sdk.SetUserPassword(ctx, username, password, currentPassword)
+}
