@@ -58,6 +58,8 @@ func LoadBlueprint(path string) (*commonmodels.Blueprint, error) {
 
 // profileYAML mirrors commonmodels.UserProfile with explicit yaml tags, since
 // UserProfile itself only carries json tags (it is the API server's wire type).
+// Field names match those json tags (snake_case for the lock fields) since
+// that's the shape the provisioner writes.
 type profileYAML struct {
 	Username            string              `yaml:"username"`
 	Organization        string              `yaml:"organization,omitempty"`
@@ -70,29 +72,27 @@ type profileYAML struct {
 	Source              string              `yaml:"source,omitempty"`
 	Roles               []commonmodels.Role `yaml:"roles,omitempty"`
 	Blueprints          []string            `yaml:"blueprints,omitempty"`
-	AccountLocked       bool                `yaml:"accountLocked,omitempty"`
-	PasswordLocked      bool                `yaml:"passwordLocked,omitempty"`
-	PasswordLockedUntil string              `yaml:"passwordLockedUntil,omitempty"`
+	AccountLocked       bool                `yaml:"account_locked,omitempty"`
+	PasswordLocked      bool                `yaml:"password_locked,omitempty"`
+	PasswordLockedUntil string              `yaml:"password_locked_until,omitempty"`
 }
 
 // LoadProfile reads and unmarshals the workspace user's profile YAML at the
-// given path. The file is expected to have the structure:
+// given path. The file is the flat profile itself, e.g.:
 //
-//	metadata: ...
-//	profile:
-//	  <profile fields>
+//	username: bruckins
+//	uid: 166548839
+//	gid: 166548839
+//	...
 func LoadProfile(path string) (*commonmodels.UserProfile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var wrapper struct {
-		Profile profileYAML `yaml:"profile"`
-	}
-	if err := yaml.Unmarshal(data, &wrapper); err != nil {
+	var p profileYAML
+	if err := yaml.Unmarshal(data, &p); err != nil {
 		return nil, err
 	}
-	p := wrapper.Profile
 	return &commonmodels.UserProfile{
 		Username:            p.Username,
 		Organization:        p.Organization,
