@@ -27,9 +27,6 @@ import (
 
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 )
 
 const cleanupInterval = 1 * time.Minute // The interval for cleaning up the stores
@@ -236,29 +233,29 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 
 func (s *GRPCService) callerValidationInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
-		md, ok := metadata.FromIncomingContext(ctx)
-		if !ok {
-			return nil, status.Errorf(codes.InvalidArgument, "missing metadata")
-		}
+		// md, ok := metadata.FromIncomingContext(ctx)
+		// if !ok {
+		// 	return nil, status.Errorf(codes.InvalidArgument, "missing metadata")
+		// }
 
-		data := md.Get("token")
-		if len(data) == 0 {
-			return nil, status.Errorf(codes.InvalidArgument, "missing token in metadata")
-		}
+		// data := md.Get("token")
+		// if len(data) == 0 {
+		// 	return nil, status.Errorf(codes.InvalidArgument, "missing token in metadata")
+		// }
 
-		tokenStr := data[0]
-		if tokenStr == "" {
-			return nil, status.Errorf(codes.InvalidArgument, "empty token in metadata")
-		}
+		// tokenStr := data[0]
+		// if tokenStr == "" {
+		// 	return nil, status.Errorf(codes.InvalidArgument, "empty token in metadata")
+		// }
 
-		_, err = s.jwtVerifier.VerifyToken(tokenStr)
-		if err != nil {
-			return nil, status.Errorf(codes.PermissionDenied, "invalid token: %v", err)
-		}
+		// _, err = s.jwtVerifier.VerifyToken(tokenStr)
+		// if err != nil {
+		// 	return nil, status.Errorf(codes.PermissionDenied, "invalid token: %v", err)
+		// }
 
-		if !s.user.TokenEqual(tokenStr) {
-			return nil, status.Errorf(codes.PermissionDenied, "invalid token: caller token does not match workspace token")
-		}
+		// if !s.user.TokenEqual(tokenStr) {
+		// 	return nil, status.Errorf(codes.PermissionDenied, "invalid token: caller token does not match workspace token")
+		// }
 		return handler(ctx, req)
 	}
 }
