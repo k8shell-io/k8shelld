@@ -18,7 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/common/pkg/authz"
 	commonmodels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apiclient"
 	"github.com/k8shell-io/k8shelld/internal/apps"
@@ -50,7 +49,6 @@ type Server struct {
 	pprof       bool
 	sysInfo     *system.SystemInfo
 	appManager  *apps.AppManager
-	jwtVerifier *authz.JWTVerifier
 	initTracker *models.InitTracker
 }
 
@@ -67,18 +65,12 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		apiClient = apiclient.New(cfg.System.ApiServer.Address)
 	}
 
-	jwtVerifier, err := newJWTVerifier()
-	if err != nil {
-		return nil, fmt.Errorf("error creating JWT verifier: %v", err)
-	}
-
 	s := &Server{
 		logger:      logger.NewLogger("k8shelld"),
 		testMode:    testMode,
 		config:      cfg,
 		pprof:       cfg.System.PProf,
 		apiClientx:  apiClient,
-		jwtVerifier: jwtVerifier,
 		initTracker: models.NewInitTracker(),
 	}
 
@@ -99,9 +91,9 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		return nil, fmt.Errorf("cannot get the workspace name from WORKSPACE environment variable")
 	}
 
-	err = s.loadIdentity()
+	err = s.loadProfile()
 	if err != nil {
-		return nil, fmt.Errorf("error loading identity: %v", err)
+		return nil, fmt.Errorf("error loading profile: %v", err)
 	}
 
 	if !s.testMode {
@@ -118,7 +110,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		}
 	}
 
-	s.grpcService, err = grpc.NewGRPCService(cfg, s.blueprint, s.user, s.jwtVerifier,
+	s.grpcService, err = grpc.NewGRPCService(cfg, s.blueprint, s.user,
 		s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)

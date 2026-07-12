@@ -25,6 +25,7 @@ const (
 	PODMAN_SOCKET_PATH    = "/var/run/podman/podman.sock"
 	DOCKER_SOCKET_SYMLINK = "/var/run/docker.sock"
 	BlueprintPath         = "/etc/k8shell/blueprint.yaml"
+	ProfilePath           = "/etc/k8shell/profile.yaml"
 	InitScriptsDir        = "/usr/local/k8shell/system"
 )
 
@@ -53,6 +54,61 @@ func LoadBlueprint(path string) (*commonmodels.Blueprint, error) {
 		return nil, err
 	}
 	return &wrapper.Blueprint, nil
+}
+
+// profileYAML mirrors commonmodels.UserProfile with explicit yaml tags, since
+// UserProfile itself only carries json tags (it is the API server's wire type).
+type profileYAML struct {
+	Username            string              `yaml:"username"`
+	Organization        string              `yaml:"organization,omitempty"`
+	Fullname            string              `yaml:"fullname,omitempty"`
+	Email               string              `yaml:"email,omitempty"`
+	UID                 uint32              `yaml:"uid"`
+	GID                 uint32              `yaml:"gid"`
+	Shell               string              `yaml:"shell,omitempty"`
+	Sudo                bool                `yaml:"sudo,omitempty"`
+	Source              string              `yaml:"source,omitempty"`
+	Roles               []commonmodels.Role `yaml:"roles,omitempty"`
+	Blueprints          []string            `yaml:"blueprints,omitempty"`
+	AccountLocked       bool                `yaml:"accountLocked,omitempty"`
+	PasswordLocked      bool                `yaml:"passwordLocked,omitempty"`
+	PasswordLockedUntil string              `yaml:"passwordLockedUntil,omitempty"`
+}
+
+// LoadProfile reads and unmarshals the workspace user's profile YAML at the
+// given path. The file is expected to have the structure:
+//
+//	metadata: ...
+//	profile:
+//	  <profile fields>
+func LoadProfile(path string) (*commonmodels.UserProfile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Profile profileYAML `yaml:"profile"`
+	}
+	if err := yaml.Unmarshal(data, &wrapper); err != nil {
+		return nil, err
+	}
+	p := wrapper.Profile
+	return &commonmodels.UserProfile{
+		Username:            p.Username,
+		Organization:        p.Organization,
+		Fullname:            p.Fullname,
+		Email:               p.Email,
+		UID:                 p.UID,
+		GID:                 p.GID,
+		Shell:               p.Shell,
+		Sudo:                p.Sudo,
+		Source:              p.Source,
+		Roles:               p.Roles,
+		Blueprints:          p.Blueprints,
+		AccountLocked:       p.AccountLocked,
+		PasswordLocked:      p.PasswordLocked,
+		PasswordLockedUntil: p.PasswordLockedUntil,
+	}, nil
 }
 
 // BlueprintApps converts the blueprint's value-map of AppSpec to the pointer-map

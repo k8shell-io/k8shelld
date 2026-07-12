@@ -15,7 +15,7 @@ import (
 var UserCmd = &cobra.Command{
 	Use:   "user",
 	Short: "Display user information",
-	Long:  "Display information about the current workspace user from the identity resource.",
+	Long:  "Display information about the current workspace user from the profile resource.",
 	Run: func(cmd *cobra.Command, args []string) {
 		_ = cmd.Help()
 	},
@@ -25,7 +25,7 @@ var userNameCmd = &cobra.Command{
 	Use:   "name",
 	Short: "Print the user's full name",
 	Run: func(cmd *cobra.Command, args []string) {
-		data := fetchIdentity()
+		data := fetchProfile()
 		if data == nil {
 			return
 		}
@@ -37,7 +37,7 @@ var userEmailCmd = &cobra.Command{
 	Use:   "email",
 	Short: "Print the user's email address",
 	Run: func(cmd *cobra.Command, args []string) {
-		data := fetchIdentity()
+		data := fetchProfile()
 		if data == nil {
 			return
 		}
@@ -45,10 +45,10 @@ var userEmailCmd = &cobra.Command{
 	},
 }
 
-func fetchIdentity() *k8shelld.IdentityInfo {
-	resp, err := client.MakeRequest("GET", "/identity", nil, nil)
+func fetchProfile() *k8shelld.IdentityInfo {
+	resp, err := client.MakeRequest("GET", "/profile", nil, nil)
 	if err != nil {
-		fmt.Println("Error fetching identity:", err)
+		fmt.Println("Error fetching profile:", err)
 		return nil
 	}
 	defer resp.Body.Close()

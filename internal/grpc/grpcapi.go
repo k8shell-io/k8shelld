@@ -14,7 +14,6 @@ import (
 	"time"
 
 	k8shelldv1 "github.com/k8shell-io/common/pkg/api/gen/go/k8shelld/v1"
-	"github.com/k8shell-io/common/pkg/authz"
 	"github.com/k8shell-io/common/pkg/gapi"
 	commonmodels "github.com/k8shell-io/common/pkg/models"
 	"github.com/k8shell-io/k8shelld/internal/apiclient"
@@ -60,7 +59,6 @@ type GRPCService struct {
 	appManager         *apps.AppManager        // The app manager
 	CommandService     *CommandServiceServer   // The command service
 	sysInfo            *system.SystemInfo      // The system information
-	jwtVerifier        *authz.JWTVerifier      // The JWT verifier for the identity token
 	detachedSessionTTL time.Duration           // max TTL for sessions with no client; 0 = no GC
 	allowSessionDetach bool                    // whether clients may detach/attach PTY sessions
 	allowUnlimitedTTL  bool                    // whether clients may request ttl=0 (never expire)
@@ -102,7 +100,7 @@ func getSessionStatus(session *SessionData) string {
 
 // NewGRPCAPI creates a new GRPCApiService
 func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, user *models.User,
-	jwtVerifier *authz.JWTVerifier, procWatcher *system.ProcessWatcher, apiClient *apiclient.Client,
+	procWatcher *system.ProcessWatcher, apiClient *apiclient.Client,
 	appManager *apps.AppManager, sysInfo *system.SystemInfo) (*GRPCService, error) {
 
 	logger := logger.NewLogger("grpc")
@@ -132,7 +130,6 @@ func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, us
 		appManager:         appManager,
 		CommandService:     NewCommandServiceServer(),
 		sysInfo:            sysInfo,
-		jwtVerifier:        jwtVerifier,
 		detachedSessionTTL: detachedTTL,
 		allowSessionDetach: config.Shells.AllowSessionDetach,
 		allowUnlimitedTTL:  config.Shells.AllowUnlimittedTTL,

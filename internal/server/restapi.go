@@ -102,7 +102,7 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/apps/{name}/logs", a.GetAppLogs).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/apps/{name}/start", a.StartApp).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/apps/{name}/stop", a.StopApp).Methods(http.MethodPost)
-	apiRouter.HandleFunc("/identity", a.GetIdentity).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/profile", a.GetProfile).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/splash", a.GetSplash).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/shells", a.ListDetachedShells).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/shells/{id}/detach", a.DetachShell).Methods(http.MethodPost)
@@ -377,41 +377,33 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *RESTService) GetIdentity(w http.ResponseWriter, r *http.Request) {
-	claims := a.user.ClaimsSnapshot()
+// GetProfile returns the workspace user's profile, as loaded at startup
+// (from the API server via PAT when configured, otherwise from environment
+// variables — see loadIdentity).
+func (a *RESTService) GetProfile(w http.ResponseWriter, r *http.Request) {
+	profile := a.user.ProfileSnapshot()
 
-	roles := make([]string, len(claims.Roles))
-	for i, role := range claims.Roles {
-		roles[i] = string(role)
-	}
-
-	expiresAt := ""
-	if claims.ExpiresAt != nil {
-		expiresAt = claims.ExpiresAt.Time.UTC().Format(time.RFC3339)
-	}
-
-	shell := claims.Shell
-	if shell == "" {
-		shell = "/bin/sh"
+	roleStrs := make([]string, len(profile.Roles))
+	for i, role := range profile.Roles {
+		roleStrs[i] = string(role)
 	}
 
 	response := k8shelld.IdentityInfo{
 		Username:     a.user.GetUsername(),
-		Name:         claims.Name,
-		Email:        claims.Email,
+		Name:         profile.Fullname,
+		Email:        profile.Email,
 		UID:          a.user.GetUID(),
 		GID:          a.user.GetGID(),
-		Shell:        shell,
-		Sudo:         claims.Sudo,
-		Roles:        roles,
-		Organization: claims.Organization,
-		Source:       claims.Source,
-		ExpiresAt:    expiresAt,
+		Shell:        a.user.GetShell(),
+		Sudo:         a.user.SudoEnabled(),
+		Roles:        roleStrs,
+		Organization: profile.Organization,
+		Source:       profile.Source,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		a.logger.Error().Msgf("Failed to encode identity response: %v", err)
+		a.logger.Error().Msgf("Failed to encode profile response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }

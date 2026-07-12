@@ -9,28 +9,27 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/k8shell-io/common/pkg/api/client/k8shelld"
 	"github.com/k8shell-io/k8shelld/internal/client"
 	"github.com/spf13/cobra"
 )
 
-var identityJSON bool
+var profileJSON bool
 
 func init() {
-	IdentityCmd.Flags().BoolVar(&identityJSON, "json", false, "Output JSON (pretty-printed)")
+	ProfileCmd.Flags().BoolVar(&profileJSON, "json", false, "Output JSON (pretty-printed)")
 }
 
-var IdentityCmd = &cobra.Command{
-	Use:   "identity",
-	Short: "Display workspace identity claims",
-	Long:  "Display the JWT identity claims for the current workspace user.",
+var ProfileCmd = &cobra.Command{
+	Use:   "profile",
+	Short: "Display workspace user profile",
+	Long:  "Display the profile of the current workspace user.",
 
 	Run: func(cmd *cobra.Command, args []string) {
-		resp, err := client.MakeRequest("GET", "/identity", nil, nil)
+		resp, err := client.MakeRequest("GET", "/profile", nil, nil)
 		if err != nil {
-			fmt.Println("Error fetching identity:", err)
+			fmt.Println("Error fetching profile:", err)
 			return
 		}
 		defer resp.Body.Close()
@@ -40,7 +39,7 @@ var IdentityCmd = &cobra.Command{
 			return
 		}
 
-		if identityJSON {
+		if profileJSON {
 			raw, err := io.ReadAll(resp.Body)
 			if err != nil {
 				fmt.Printf("Error reading response: %v\n", err)
@@ -87,9 +86,8 @@ var IdentityCmd = &cobra.Command{
 		if data.Source != "" {
 			rows = append(rows, [2]string{"Source", data.Source})
 		}
-		rows = append(rows, [2]string{"Expires", formatLocalTime(data.ExpiresAt)})
 
-		printGroup("Identity", rows)
+		printGroup("Profile", rows)
 	},
 }
 
@@ -98,16 +96,4 @@ func strOr(s, fallback string) string {
 		return s
 	}
 	return fallback
-}
-
-// formatLocalTime parses an RFC 3339 timestamp and returns it in the local timezone.
-func formatLocalTime(s string) string {
-	if s == "" {
-		return "n/a"
-	}
-	t, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		return s
-	}
-	return t.Local().Format("2006-01-02 15:04:05 MST")
 }
