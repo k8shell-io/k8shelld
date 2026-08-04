@@ -52,6 +52,8 @@ type Server struct {
 	appManager  *apps.AppManager
 	jwtVerifier *authz.JWTVerifier
 	initTracker *models.InitTracker
+
+	uidGIDMismatchWarned bool
 }
 
 func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
