@@ -1,6 +1,6 @@
 module github.com/k8shell-io/k8shelld
 
-go 1.24.5
+go 1.25.0
 
 require (
 	github.com/creack/pty v1.1.24
@@ -8,8 +8,8 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/gorilla/mux v1.8.1
-	github.com/k8shell-io/api-server v0.15.0
-	github.com/k8shell-io/common v0.30.7
+	github.com/k8shell-io/common v0.33.0
+	github.com/k8shell-io/k8shell-go v0.2.1
 	github.com/pkg/sftp v1.13.10
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.9.1
@@ -29,9 +29,9 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.27.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
+	github.com/kr/pretty v0.3.1 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -43,4 +43,5 @@ require (
 	golang.org/x/text v0.30.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250804133106-a7a43d27e69b // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )

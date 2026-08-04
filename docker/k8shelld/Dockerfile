@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 # -- Build stage (debug) -------------------------------------------------------
-FROM registry.k8shell.io/docker/library/golang:1.24.5 AS build-debug
+FROM registry.k8shell.io/docker/library/golang:1.25.0 AS build-debug
 
 ARG VERSION
 ARG COMMIT_ID
@@ -28,7 +28,7 @@ RUN CGO_ENABLED=0 go build -gcflags="all=-N -l" \
     -o /go/bin/sftp ./sftp
 
 # -- Build stage (release) -----------------------------------------------------
-FROM registry.k8shell.io/docker/library/golang:1.24.5 AS build-release
+FROM registry.k8shell.io/docker/library/golang:1.25.0 AS build-release
 
 ARG VERSION
 ARG COMMIT_ID

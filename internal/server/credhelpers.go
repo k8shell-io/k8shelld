@@ -103,13 +103,13 @@ func (s *Server) setupDockerCredHelper(homeDir string) error {
 // user.name, user.email, and credential.helper.
 // It is always applied so that identity changes between sessions are reflected.
 func (s *Server) setupGitCredHelper(homeDir string) error {
-	claims := s.user.ClaimsSnapshot()
+	profile := s.user.ProfileSnapshot()
 
-	name := claims.Name
+	name := profile.Username
 	if name == "" {
 		name = "n/a"
 	}
-	email := claims.Email
+	email := profile.Email
 	if email == "" {
 		email = "n/a"
 	}

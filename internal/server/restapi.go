@@ -102,13 +102,14 @@ func (a *RESTService) initializeRouter() *mux.Router {
 	apiRouter.HandleFunc("/apps/{name}/logs", a.GetAppLogs).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/apps/{name}/start", a.StartApp).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/apps/{name}/stop", a.StopApp).Methods(http.MethodPost)
-	apiRouter.HandleFunc("/identity", a.GetIdentity).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/profile", a.GetProfile).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/splash", a.GetSplash).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/shells", a.ListDetachedShells).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/shells/{id}/detach", a.DetachShell).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/shells/{id}/attach", a.AttachShell).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/shells/{id}/resize", a.ResizeShell).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/initscripts", a.GetInitScripts).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/password", a.SetPassword).Methods(http.MethodPut)
 
 	a.logRoutes(router)
 	return router
@@ -170,8 +171,8 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.logger.Debug().Msgf("Fetching last %d sessions for workspace %s", n, a.server.workspace)
-	sessions, err := a.server.apiClientx.ListUserSessions(r.Context(), a.user.GetUsername(),
-		a.server.workspace, n, 0, true)
+	sessions, err := a.server.apiClientx.ListSessions(r.Context(), a.user.GetUsername(),
+		a.server.workspace, n, false)
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot retrieve workspace sessions: %v", err)
 		http.Error(w, "Failed to retrieve sessions", http.StatusBadGateway)
@@ -223,7 +224,7 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		scope := currentPodNamespace()
-		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "kubernetes", scope)
+		cred, err := a.server.apiClientx.ResolveUserCredential(r.Context(), a.user.GetUsername(), "kubernetes", scope)
 		if err != nil {
 			a.logger.Warn().Msgf("Cannot retrieve kubernetes user credentials: %v", err)
 			http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
@@ -265,7 +266,7 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 
 	switch credsType {
 	case "docker":
-		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "registry", addr)
+		cred, err := a.server.apiClientx.ResolveUserCredential(r.Context(), a.user.GetUsername(), "registry", addr)
 		if err != nil {
 			a.logger.Warn().Msgf("Cannot retrieve docker/registry user credentials: %v", err)
 			http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
@@ -280,7 +281,7 @@ func (a *RESTService) GetCredsHelper(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	case "git":
-		cred, err := a.server.apiClientx.GetUserCredential(r.Context(), a.user.GetUsername(), "git", addr)
+		cred, err := a.server.apiClientx.ResolveUserCredential(r.Context(), a.user.GetUsername(), "git", addr)
 		if err != nil {
 			a.logger.Warn().Msgf("Cannot retrieve git user credentials: %v", err)
 			http.Error(w, "Failed to retrieve credentials", http.StatusBadGateway)
@@ -377,41 +378,45 @@ func (a *RESTService) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *RESTService) GetIdentity(w http.ResponseWriter, r *http.Request) {
-	claims := a.user.ClaimsSnapshot()
-
-	roles := make([]string, len(claims.Roles))
-	for i, role := range claims.Roles {
-		roles[i] = string(role)
+// GetProfile returns the workspace user's profile. When the API server is
+// configured, the profile is re-fetched live and the in-memory copy is
+// refreshed (see models.User.UpdateProfile) so it stays current for
+// subsequent requests; on fetch failure it falls back to the last known
+// copy. Without an API server, it returns the profile loaded at startup from
+// /etc/k8shell/profile.yaml.
+func (a *RESTService) GetProfile(w http.ResponseWriter, r *http.Request) {
+	if a.server.apiClientx != nil {
+		fresh, err := a.server.apiClientx.GetUserProfile(r.Context(), a.user.GetUsername())
+		if err != nil {
+			a.logger.Warn().Msgf("Cannot refresh user profile from API server, using cached copy: %v", err)
+		} else {
+			a.user.UpdateProfile(*fresh)
+		}
 	}
 
-	expiresAt := ""
-	if claims.ExpiresAt != nil {
-		expiresAt = claims.ExpiresAt.Time.UTC().Format(time.RFC3339)
-	}
+	profile := a.user.ProfileSnapshot()
 
-	shell := claims.Shell
-	if shell == "" {
-		shell = "/bin/sh"
+	roleStrs := make([]string, len(profile.Roles))
+	for i, role := range profile.Roles {
+		roleStrs[i] = string(role)
 	}
 
 	response := k8shelld.IdentityInfo{
 		Username:     a.user.GetUsername(),
-		Name:         claims.Name,
-		Email:        claims.Email,
+		Name:         profile.Fullname,
+		Email:        profile.Email,
 		UID:          a.user.GetUID(),
 		GID:          a.user.GetGID(),
-		Shell:        shell,
-		Sudo:         claims.Sudo,
-		Roles:        roles,
-		Organization: claims.Organization,
-		Source:       claims.Source,
-		ExpiresAt:    expiresAt,
+		Shell:        a.user.GetShell(),
+		Sudo:         a.user.SudoEnabled(),
+		Roles:        roleStrs,
+		Organization: profile.Organization,
+		Source:       profile.Source,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		a.logger.Error().Msgf("Failed to encode identity response: %v", err)
+		a.logger.Error().Msgf("Failed to encode profile response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
@@ -951,4 +956,35 @@ func (a *RESTService) GetInitScripts(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(states); err != nil {
 		a.logger.Error().Msgf("GetInitScripts encode: %v", err)
 	}
+}
+
+// SetPassword sets the workspace user's password via the API server.
+// CurrentPassword is required by the API server when the caller is a
+// non-sudo change of the user's own password, and ignored otherwise.
+func (a *RESTService) SetPassword(w http.ResponseWriter, r *http.Request) {
+	if a.server.apiClientx == nil {
+		http.Error(w, "API server not configured.", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		Password        string `json:"password"`
+		CurrentPassword string `json:"currentPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if req.Password == "" {
+		http.Error(w, "Missing 'password'", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := a.server.apiClientx.SetUserPassword(r.Context(), a.user.GetUsername(), req.Password, req.CurrentPassword); err != nil {
+		a.logger.Warn().Msgf("Cannot set user password: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to set password: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

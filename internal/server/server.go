@@ -18,9 +18,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/k8shell-io/api-server/pkg/client"
-	"github.com/k8shell-io/common/pkg/authz"
 	commonmodels "github.com/k8shell-io/common/pkg/models"
+	"github.com/k8shell-io/k8shelld/internal/apiclient"
 	"github.com/k8shell-io/k8shelld/internal/apps"
 	"github.com/k8shell-io/k8shelld/internal/config"
 	"github.com/k8shell-io/k8shelld/internal/grpc"
@@ -46,29 +45,24 @@ type Server struct {
 	restService *RESTService
 	grpcService *grpc.GRPCService
 	procWatcher *system.ProcessWatcher
-	apiClientx  *client.Client
+	apiClientx  *apiclient.Client
 	pprof       bool
 	sysInfo     *system.SystemInfo
 	appManager  *apps.AppManager
-	jwtVerifier *authz.JWTVerifier
 	initTracker *models.InitTracker
-
-	uidGIDMismatchWarned bool
 }
 
 func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) (*Server, error) {
 
-	var apiClient *client.Client
+	var apiClient *apiclient.Client
 	if cfg.System.ApiServer.Enabled {
 		if cfg.System.ApiServer.Address == "" {
 			return nil, fmt.Errorf("api server is enabled but address is empty")
 		}
-		apiClient = client.NewClient(cfg.System.ApiServer.Address, "")
-	}
-
-	jwtVerifier, err := newJWTVerifier()
-	if err != nil {
-		return nil, fmt.Errorf("error creating JWT verifier: %v", err)
+		if strings.TrimSpace(os.Getenv(apiclient.PATTokenEnv)) == "" {
+			return nil, fmt.Errorf("api server is enabled but %s is not set", apiclient.PATTokenEnv)
+		}
+		apiClient = apiclient.New(cfg.System.ApiServer.Address)
 	}
 
 	s := &Server{
@@ -77,7 +71,6 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		config:      cfg,
 		pprof:       cfg.System.PProf,
 		apiClientx:  apiClient,
-		jwtVerifier: jwtVerifier,
 		initTracker: models.NewInitTracker(),
 	}
 
@@ -98,9 +91,9 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		return nil, fmt.Errorf("cannot get the workspace name from WORKSPACE environment variable")
 	}
 
-	err = s.loadIdentity()
+	err = s.loadProfile()
 	if err != nil {
-		return nil, fmt.Errorf("error loading identity: %v", err)
+		return nil, fmt.Errorf("error loading profile: %v", err)
 	}
 
 	if !s.testMode {
@@ -117,7 +110,7 @@ func NewServer(cfg *config.Config, restApiUnixSocketPath string, testMode bool) 
 		}
 	}
 
-	s.grpcService, err = grpc.NewGRPCService(cfg, s.blueprint, s.user, s.jwtVerifier,
+	s.grpcService, err = grpc.NewGRPCService(cfg, s.blueprint, s.user,
 		s.procWatcher, s.apiClientx, s.appManager, s.sysInfo)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC API: %v", err)
@@ -265,14 +258,6 @@ func (s *Server) Serve() {
 				s.logger.Error().Msgf("pprof error: %v", err)
 			}
 			s.logger.Info().Msg("pprof stopped")
-		}()
-	}
-
-	if s.jwtVerifier != nil && s.apiClientx != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			s.watchIdentity(ctx)
 		}()
 	}
 

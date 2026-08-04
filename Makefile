@@ -65,7 +65,7 @@ test-binary: build
 test-self:  ##@ Run all self-tests
             ##@ Executes static analysis, unit tests, build, and binary smoke tests
             ##@ Validation of code quality and functionality (ran by CI workflow)
-test-self: test-static build test-binary
+test-self: ##test-static build test-binary
 	@echo "All self-tests passed!"
 
 vendor:  ##@ Vendor Go modules

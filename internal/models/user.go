@@ -6,9 +6,7 @@ package models
 import (
 	"fmt"
 	"sync"
-	"time"
 
-	"github.com/k8shell-io/common/pkg/authz"
 	"github.com/k8shell-io/common/pkg/models"
 )
 
@@ -18,101 +16,42 @@ type Group struct {
 	Gid  int
 }
 
-// User holds the workspace identity.
-//
-// Immutable fields (username, uid, gid, homeDir, groups) are set once in NewUser
-// and never changed — they may be read from any goroutine without acquiring mu.
-//
-// Mutable fields (claims, userToken) are replaced atomically on each token renewal
-// and must always be accessed through the accessor methods, which acquire mu internally.
+// User holds the workspace identity. It is populated once from the user's
+// profile in NewUser. UID, GID, home directory and groups are fixed for the
+// lifetime of the process — they're baked into the OS user created at
+// startup. The rest of the profile can be refreshed from the API server via
+// UpdateProfile (see RESTService.GetProfile), so all profile reads go
+// through a mutex.
 type User struct {
-	mu sync.RWMutex
-
-	// Immutable identity fields — set in NewUser, never written again.
-	username string
-	uid      uint32
-	gid      uint32
-	homeDir  string
-	groups   []Group
-
-	// Mutable — replaced atomically on token renewal; requires mu.
-	claims    *authz.UserClaims
-	userToken string
+	mu      sync.RWMutex
+	profile models.UserProfile
+	homeDir string
+	groups  []Group
 }
 
-// NewUser creates a User from a verified JWT claims set and the raw token string.
-func NewUser(claims *authz.UserClaims, token string) *User {
-	return &User{
-		username:  claims.Subject,
-		uid:       claims.UID,
-		gid:       claims.GID,
-		claims:    claims,
-		userToken: token,
-	}
+// NewUser creates a User from a resolved profile.
+func NewUser(profile *models.UserProfile) *User {
+	return &User{profile: *profile}
 }
 
 // String returns a human-readable representation for logging.
 func (u *User) String() string {
-	u.mu.RLock()
-	defer u.mu.RUnlock()
-	shell := u.claims.Shell
+	p := u.ProfileSnapshot()
+	shell := p.Shell
 	if shell == "" {
 		shell = "/bin/sh"
 	}
 	return fmt.Sprintf(
-		"User{Username: %s, UID: %d, GID: %d, Name: %s, Email: %s, Shell: %s, Sudo: %t, Roles: %v, Exp: %s}",
-		u.username, u.uid, u.gid,
-		u.claims.Name, u.claims.Email, shell, u.claims.Sudo, u.claims.Roles,
-		u.claims.ExpiresAt.Time.UTC().Format(time.RFC3339),
+		"User{Username: %s, UID: %d, GID: %d, Name: %s, Email: %s, Shell: %s, Sudo: %t, Roles: %v}",
+		p.Username, p.UID, p.GID, p.Fullname, p.Email, shell, p.Sudo, p.Roles,
 	)
-}
-
-// Update atomically replaces the mutable JWT claims and token string.
-// Returns (true, nil) when the update was applied, (false, nil) when the token
-// is unchanged (no-op), or (false, error) when an immutable field has changed.
-func (u *User) Update(claims *authz.UserClaims, token string) (bool, error) {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-
-	if token == u.userToken {
-		return false, nil // same token — nothing to do
-	}
-
-	// Validate immutable fields before making any change.
-	if claims.Subject != u.username {
-		return false, fmt.Errorf("cannot update user subject from %s to %s", u.username, claims.Subject)
-	}
-	if claims.Source != u.claims.Source {
-		return false, fmt.Errorf("cannot update user source from %s to %s", u.claims.Source, claims.Source)
-	}
-	u.claims = claims
-	u.userToken = token
-	return true, nil
-}
-
-func (u *User) TokenEqual(token string) bool {
-	u.mu.RLock()
-	defer u.mu.RUnlock()
-
-	if token == u.userToken {
-		return true
-	}
-
-	// The caller's token was already verified (signature + expiry) by the interceptor.
-	// Accept any valid token whose Subject+Source match the workspace identity.
-	// Both fields are immutable: Subject is set in NewUser; Source is validated in Update.
-	claims, err := authz.ParseUnverifiedClaims(token, true)
-	if err != nil {
-		return false
-	}
-	return claims.Subject == u.username && claims.Source == u.claims.Source
 }
 
 // HasRole checks if the user has a specific role.
 func (u *User) HasRole(role models.Role) bool {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
-	for _, r := range u.claims.Roles {
+	for _, r := range u.profile.Roles {
 		if r == role {
 			return true
 		}
@@ -124,8 +63,8 @@ func (u *User) HasRole(role models.Role) bool {
 func (u *User) GetShell() string {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
-	if u.claims.Shell != "" {
-		return u.claims.Shell
+	if u.profile.Shell != "" {
+		return u.profile.Shell
 	}
 	return "/bin/sh"
 }
@@ -134,50 +73,61 @@ func (u *User) GetShell() string {
 func (u *User) SudoEnabled() bool {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
-	return u.claims.Sudo
+	return u.profile.Sudo
 }
 
-// ClaimsSnapshot returns a copy of the current JWT claims under the read lock.
-// The returned value is safe to inspect without any further locking.
-func (u *User) ClaimsSnapshot() authz.UserClaims {
+// ProfileSnapshot returns a copy of the user's profile.
+func (u *User) ProfileSnapshot() models.UserProfile {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
-	return *u.claims
+	return u.profile
 }
 
-// GetUserToken returns the current raw JWT string.
-func (u *User) GetUserToken() string {
-	u.mu.RLock()
-	defer u.mu.RUnlock()
-	return u.userToken
+// UpdateProfile replaces the user's profile with a freshly fetched copy,
+// typically after a live re-fetch from the API server (see
+// RESTService.GetProfile). UID and GID are preserved from the current
+// profile rather than taken from the argument: they're baked into the OS
+// user created at startup, and every UID/GID-based operation (chown,
+// process credentials) assumes they never change underneath it.
+func (u *User) UpdateProfile(profile models.UserProfile) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	profile.UID = u.profile.UID
+	profile.GID = u.profile.GID
+	u.profile = profile
 }
 
-// GetUsername returns the username (JWT subject). Immutable — no lock needed.
+// GetUsername returns the username.
 func (u *User) GetUsername() string {
-	return u.username
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	return u.profile.Username
 }
 
-// GetUID returns the user's UID. Immutable — no lock needed.
+// GetUID returns the user's UID.
 func (u *User) GetUID() uint32 {
-	return u.uid
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	return u.profile.UID
 }
 
-// GetGID returns the user's primary GID. Immutable — no lock needed.
+// GetGID returns the user's primary GID.
 func (u *User) GetGID() uint32 {
-	return u.gid
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	return u.profile.GID
 }
 
 // GetHomeDir returns the home directory, defaulting to /home/<username> when unset.
-// Immutable — no lock needed.
 func (u *User) GetHomeDir() string {
 	if u.homeDir != "" {
 		return u.homeDir
 	}
-	return "/home/" + u.username
+	return "/home/" + u.GetUsername()
 }
 
 // GetGroups returns the supplementary groups for the user.
-// TODO: derive from JWT claims or a policy source once that is implemented.
+// TODO: derive from the profile or a policy source once that is implemented.
 func (u *User) GetGroups() []Group {
 	return u.groups
 }
@@ -195,34 +145,24 @@ type ShellUser struct {
 	Groups   []Group
 }
 
-// NewShellUser takes an atomic snapshot of User for use in a shell session.
+// NewShellUser takes a snapshot of User for use in a shell session.
 func NewShellUser(u *User) ShellUser {
-	// Immutable fields — read without lock.
-	uid := u.uid
+	uid := u.GetUID()
 	if uid == 0 {
 		uid = 1000
 	}
-	gid := u.gid
+	gid := u.GetGID()
 	if gid == 0 {
 		gid = 1000
 	}
 
-	// Mutable fields — single RLock for a consistent snapshot.
-	u.mu.RLock()
-	shell := u.claims.Shell
-	if shell == "" {
-		shell = "/bin/sh"
-	}
-	sudo := u.claims.Sudo
-	u.mu.RUnlock()
-
 	return ShellUser{
-		Username: u.username,
+		Username: u.GetUsername(),
 		UID:      uid,
 		GID:      gid,
 		HomeDir:  u.GetHomeDir(),
-		Shell:    shell,
-		Sudo:     sudo,
-		Groups:   u.groups,
+		Shell:    u.GetShell(),
+		Sudo:     u.SudoEnabled(),
+		Groups:   u.GetGroups(),
 	}
 }
