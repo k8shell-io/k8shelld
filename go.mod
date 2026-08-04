@@ -8,7 +8,7 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/gorilla/mux v1.8.1
-	github.com/k8shell-io/common v0.33.0
+	github.com/k8shell-io/common v0.36.0
 	github.com/k8shell-io/k8shell-go v0.2.1
 	github.com/pkg/sftp v1.13.10
 	github.com/rs/zerolog v1.34.0
@@ -28,7 +28,6 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.27.0 // indirect
-	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect

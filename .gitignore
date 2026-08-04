@@ -10,3 +10,5 @@ tests/kbox
 reports/
 .nfs*
 bin
+common
+go.work*

@@ -2,8 +2,7 @@
 // license that can be found in the LICENSE file.
 
 // Package grpc implements the k8shelld gRPC API service. It creates a gRPC server,
-// registers all service handlers, sets up TLS, and enforces JWT-based caller authentication
-// via a unary server interceptor.
+// registers all service handlers, and sets up TLS.
 
 package grpc
 
@@ -167,8 +166,6 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 		return fmt.Errorf("failed to create gRPC server: %v", err)
 	}
 
-	server.AddInterceptor(a.callerValidationInterceptor())
-
 	if err := server.RegisterService(func(s *grpc.Server) error {
 		k8shelldv1.RegisterSystemServiceServer(s, NewSystemServiceServer(a))
 		k8shelldv1.RegisterSshServiceServer(s, NewSshServiceServer(a))
@@ -225,35 +222,6 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 		return nil
 	case err := <-errChan:
 		return err
-	}
-}
-
-func (s *GRPCService) callerValidationInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
-		// md, ok := metadata.FromIncomingContext(ctx)
-		// if !ok {
-		// 	return nil, status.Errorf(codes.InvalidArgument, "missing metadata")
-		// }
-
-		// data := md.Get("token")
-		// if len(data) == 0 {
-		// 	return nil, status.Errorf(codes.InvalidArgument, "missing token in metadata")
-		// }
-
-		// tokenStr := data[0]
-		// if tokenStr == "" {
-		// 	return nil, status.Errorf(codes.InvalidArgument, "empty token in metadata")
-		// }
-
-		// _, err = s.jwtVerifier.VerifyToken(tokenStr)
-		// if err != nil {
-		// 	return nil, status.Errorf(codes.PermissionDenied, "invalid token: %v", err)
-		// }
-
-		// if !s.user.TokenEqual(tokenStr) {
-		// 	return nil, status.Errorf(codes.PermissionDenied, "invalid token: caller token does not match workspace token")
-		// }
-		return handler(ctx, req)
 	}
 }
 
