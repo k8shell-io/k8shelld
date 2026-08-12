@@ -69,3 +69,15 @@ func (c *Client) GetUserProfile(ctx context.Context, username string) (*models.U
 func (c *Client) SetUserPassword(ctx context.Context, username, password, currentPassword string) (*models.User, error) {
 	return c.sdk.SetUserPassword(ctx, username, password, currentPassword)
 }
+
+// StopWorkspace shuts down the named workspace, keeping its persistent
+// storage intact so it can later be resumed with StartWorkspace.
+func (c *Client) StopWorkspace(ctx context.Context, name string) error {
+	return c.sdk.DeleteWorkspace(ctx, name, false)
+}
+
+// TerminateWorkspace shuts down the named workspace and permanently deletes
+// its persistent storage.
+func (c *Client) TerminateWorkspace(ctx context.Context, name string) error {
+	return c.sdk.DeleteWorkspace(ctx, name, true)
+}

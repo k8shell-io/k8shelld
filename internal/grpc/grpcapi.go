@@ -56,7 +56,6 @@ type GRPCService struct {
 	UnixSocketStore    *sync.Map               // The store for the unix socket data
 	apiClientx         *apiclient.Client       // The API client to communicate with the API server
 	appManager         *apps.AppManager        // The app manager
-	CommandService     *CommandServiceServer   // The command service
 	sysInfo            *system.SystemInfo      // The system information
 	detachedSessionTTL time.Duration           // max TTL for sessions with no client; 0 = no GC
 	allowSessionDetach bool                    // whether clients may detach/attach PTY sessions
@@ -127,7 +126,6 @@ func NewGRPCService(config *config.Config, blueprint *commonmodels.Blueprint, us
 		UnixSocketStore:    &sync.Map{},
 		apiClientx:         apiClient,
 		appManager:         appManager,
-		CommandService:     NewCommandServiceServer(),
 		sysInfo:            sysInfo,
 		detachedSessionTTL: detachedTTL,
 		allowSessionDetach: config.Shells.AllowSessionDetach,
@@ -170,7 +168,6 @@ func (a *GRPCService) Serve(ctx context.Context) error {
 		k8shelldv1.RegisterSystemServiceServer(s, NewSystemServiceServer(a))
 		k8shelldv1.RegisterSshServiceServer(s, NewSshServiceServer(a))
 		k8shelldv1.RegisterAppServiceServer(s, NewAppServiceServer(a.appManager))
-		k8shelldv1.RegisterCommandServiceServer(s, a.CommandService)
 		a.logger.Info().Msgf("GRPC services server registered")
 		return nil
 	}); err != nil {
