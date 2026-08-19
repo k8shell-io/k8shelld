@@ -49,6 +49,10 @@ func (s *SshServiceServer) AcquireSession(ctx context.Context, req *k8shelldv1.A
 	return s.shell.AcquireSession(ctx, req)
 }
 
+func (s *SshServiceServer) ListSessions(ctx context.Context, req *k8shelldv1.ListSessionsRequest) (*k8shelldv1.ListSessionsResponse, error) {
+	return s.shell.ListSessions(ctx, req)
+}
+
 func (s *SshServiceServer) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecRequest, k8shelldv1.ExecResponse]) error {
 	return s.exec.Exec(stream)
 }

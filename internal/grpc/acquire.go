@@ -105,6 +105,65 @@ func (s *ShellHandler) AcquireSession(ctx context.Context, req *k8shelldv1.Acqui
 	}, nil
 }
 
+// ListSessions implements SshServiceServer.ListSessions.
+// It returns the set of live PTY sessions that AcquireSession would currently
+// accept: no client attached and no unexpired lock held, along with the OS
+// user each session runs as.
+func (s *ShellHandler) ListSessions(_ context.Context, _ *k8shelldv1.ListSessionsRequest) (*k8shelldv1.ListSessionsResponse, error) {
+	if !s.grpcApi.allowSessionDetach {
+		return nil, status.Errorf(codes.PermissionDenied, "session attachment is not enabled on this server")
+	}
+
+	now := time.Now()
+	locked := make(map[string]bool)
+	s.grpcApi.SessionLockStore.Range(func(_, v any) bool {
+		lk := v.(*sessionLock)
+		if now.Before(lk.expiresAt) {
+			locked[lk.sessionId] = true
+		}
+		return true
+	})
+
+	resp := &k8shelldv1.ListSessionsResponse{}
+	s.grpcApi.SessionStore.Range(func(_, value any) bool {
+		session, ok := value.(*SessionData)
+		if !ok || session.ptyDone == nil || !session.Deleted.IsZero() {
+			return true
+		}
+		select {
+		case <-session.ptyDone:
+			return true
+		default:
+		}
+
+		session.mu.Lock()
+		attached := session.attachedSender != nil
+		detachedAt := session.DetachedAt
+		session.mu.Unlock()
+
+		if attached || locked[session.Id] {
+			return true
+		}
+
+		var detachedAtStr string
+		if !detachedAt.IsZero() {
+			detachedAtStr = detachedAt.Format(timeFormat)
+		}
+
+		resp.Sessions = append(resp.Sessions, &k8shelldv1.AcquirableSession{
+			SessionId:  session.Id,
+			Owner:      session.user.Username,
+			CmdShell:   session.CmdShell,
+			Pid:        int32(session.Pid),
+			Created:    session.Created.Format(timeFormat),
+			DetachedAt: detachedAtStr,
+		})
+		return true
+	})
+
+	return resp, nil
+}
+
 // cleanupExpiredLocks removes session locks that have passed their TTL.
 func (a *GRPCService) cleanupExpiredLocks() {
 	now := time.Now()
