@@ -188,6 +188,11 @@ func (a *RESTService) GetSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *RESTService) Shutdown(w http.ResponseWriter, r *http.Request) {
+	if a.server.apiClientx == nil {
+		http.Error(w, "API server not configured.", http.StatusServiceUnavailable)
+		return
+	}
+
 	action := r.URL.Query().Get("action")
 	if action == "" {
 		action = "stop"
@@ -197,7 +202,13 @@ func (a *RESTService) Shutdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.logger.Debug().Msgf("Shutting down workspace %s (action=%s)", a.server.workspace, action)
-	_, err := a.server.grpcService.CommandService.SendCommand(r.Context(), "shutdown "+action)
+
+	var err error
+	if action == "delete" {
+		err = a.server.apiClientx.TerminateWorkspace(r.Context(), a.server.workspace)
+	} else {
+		err = a.server.apiClientx.StopWorkspace(r.Context(), a.server.workspace)
+	}
 	if err != nil {
 		a.logger.Warn().Msgf("Cannot shutdown workspace: %v", err)
 		http.Error(w, "Failed to shutdown workspace", http.StatusBadGateway)
