@@ -19,6 +19,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// logStreamPollInterval is how often GetLogsStream polls the in-memory log
+// store for new entries while following (mirrors the REST /logs handler).
+const logStreamPollInterval = 100 * time.Millisecond
+
 // SystemServiceServer is the gRPC server for the system service
 type SystemServiceServer struct {
 	grpcApi        *GRPCService
@@ -123,4 +127,48 @@ func (s *SystemServiceServer) SystemInfo(ctx context.Context,
 	}
 
 	return k8shelld.SystemInfoToProto(&systemInfo), nil
+}
+
+// GetLogsStream streams k8shelld daemon logs (the same logs shown by
+// `kbox logs`). With Follow=false it sends the currently buffered entries
+// and closes the stream; with Follow=true it keeps streaming new entries as
+// they are produced until the client cancels.
+func (s *SystemServiceServer) GetLogsStream(req *k8shelldv1.SystemLogsStreamRequest,
+	stream k8shelldv1.SystemService_GetLogsStreamServer) error {
+
+	component := req.GetComponent()
+	level := k8shelld.LogLevelFromProto(req.GetLevel())
+	follow := req.GetFollow()
+
+	offset := 0
+	if n := req.GetLastN(); n > 0 {
+		offset = -int(n)
+	}
+
+	ctx := stream.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return status.Errorf(codes.Canceled, "client canceled")
+		default:
+			entries, newOffset := logger.GetLogsSince(offset, component, level)
+			for _, entry := range entries {
+				if sendErr := stream.Send(&k8shelldv1.SystemLogsStreamResponse{
+					Time:      entry.Timestamp,
+					Component: entry.Component,
+					Level:     entry.Level,
+					Message:   entry.Message,
+				}); sendErr != nil {
+					return status.Errorf(codes.Canceled, "client canceled")
+				}
+			}
+			offset = newOffset
+
+			if !follow {
+				return nil
+			}
+
+			time.Sleep(logStreamPollInterval)
+		}
+	}
 }
