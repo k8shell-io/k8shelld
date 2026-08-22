@@ -23,6 +23,10 @@ import (
 // store for new entries while following (mirrors the REST /logs handler).
 const logStreamPollInterval = 100 * time.Millisecond
 
+// defaultLogPageLimit is the page size GetLogsPage falls back to when the
+// caller doesn't specify one (mirrors the REST /logs handler's default).
+const defaultLogPageLimit = 100
+
 // SystemServiceServer is the gRPC server for the system service
 type SystemServiceServer struct {
 	grpcApi        *GRPCService
@@ -140,9 +144,31 @@ func (s *SystemServiceServer) GetLogsStream(req *k8shelldv1.SystemLogsStreamRequ
 	level := k8shelld.LogLevelFromProto(req.GetLevel())
 	follow := req.GetFollow()
 
-	offset := 0
+	send := func(entries []logger.LogEntry) error {
+		for _, entry := range entries {
+			if sendErr := stream.Send(logEntryToProto(entry)); sendErr != nil {
+				return status.Errorf(codes.Canceled, "client canceled")
+			}
+		}
+		return nil
+	}
+
+	var backlog []logger.LogEntry
+	var sinceID int64
 	if n := req.GetLastN(); n > 0 {
-		offset = -int(n)
+		backlog, _ = logger.GetLogsBefore(0, int(n), component, level)
+		if len(backlog) > 0 {
+			sinceID = backlog[len(backlog)-1].ID
+		}
+	} else {
+		backlog, sinceID = logger.GetLogsSince(0, component, level)
+	}
+	if err := send(backlog); err != nil {
+		return err
+	}
+
+	if !follow {
+		return nil
 	}
 
 	ctx := stream.Context()
@@ -151,24 +177,56 @@ func (s *SystemServiceServer) GetLogsStream(req *k8shelldv1.SystemLogsStreamRequ
 		case <-ctx.Done():
 			return status.Errorf(codes.Canceled, "client canceled")
 		default:
-			entries, newOffset := logger.GetLogsSince(offset, component, level)
-			for _, entry := range entries {
-				if sendErr := stream.Send(&k8shelldv1.SystemLogsStreamResponse{
-					Time:      entry.Timestamp,
-					Component: entry.Component,
-					Level:     entry.Level,
-					Message:   entry.Message,
-				}); sendErr != nil {
-					return status.Errorf(codes.Canceled, "client canceled")
-				}
+			entries, newSinceID := logger.GetLogsSince(sinceID, component, level)
+			if err := send(entries); err != nil {
+				return err
 			}
-			offset = newOffset
-
-			if !follow {
-				return nil
-			}
+			sinceID = newSinceID
 
 			time.Sleep(logStreamPollInterval)
 		}
+	}
+}
+
+// GetLogsPage returns one page of k8shelld daemon logs strictly older than
+// the requested BeforeId, for "load more" / infinite-scroll style backward
+// pagination independent of GetLogsStream's live tail.
+func (s *SystemServiceServer) GetLogsPage(ctx context.Context,
+	req *k8shelldv1.GetLogsPageRequest) (*k8shelldv1.GetLogsPageResponse, error) {
+
+	if req.GetBeforeId() < 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "before_id must not be negative")
+	}
+	if req.GetLimit() < 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "limit must not be negative")
+	}
+
+	limit := int(req.GetLimit())
+	if limit == 0 {
+		limit = defaultLogPageLimit
+	}
+
+	component := req.GetComponent()
+	level := k8shelld.LogLevelFromProto(req.GetLevel())
+
+	entries, hasMore := logger.GetLogsBefore(req.GetBeforeId(), limit, component, level)
+
+	resp := &k8shelldv1.GetLogsPageResponse{
+		Entries: make([]*k8shelldv1.SystemLogsStreamResponse, 0, len(entries)),
+		HasMore: hasMore,
+	}
+	for _, entry := range entries {
+		resp.Entries = append(resp.Entries, logEntryToProto(entry))
+	}
+	return resp, nil
+}
+
+func logEntryToProto(entry logger.LogEntry) *k8shelldv1.SystemLogsStreamResponse {
+	return &k8shelldv1.SystemLogsStreamResponse{
+		Id:        entry.ID,
+		Time:      entry.Timestamp,
+		Component: entry.Component,
+		Level:     entry.Level,
+		Message:   entry.Message,
 	}
 }
