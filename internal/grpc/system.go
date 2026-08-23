@@ -133,6 +133,27 @@ func (s *SystemServiceServer) SystemInfo(ctx context.Context,
 	return k8shelld.SystemInfoToProto(&systemInfo), nil
 }
 
+// SystemInfoHistory returns historical system/mount/docker usage samples
+// for charting. See the proto comment on SystemInfoHistoryRequest for the
+// precedence of range vs from/to and how step coarsening works.
+func (s *SystemServiceServer) SystemInfoHistory(_ context.Context,
+	req *k8shelldv1.SystemInfoHistoryRequest) (*k8shelldv1.SystemInfoHistoryResponse, error) {
+
+	query := k8shelld.SystemInfoHistoryQuery{
+		From:  req.GetFrom(),
+		To:    req.GetTo(),
+		Range: req.GetRange(),
+		Step:  req.GetStep(),
+	}
+
+	hist, err := s.grpcApi.sysInfo.GetSystemInfoHistory(query)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid system info history request: %v", err)
+	}
+
+	return k8shelld.SystemInfoHistoryToProto(hist), nil
+}
+
 // GetLogsStream streams k8shelld daemon logs (the same logs shown by
 // `kbox logs`). With Follow=false it sends the currently buffered entries
 // and closes the stream; with Follow=true it keeps streaming new entries as
