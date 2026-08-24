@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gopkg.in/yaml.v3"
 )
 
 // logStreamPollInterval is how often GetLogsStream polls the in-memory log
@@ -240,6 +241,23 @@ func (s *SystemServiceServer) GetLogsPage(ctx context.Context,
 		resp.Entries = append(resp.Entries, logEntryToProto(entry))
 	}
 	return resp, nil
+}
+
+// GetBlueprint returns the raw blueprint YAML content this workspace was
+// created from.
+func (s *SystemServiceServer) GetBlueprint(_ context.Context,
+	_ *k8shelldv1.GetBlueprintRequest) (*k8shelldv1.GetBlueprintResponse, error) {
+
+	if s.grpcApi.blueprint == nil {
+		return nil, status.Errorf(codes.NotFound, "blueprint not available")
+	}
+
+	raw, err := yaml.Marshal(s.grpcApi.blueprint)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to marshal blueprint: %v", err)
+	}
+
+	return &k8shelldv1.GetBlueprintResponse{Blueprint: raw}, nil
 }
 
 func logEntryToProto(entry logger.LogEntry) *k8shelldv1.SystemLogsStreamResponse {
