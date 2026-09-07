@@ -20,7 +20,9 @@ The blueprint is a YAML document mounted at `/etc/k8shell/blueprint.yaml`. It is
 
 On startup, `k8shelld` runs all executable files matching the pattern `__init_*` found in `/usr/local/k8shell/system`, sorted alphabetically. Scripts are executed sequentially in the background so they do not block the gRPC server from accepting connections. Each script runs as the workspace user inside its own process group.
 
-A flag file is written to `~/.k8shell/flags/<script-name>` after a successful run, so scripts are skipped on subsequent container restarts unless the flag is removed.
+A flag file is written to `~/.k8shell/flags/<script-name>` after a successful run, so scripts are skipped on subsequent container restarts unless the flag is removed. A blueprint init script with `always: true` skips this run-once guard and executes on every start; its flag file is still maintained so the script can tell the two cases apart.
+
+Every init script is run with `K8SHELL_INIT_FIRST_RUN` in its environment — `true` when the script has not previously completed successfully in this workspace, `false` when it is being re-run (only `always` scripts are ever re-run).
 
 Init-script progress is tracked in memory and streamed to the PTY display when a new shell session is opened before the scripts finish.
 
