@@ -95,6 +95,7 @@ func NewProcessWatcher(terminateOrphans bool, reapZombies bool, checkInterval in
 		pattern, err := regexp.Compile(exclude)
 		if err != nil {
 			p.logger.Warn().Msgf("Invalid exclude pattern '%s': %v", exclude, err)
+			continue
 		}
 		p.excludePatterns = append(p.excludePatterns, pattern)
 	}
