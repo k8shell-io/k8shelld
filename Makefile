@@ -103,6 +103,12 @@ image: vendor
 coverage:  ##@ Calculate test coverage percentage from coverage.out
 	@go tool cover -func=$(REPORTS_DIR)/coverage.out | grep total | awk '{print $$3}'
 
+debug-setup: ##@ Set up local debug environment
+             ##@ Generates go.work (Go version taken from go.mod) and symlinks the common module for local debugging
+	@GO_VERSION=$$(grep -m1 '^go ' go.mod | awk '{print $$2}') && \
+	printf 'go %s\n\nuse (\n\t.\n\t/opt/shared/common\n)\n' "$$GO_VERSION" > go.work
+	ln -sfn /opt/shared/common common
+
 ##@
 ##@ Misc commands
 ##@

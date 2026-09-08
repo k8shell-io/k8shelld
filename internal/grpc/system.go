@@ -17,7 +17,16 @@ import (
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gopkg.in/yaml.v3"
 )
+
+// logStreamPollInterval is how often GetLogsStream polls the in-memory log
+// store for new entries while following (mirrors the REST /logs handler).
+const logStreamPollInterval = 100 * time.Millisecond
+
+// defaultLogPageLimit is the page size GetLogsPage falls back to when the
+// caller doesn't specify one (mirrors the REST /logs handler's default).
+const defaultLogPageLimit = 100
 
 // SystemServiceServer is the gRPC server for the system service
 type SystemServiceServer struct {
@@ -123,4 +132,140 @@ func (s *SystemServiceServer) SystemInfo(ctx context.Context,
 	}
 
 	return k8shelld.SystemInfoToProto(&systemInfo), nil
+}
+
+// SystemInfoHistory returns historical system/mount/docker usage samples
+// for charting. See the proto comment on SystemInfoHistoryRequest for the
+// precedence of range vs from/to and how step coarsening works.
+func (s *SystemServiceServer) SystemInfoHistory(_ context.Context,
+	req *k8shelldv1.SystemInfoHistoryRequest) (*k8shelldv1.SystemInfoHistoryResponse, error) {
+
+	query := k8shelld.SystemInfoHistoryQuery{
+		From:  req.GetFrom(),
+		To:    req.GetTo(),
+		Range: req.GetRange(),
+		Step:  req.GetStep(),
+	}
+
+	hist, err := s.grpcApi.sysInfo.GetSystemInfoHistory(query)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid system info history request: %v", err)
+	}
+
+	return k8shelld.SystemInfoHistoryToProto(hist), nil
+}
+
+// GetLogsStream streams k8shelld daemon logs (the same logs shown by
+// `kbox logs`). With Follow=false it sends the currently buffered entries
+// and closes the stream; with Follow=true it keeps streaming new entries as
+// they are produced until the client cancels.
+func (s *SystemServiceServer) GetLogsStream(req *k8shelldv1.SystemLogsStreamRequest,
+	stream k8shelldv1.SystemService_GetLogsStreamServer) error {
+
+	component := req.GetComponent()
+	level := k8shelld.LogLevelFromProto(req.GetLevel())
+	follow := req.GetFollow()
+
+	send := func(entries []logger.LogEntry) error {
+		for _, entry := range entries {
+			if sendErr := stream.Send(logEntryToProto(entry)); sendErr != nil {
+				return status.Errorf(codes.Canceled, "client canceled")
+			}
+		}
+		return nil
+	}
+
+	var backlog []logger.LogEntry
+	var sinceID int64
+	if n := req.GetLastN(); n > 0 {
+		backlog, _ = logger.GetLogsBefore(0, int(n), component, level)
+		if len(backlog) > 0 {
+			sinceID = backlog[len(backlog)-1].ID
+		}
+	} else {
+		backlog, sinceID = logger.GetLogsSince(0, component, level)
+	}
+	if err := send(backlog); err != nil {
+		return err
+	}
+
+	if !follow {
+		return nil
+	}
+
+	ctx := stream.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return status.Errorf(codes.Canceled, "client canceled")
+		default:
+			entries, newSinceID := logger.GetLogsSince(sinceID, component, level)
+			if err := send(entries); err != nil {
+				return err
+			}
+			sinceID = newSinceID
+
+			time.Sleep(logStreamPollInterval)
+		}
+	}
+}
+
+// GetLogsPage returns one page of k8shelld daemon logs strictly older than
+// the requested BeforeId, for "load more" / infinite-scroll style backward
+// pagination independent of GetLogsStream's live tail.
+func (s *SystemServiceServer) GetLogsPage(ctx context.Context,
+	req *k8shelldv1.GetLogsPageRequest) (*k8shelldv1.GetLogsPageResponse, error) {
+
+	if req.GetBeforeId() < 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "before_id must not be negative")
+	}
+	if req.GetLimit() < 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "limit must not be negative")
+	}
+
+	limit := int(req.GetLimit())
+	if limit == 0 {
+		limit = defaultLogPageLimit
+	}
+
+	component := req.GetComponent()
+	level := k8shelld.LogLevelFromProto(req.GetLevel())
+
+	entries, hasMore := logger.GetLogsBefore(req.GetBeforeId(), limit, component, level)
+
+	resp := &k8shelldv1.GetLogsPageResponse{
+		Entries: make([]*k8shelldv1.SystemLogsStreamResponse, 0, len(entries)),
+		HasMore: hasMore,
+	}
+	for _, entry := range entries {
+		resp.Entries = append(resp.Entries, logEntryToProto(entry))
+	}
+	return resp, nil
+}
+
+// GetBlueprint returns the raw blueprint YAML content this workspace was
+// created from.
+func (s *SystemServiceServer) GetBlueprint(_ context.Context,
+	_ *k8shelldv1.GetBlueprintRequest) (*k8shelldv1.GetBlueprintResponse, error) {
+
+	if s.grpcApi.blueprint == nil {
+		return nil, status.Errorf(codes.NotFound, "blueprint not available")
+	}
+
+	raw, err := yaml.Marshal(s.grpcApi.blueprint)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to marshal blueprint: %v", err)
+	}
+
+	return &k8shelldv1.GetBlueprintResponse{Blueprint: raw}, nil
+}
+
+func logEntryToProto(entry logger.LogEntry) *k8shelldv1.SystemLogsStreamResponse {
+	return &k8shelldv1.SystemLogsStreamResponse{
+		Id:        entry.ID,
+		Time:      entry.Timestamp,
+		Component: entry.Component,
+		Level:     entry.Level,
+		Message:   entry.Message,
+	}
 }
