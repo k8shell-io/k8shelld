@@ -528,6 +528,17 @@ func (a *GRPCService) runRESTAttachLoop(session *SessionData, conn net.Conn, det
 //   - OSC 10 ; ... ST/BEL  — foreground colour report
 //   - OSC 11 ; ... ST/BEL  — background colour report
 //   - DCS ... ST           — device control string responses (e.g. XTGETTCAP)
+//
+// Also stripped: the shell's PROMPT_EOL_MARK ("%" or "#" wrapped in SGR
+// styling, padded with spaces to the terminal width, then a bare CR — e.g.
+// zsh's default "%B%S%#%s%b"). It is rendered by overwriting it with the
+// next prompt line, which relies on the replaying terminal being exactly as
+// wide as the terminal the shell originally sized its padding for. Replayed
+// scrollback is frequently viewed in a differently-sized terminal (the
+// session's PTY width at attach time lags the reattaching client's actual
+// width — see cmd/kbox/attach.go), so the overwrite trick fails and the
+// mark is left stranded above the prompt. Since it carries no information
+// for a new client, it's dropped like the other noise above.
 func stripTerminalQueryResponses(data []byte) []byte {
 	if len(data) == 0 {
 		return data
@@ -544,6 +555,9 @@ func stripTerminalQueryResponses(data []byte) []byte {
 		switch data[i+1] {
 		case '[': // CSI
 			end, ok := scanCSIResponse(data, i)
+			if !ok {
+				end, ok = scanEOLMark(data, i)
+			}
 			if ok {
 				i = end
 			} else {
@@ -609,6 +623,69 @@ func scanCSIResponse(data []byte, i int) (end int, ok bool) {
 		}
 	}
 	return i, false
+}
+
+// scanEOLMark matches a shell's PROMPT_EOL_MARK sequence: one or more SGR
+// (colour/style) escapes, the marker character ('%' or '#'), one or more
+// closing SGR escapes, a run of padding spaces, and a bare CR (not followed
+// by LF — that would just be a normal line ending). Returns the index past
+// the CR on success, or (i, false) if the pattern doesn't fully match,
+// leaving the caller to emit data[i] unchanged.
+//
+// i must point at the ESC of what is expected to be the first SGR escape.
+func scanEOLMark(data []byte, i int) (end int, ok bool) {
+	j := i
+	opened := 0
+	for {
+		next, sgrOK := scanSGR(data, j)
+		if !sgrOK {
+			break
+		}
+		j = next
+		opened++
+	}
+	if opened == 0 {
+		return i, false
+	}
+	if j >= len(data) || (data[j] != '%' && data[j] != '#') {
+		return i, false
+	}
+	j++ // consume the marker character
+
+	for {
+		next, sgrOK := scanSGR(data, j)
+		if !sgrOK {
+			break
+		}
+		j = next
+	}
+
+	for j < len(data) && data[j] == ' ' {
+		j++
+	}
+
+	if j >= len(data) || data[j] != '\r' {
+		return i, false
+	}
+	j++ // consume the CR; a following LF (if any) is left untouched
+
+	return j, true
+}
+
+// scanSGR returns the index past an SGR escape (ESC [ params m) starting at
+// j, or (j, false) if there isn't one there.
+func scanSGR(data []byte, j int) (end int, ok bool) {
+	if j+1 >= len(data) || data[j] != 0x1b || data[j+1] != '[' {
+		return j, false
+	}
+	k := j + 2
+	for k < len(data) && ((data[k] >= 0x30 && data[k] <= 0x3f) || data[k] == ';') {
+		k++
+	}
+	if k >= len(data) || data[k] != 'm' {
+		return j, false
+	}
+	return k + 1, true
 }
 
 // scanOSCResponse returns the index past the end of an OSC sequence that

@@ -311,11 +311,23 @@ func (s *Server) runInitScripts(
 	}
 	s.initTracker.RegisterAll(scriptNames)
 
+	// The blueprint is the source of truth for per-script behavior. The ordinal
+	// encoded in each file name maps back to a blueprint.InitScripts position
+	// (see commonmodels.ParseInitScriptFileName, which returns a zero-based idx).
+	var initScripts []commonmodels.InitScript
+	if s.blueprint != nil {
+		initScripts = s.blueprint.InitScripts
+	}
+
 	s.logger.Info().Msgf("Running %d init scripts sequentially in background.", len(scripts))
 	go func() {
 		for _, sp := range scripts {
-			s.logger.Info().Msgf("Running %s.", sp)
-			if err := s.runScriptHelper(scriptsDir, sp, flagDir, []string{}); err != nil {
+			always := false
+			if idx, _, ok := commonmodels.ParseInitScriptFileName(sp); ok && idx >= 0 && idx < len(initScripts) {
+				always = initScripts[idx].Always
+			}
+			s.logger.Info().Msgf("Running %s (always=%t).", sp, always)
+			if err := s.runScriptHelper(scriptsDir, sp, flagDir, always, []string{}); err != nil {
 				s.logger.Error().Msgf("Failed to run init script %s: %v", sp, err)
 			}
 		}
@@ -328,16 +340,24 @@ func (s *Server) runInitScripts(
 	return nil
 }
 
-// runScriptHelper executes a script with flag handling
-func (s *Server) runScriptHelper(scriptsDir, scriptPath string, flagDir string, envVars []string) error {
+// runScriptHelper executes a script with flag handling. When always is true the
+// run-once guard is skipped so the script executes on every workspace start; the
+// flag file is still maintained so the script can tell a first run from a rerun
+// via the config.EnvInitFirstRun environment variable.
+func (s *Server) runScriptHelper(scriptsDir, scriptPath string, flagDir string, always bool, envVars []string) error {
 	scriptName := filepath.Base(scriptPath)
 
 	flagFile := filepath.Join(flagDir, scriptName)
-	if _, err := os.Stat(flagFile); err == nil {
+	_, flagErr := os.Stat(flagFile)
+	hasRunBefore := flagErr == nil
+
+	if hasRunBefore && !always {
 		s.logger.Info().Msgf("Flag file exists for %s. Skipping execution.", scriptName)
 		s.initTracker.SetCompleted(scriptName, false)
 		return nil
 	}
+
+	envVars = append(envVars, fmt.Sprintf("%s=%t", config.EnvInitFirstRun, !hasRunBefore))
 
 	s.initTracker.SetRunning(scriptName)
 	return s.runScript(scriptsDir, scriptName, flagFile, envVars)

@@ -83,6 +83,8 @@ type SystemInfo struct {
 	cachedMounts        []k8shelld.MountUsage   // Cached mount usage (refreshed in background)
 	cachedDocker        *k8shelld.DockerUsage   // Cached podman/docker usage (refreshed in background)
 	cachedPodmanDetails *PodmanDetails          // Cached extra Podman details (refreshed in background)
+	history             *history                // Historical system/mount/docker usage samples for SystemInfoHistory
+	collectionInterval  time.Duration           // Native sample interval, set by Collect; guarded by mu
 }
 
 func NewSystemInfo(config *config.Config, blueprint *commonmodels.Blueprint) *SystemInfo {
@@ -93,15 +95,21 @@ func NewSystemInfo(config *config.Config, blueprint *commonmodels.Blueprint) *Sy
 		prevTime:  time.Now(),
 		mu:        sync.Mutex{},
 		log:       logger.NewLogger("sysifo"),
+		history:   newHistory(),
 	}
 }
 
 func (s *SystemInfo) Collect(ctx context.Context, refreshTimeSec int) error {
+	s.mu.Lock()
+	s.collectionInterval = time.Duration(refreshTimeSec) * time.Second
+	s.mu.Unlock()
+
 	// Do an initial refresh immediately so data is available before the first tick.
-	if err := s.refresh(); err != nil {
-		s.log.Warn().Msgf("Initial system info refresh failed: %v", err)
+	refreshErr := s.refresh()
+	if refreshErr != nil {
+		s.log.Warn().Msgf("Initial system info refresh failed: %v", refreshErr)
 	}
-	s.refreshStorage(ctx)
+	s.refreshStorage(ctx, refreshErr == nil)
 
 	ticker := time.NewTicker(time.Duration(refreshTimeSec) * time.Second)
 	defer ticker.Stop()
@@ -109,10 +117,11 @@ func (s *SystemInfo) Collect(ctx context.Context, refreshTimeSec int) error {
 	for {
 		select {
 		case <-ticker.C:
-			if err := s.refresh(); err != nil {
-				s.log.Warn().Msgf("Failed to update system info: %v", err)
+			refreshErr := s.refresh()
+			if refreshErr != nil {
+				s.log.Warn().Msgf("Failed to update system info: %v", refreshErr)
 			}
-			s.refreshStorage(ctx)
+			s.refreshStorage(ctx, refreshErr == nil)
 		case <-ctx.Done():
 			s.log.Info().Msg("System info updater stopped.")
 			return ctx.Err()
@@ -274,8 +283,11 @@ func (s *SystemInfo) computeDockerSnapshot(ctx context.Context) (*k8shelld.Docke
 	return du, pd, nil
 }
 
-// refreshStorage updates cachedMounts and cachedDocker in parallel.
-func (s *SystemInfo) refreshStorage(ctx context.Context) {
+// refreshStorage updates cachedMounts and cachedDocker in parallel, then
+// records a history sample. refreshOK indicates whether the CPU/memory
+// refresh that preceded this call succeeded; when it didn't, the system
+// portion of the history sample is left as a gap rather than a stale value.
+func (s *SystemInfo) refreshStorage(ctx context.Context, refreshOK bool) {
 	var (
 		mounts []k8shelld.MountUsage
 		docker *k8shelld.DockerUsage
@@ -293,11 +305,74 @@ func (s *SystemInfo) refreshStorage(ctx context.Context) {
 	}()
 	wg.Wait()
 
+	now := time.Now()
+
 	s.mu.Lock()
 	s.cachedMounts = mounts
 	s.cachedDocker = docker
 	s.cachedPodmanDetails = podman
+
+	var sysPoint *systemHistoryPoint
+	if refreshOK {
+		sysPoint = &systemHistoryPoint{
+			time:               now,
+			cpuUsageMillicores: floatPtr(s.CPUUsageMillicores),
+			cpuLimitMillicores: floatPtr(s.CPULimitMillicores),
+			memoryUsageMiB:     floatPtr(s.MemoryUsageMiB),
+			memLimitMiB:        floatPtr(s.MemLimitMiB),
+		}
+	}
 	s.mu.Unlock()
+
+	s.history.record(now, sysPoint, mounts, docker)
+}
+
+func floatPtr(v float64) *float64 { return &v }
+
+// GetSystemInfoHistory resolves a SystemInfoHistory query against the
+// recorded ring buffer and returns the downsampled series. The returned
+// From/To/Step reflect what was actually used after clamping/coarsening.
+func (s *SystemInfo) GetSystemInfoHistory(q k8shelld.SystemInfoHistoryQuery) (*k8shelld.SystemInfoHistory, error) {
+	now := time.Now()
+
+	from, to, err := resolveHistoryWindow(q.From, q.To, q.Range, now)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	nativeInterval := s.collectionInterval
+	s.mu.Unlock()
+	if nativeInterval <= 0 {
+		nativeInterval = time.Second
+	}
+
+	step, err := resolveHistoryStep(q.Step, from, to, nativeInterval)
+	if err != nil {
+		return nil, err
+	}
+
+	s.history.mu.Lock()
+	defer s.history.mu.Unlock()
+
+	result := &k8shelld.SystemInfoHistory{
+		From:   from.Format(time.RFC3339),
+		To:     to.Format(time.RFC3339),
+		Step:   step.String(),
+		System: bucketSystemPoints(s.history.system, from, to, step),
+		Mounts: make(map[string][]k8shelld.MountUsagePoint, len(s.history.mounts)),
+	}
+
+	for mountPoint, points := range s.history.mounts {
+		result.Mounts[mountPoint] = bucketMountPoints(points, from, to, step)
+	}
+
+	if s.blueprint != nil && s.blueprint.Podman.Enabled {
+		docker := bucketDockerPoints(s.history.docker, from, to, step)
+		result.Docker = &docker
+	}
+
+	return result, nil
 }
 
 // CPUSample represents a CPU usage sample

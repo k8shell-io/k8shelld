@@ -1,5 +1,8 @@
 {
     "editor.aiStats.enabled": true,
     "go.lintTool": "golangci-lint",
-    "go.lintOnSave": "package"
+    "go.lintOnSave": "package",
+    "git.scanRepositories": [
+        "common"
+    ]
 }

@@ -449,26 +449,59 @@ func (a *RESTService) GetSplash(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// defaultLogPageSize is the page size used for cursor-based pagination
+// (the "before" query parameter) when the caller doesn't specify a 'limit'.
+const defaultLogPageSize = 100
+
+// GetLogs serves k8shelld daemon logs (the same logs shown by `kbox logs`).
+//
+// Query parameters:
+//   - component, level: optional filters
+//   - follow=true: keep the connection open and stream new entries as they
+//     arrive, seeded with the last 'limit' entries (or everything currently
+//     buffered if 'limit' is unset)
+//   - before=<id>: cursor-based pagination — returns up to 'limit' entries
+//     older than the given entry id, oldest-first, for "load more" style
+//     paging that stays correct even as the in-memory buffer evicts old
+//     entries underneath it. Omit (or 0) for the most recent page. The
+//     response carries an 'X-Log-Has-More' header (true/false) indicating
+//     whether an older page exists; the next 'before' cursor is simply the
+//     'id' of the oldest entry in the response body.
+//   - limit (alias: lastN, kept for backward compatibility): page size for
+//     'before' pagination, or entry count for the initial/follow backlog.
+//     Omitted with no 'before' returns everything currently buffered.
 func (a *RESTService) GetLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	component := r.URL.Query().Get("component")
-	level := r.URL.Query().Get("level")
-	follow := r.URL.Query().Get("follow") == "true"
-	lastN := r.URL.Query().Get("lastN")
+	q := r.URL.Query()
+	component := q.Get("component")
+	level := q.Get("level")
+	follow := q.Get("follow") == "true"
 
-	var err error
-	var n int
-	if lastN != "" {
-		n, err = strconv.Atoi(lastN)
+	limitStr := q.Get("limit")
+	if limitStr == "" {
+		limitStr = q.Get("lastN")
+	}
+	var limit int
+	if limitStr != "" {
+		n, err := strconv.Atoi(limitStr)
 		if err != nil || n < 0 {
-			http.Error(w, "Invalid 'lastN' parameter", http.StatusBadRequest)
+			http.Error(w, "Invalid 'limit' parameter", http.StatusBadRequest)
 			return
 		}
-	} else {
-		n = 0
+		limit = n
+	}
+
+	var beforeID int64
+	if beforeStr := q.Get("before"); beforeStr != "" {
+		id, err := strconv.ParseInt(beforeStr, 10, 64)
+		if err != nil || id < 0 {
+			http.Error(w, "Invalid 'before' parameter", http.StatusBadRequest)
+			return
+		}
+		beforeID = id
 	}
 
 	flusher, ok := w.(http.Flusher)
@@ -477,37 +510,62 @@ func (a *RESTService) GetLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	offset := 0
-	if n > 0 {
-		offset = -n
-	}
-
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		default:
-			entries, newOffset := logger.GetLogsSince(offset, component, level)
-
-			for _, entry := range entries {
-				b, err := json.Marshal(entry)
-				if err != nil {
-					a.logger.Error().Err(err).Msg("failed to encode log entry")
-					continue
-				}
-				_, _ = fmt.Fprintln(w, string(b))
+	writeEntries := func(entries []logger.LogEntry) {
+		for _, entry := range entries {
+			b, err := json.Marshal(entry)
+			if err != nil {
+				a.logger.Error().Err(err).Msg("failed to encode log entry")
+				continue
 			}
-
-			flusher.Flush()
-			offset = newOffset
-
-			if !follow {
-				return
-			}
-
-			time.Sleep(100 * time.Millisecond)
+			_, _ = fmt.Fprintln(w, string(b))
 		}
 	}
+
+	if follow {
+		var backlog []logger.LogEntry
+		var sinceID int64
+		if limit > 0 {
+			backlog, _ = logger.GetLogsBefore(0, limit, component, level)
+			if len(backlog) > 0 {
+				sinceID = backlog[len(backlog)-1].ID
+			}
+		} else {
+			backlog, sinceID = logger.GetLogsSince(0, component, level)
+		}
+		writeEntries(backlog)
+		flusher.Flush()
+
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			default:
+				entries, newSinceID := logger.GetLogsSince(sinceID, component, level)
+				if len(entries) > 0 {
+					writeEntries(entries)
+					flusher.Flush()
+				}
+				sinceID = newSinceID
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}
+
+	var entries []logger.LogEntry
+	if beforeID > 0 || limit > 0 {
+		pageLimit := limit
+		if pageLimit == 0 {
+			pageLimit = defaultLogPageSize
+		}
+		var hasMore bool
+		entries, hasMore = logger.GetLogsBefore(beforeID, pageLimit, component, level)
+		w.Header().Set("X-Log-Has-More", strconv.FormatBool(hasMore))
+	} else {
+		entries, _ = logger.GetLogsSince(0, component, level)
+	}
+
+	writeEntries(entries)
+	flusher.Flush()
 }
 
 func (a *RESTService) ValidateK8shelldFile(w http.ResponseWriter, r *http.Request) {

@@ -29,6 +29,12 @@ const (
 	BlueprintPath         = "/etc/k8shell/blueprint.yaml"
 	ProfilePath           = "/etc/k8shell/profile.yaml"
 	InitScriptsDir        = "/usr/local/k8shell/system"
+
+	// EnvInitFirstRun is injected into every init script's environment. It is
+	// "true" when the script has not previously completed successfully in this
+	// workspace and "false" when it is being re-run (only InitScript.Always
+	// scripts are ever re-run).
+	EnvInitFirstRun = "K8SHELL_INIT_FIRST_RUN"
 )
 
 // Type aliases for types defined in common.
