@@ -22,7 +22,18 @@ On startup, `k8shelld` runs all executable files matching the pattern `__init_*`
 
 A flag file is written to `~/.k8shell/flags/<script-name>` after a successful run, so scripts are skipped on subsequent container restarts unless the flag is removed. A blueprint init script with `always: true` skips this run-once guard and executes on every start; its flag file is still maintained so the script can tell the two cases apart.
 
-Every init script is run with `K8SHELL_INIT_FIRST_RUN` in its environment — `true` when the script has not previously completed successfully in this workspace, `false` when it is being re-run (only `always` scripts are ever re-run).
+Every init script is run with `K8SHELL_INIT_FIRST_RUN` in its environment — `true` when the script has not previously completed successfully in this workspace, `false` when it is being re-run (only `always` scripts are ever re-run). An `always: true` script typically uses it to skip one-time setup on subsequent runs:
+
+```bash
+#!/bin/sh
+if [ "$K8SHELL_INIT_FIRST_RUN" = "true" ]; then
+    echo "First run: seeding initial config."
+    cp /usr/local/k8shell/defaults/config.yaml "$HOME/.myapp/config.yaml"
+fi
+
+echo "Every run: refreshing credentials."
+myapp-cli refresh-token
+```
 
 Init-script progress is tracked in memory and streamed to the PTY display when a new shell session is opened before the scripts finish.
 
