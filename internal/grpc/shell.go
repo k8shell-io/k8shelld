@@ -4,7 +4,6 @@
 package grpc
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -80,24 +79,6 @@ func newShellHandler(grpcapi *GRPCService) *ShellHandler {
 		grpcApi: grpcapi,
 		logger:  logger.NewLogger("grpc-shell"),
 	}
-}
-
-// getUserLoginShell verify if the shell is valid
-func isValidShell(shell string) bool {
-	file, err := os.Open("/etc/shells")
-	if err == nil {
-		defer file.Close()
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			if scanner.Text() == shell {
-				return true
-			}
-		}
-		if scanner.Err() != nil {
-			return false
-		}
-	}
-	return false
 }
 
 // Get the port-forward ID from the gRPC metadata "portforward-id"
@@ -200,15 +181,8 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 		return resolveErr
 	}
 
-	shell, err := system.GetUserLoginShell(shellUser.Username)
-	if err != nil {
-		shell = shellReq.StartRequest.CmdShell
-	}
-
-	if _, statErr := os.Stat(shell); statErr != nil {
-		s.logger.Warn().Msgf("Shell %s not found, falling back to /bin/sh", shell)
-		shell = "/bin/sh"
-	}
+	// Interactive sessions prefer the passwd login shell over the client's hint.
+	shell := resolveShell(loginShell(shellUser.Username), shellReq.StartRequest.CmdShell)
 
 	session := &SessionData{
 		Id:       sessionId,
@@ -222,8 +196,7 @@ func (s *ShellHandler) Shell(stream grpc.BidiStreamingServer[k8shelldv1.ShellReq
 	session.Cmd = exec.Command(shell)
 	session.Cmd.Args[0] = "-" + session.Cmd.Args[0] // make the shell a login shell
 
-	session.Cmd.Env = system.CreateEnvVars(shellReq.StartRequest.SetEnvVars,
-		session.user.HomeDir)
+	session.Cmd.Env = userEnv(shellReq.StartRequest.SetEnvVars, session.user, shell)
 	session.Cmd.Env = append(session.Cmd.Env, "K8SHELL_SESSION_ID="+sessionId)
 	// Cmd.Dir is set so the shell opens in the user's home directory.
 	// cmd.Start() is called via cmdStartWithTimeout to prevent k8shelld from

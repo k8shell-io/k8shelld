@@ -577,6 +577,9 @@ func CreateEnvVars(envVars []string, homeDir string) []string {
 
 	for _, e := range envVars {
 		key := extractKey(e)
+		if key == "HOME" {
+			continue
+		}
 		if _, exists := addedKeys[key]; !exists {
 			newEnv = append(newEnv, e)
 			addedKeys[key] = struct{}{}
