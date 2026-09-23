@@ -48,6 +48,8 @@ github.com/invopop/jsonschema v0.14.0 h1:MHQqLhvpNUZfw+hM3AZDYK7jxO8FZoQeQM77g8i
 github.com/invopop/jsonschema v0.14.0/go.mod h1:ygm6C2EaVNMBDPpaPlnOA2pFAxBnxGjFlMZABxm9n2I=
 github.com/k8shell-io/common v0.52.0 h1:DI/BKMJwv5TLV+Ubmbqwu3jxy9prwpTUwKAymIXBOFs=
 github.com/k8shell-io/common v0.52.0/go.mod h1:TcMCP6YSmuVFHi7igxE0hK4kRewdNcfOQmhsx7mJAWY=
+github.com/k8shell-io/common v0.62.0 h1:40Zuu7hoVx8B3nFhx6lb3MZiHe5OGBaqaEW5aJYhq1I=
+github.com/k8shell-io/common v0.62.0/go.mod h1:K/aa9JmWcrb6thu6K6k3sVMu1H8vw8G0pvlTpZ9D+v8=
 github.com/k8shell-io/k8shell-go v0.2.3 h1:gL7dXDYN4EhWdQvvnY4B2On9Tpb1sZ7G5lO8RtI/nr4=
 github.com/k8shell-io/k8shell-go v0.2.3/go.mod h1:wWb5gq693qqb48/p5iYrosLG4uNeGOr5dQJiOClIbE8=
 github.com/kr/fs v0.1.0 h1:Jskdu9ieNAYnjxsi0LbQp1ulIKZV1LAFgK1tWhpZgl8=

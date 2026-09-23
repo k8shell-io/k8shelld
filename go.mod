@@ -7,7 +7,7 @@ require (
 	github.com/docker/docker-credential-helpers v0.9.7
 	github.com/fatih/color v1.18.0
 	github.com/gorilla/mux v1.8.1
-	github.com/k8shell-io/common v0.52.0
+	github.com/k8shell-io/common v0.62.0
 	github.com/k8shell-io/k8shell-go v0.2.3
 	github.com/pkg/sftp v1.13.10
 	github.com/rs/zerolog v1.34.0
