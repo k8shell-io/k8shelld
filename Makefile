@@ -4,8 +4,10 @@ REPORTS_DIR := reports
 # Auto-derived from the repo directory name. Override if needed: make SERVICE_NAME=myservice
 SERVICE_NAME ?= $(shell basename $(CURDIR))
 RUNTIME ?= alpine
+# Override with: make bump-common COMMON_VERSION=v0.62.0
+COMMON_VERSION ?= latest
 
-.PHONY: all init install-test-deps test-static test build test-binary test-self vendor image image-debug image-release coverage clean help
+.PHONY: all init bump-common install-test-deps install-gh test-static test build test-binary test-self vendor image image-debug image-release reload dlv debug-setup coverage clean help
 
 # Default target
 all: build
@@ -15,6 +17,13 @@ init:  ##@ Initialize Go module
 	@echo "Initializing Go module..."
 	go mod tidy
 	go mod download
+
+bump-common: ##@ Bump the k8shell-io/common dependency
+             ##@ Fetches COMMON_VERSION (default: latest) and tidies go.mod/go.sum
+             ##@ Override version with: make bump-common COMMON_VERSION=v0.62.0
+	@echo "Bumping github.com/k8shell-io/common to $(COMMON_VERSION)..."
+	go get github.com/k8shell-io/common@$(COMMON_VERSION)
+	go mod tidy
 
 install-test-deps: ##@ Install test dependencies
                    ##@ Installs golangci-lint and gosec for static analysis
@@ -26,6 +35,27 @@ install-test-deps: ##@ Install test dependencies
 	@echo "Installing go-junit-report..."
 	go install github.com/jstemmer/go-junit-report/v2@latest
 	@mkdir -p $(REPORTS_DIR)
+
+GH_HOST ?= github.com
+
+install-gh: ##@ Install the GitHub CLI (gh) and authenticate it
+           ##@ Adds GitHub's official apt repo and installs gh if missing, then logs it in
+           ##@ using the token from the git credential helper (`git credential fill`) for GH_HOST (default: github.com)
+	@if command -v gh >/dev/null 2>&1; then \
+		echo "gh already installed: $$(gh --version | head -1)"; \
+	else \
+		echo "Installing GitHub CLI..." && \
+		(type -p wget >/dev/null || (sudo apt-get update && sudo apt-get install -y wget)) && \
+		sudo mkdir -p -m 755 /etc/apt/keyrings && \
+		wget -nv -O- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null && \
+		sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg && \
+		echo "deb [arch=$$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
+		sudo apt-get update && \
+		sudo apt-get install -y gh; \
+	fi
+	@echo "Authenticating gh via git credential helper for $(GH_HOST)..."
+	@printf 'protocol=https\nhost=%s\n\n' "$(GH_HOST)" | git credential fill | sed -n 's/^password=//p' | gh auth login --hostname $(GH_HOST) --with-token
+	@gh auth status --hostname $(GH_HOST)
 
 test-static: ##@ Run static analysis
              ##@ Runs linting and security checks on Go code
@@ -48,24 +78,20 @@ test: install-test-deps
 
 build:      ##@ Build binaries
 	@echo "Building binaries..."
-	@mkdir -p bin
-	go build -ldflags="-s -w" -o bin/k8shelld ./cmd/k8shelld
-	go build -ldflags="-s -w" -o bin/kbox ./cmd/kbox
-	go build -ldflags="-s -w" -o bin/sftp ./sftp
+	CGO_ENABLED=0 go build -gcflags="all=-N -l" -o bin/$(SERVICE_NAME) main.go
 	@echo "Build complete!"
 
 test-binary: ##@ Run binary smoke tests
              ##@ Validates that built binaries execute successfully (basic sanity check)
 test-binary: build
 	@echo "Running binary smoke tests..."
-	@./bin/k8shelld -v > /dev/null 2>&1 || (echo "k8shelld smoke test failed" && exit 1)
-	@./bin/kbox --version > /dev/null 2>&1 || (echo "kbox smoke test failed" && exit 1)
-	@echo "Binary smoke tests passed!"
+	@./bin/$(SERVICE_NAME) -h > /dev/null 2>&1 || (echo "$(SERVICE_NAME) help failed" && exit 1)
+	@echo "$(SERVICE_NAME) smoke tests passed!"
 
 test-self:  ##@ Run all self-tests
             ##@ Executes static analysis, unit tests, build, and binary smoke tests
             ##@ Validation of code quality and functionality (ran by CI workflow)
-test-self: ##test-static build test-binary
+test-self: test-static build test-binary
 	@echo "All self-tests passed!"
 
 vendor:  ##@ Vendor Go modules
@@ -73,16 +99,16 @@ vendor:  ##@ Vendor Go modules
 	@echo "Vendoring Go modules..."
 	@go mod vendor
 
-image-debug: RUNTIME=alpine   ##@ Build debug image (alpine, with debug symbols)
+image-debug: RUNTIME=alpine   ##@ Build debug image (alpine, with debug symbols, while-loop entrypoint)
 image-debug: image            ##@ Shorthand for: RUNTIME=alpine make image
 
-image-release: RUNTIME=release  ##@ Build release image (stripped binary)
-image-release: image             ##@ Shorthand for: RUNTIME=release make image
+image-release: RUNTIME=distroless  ##@ Build release image (distroless, stripped binary)
+image-release: image               ##@ Shorthand for: RUNTIME=distroless make image
 
 image:  ##@ Build Docker image
         ##@ Builds container image with version tagging
         ##@ Accepts VERSION, COMMIT_ID, IMAGE_TAG, RUNTIME from environment or auto-detects from git
-        ##@ RUNTIME selects the runtime stage: alpine (default) or release
+        ##@ RUNTIME selects the runtime stage: alpine (default) or distroless
         ##@ Loads into local docker by default; set PUSH=1 to push to registry instead
 image: vendor
 	@echo "Building $(SERVICE_NAME) docker image..."
@@ -100,14 +126,14 @@ image: vendor
 		-f docker/$(SERVICE_NAME)/Dockerfile \
 		.
 
-coverage:  ##@ Calculate test coverage percentage from coverage.out
-	@go tool cover -func=$(REPORTS_DIR)/coverage.out | grep total | awk '{print $$3}'
-
 debug-setup: ##@ Set up local debug environment
              ##@ Generates go.work (Go version taken from go.mod) and symlinks the common module for local debugging
 	@GO_VERSION=$$(grep -m1 '^go ' go.mod | awk '{print $$2}') && \
 	printf 'go %s\n\nuse (\n\t.\n\t/opt/shared/common\n)\n' "$$GO_VERSION" > go.work
 	ln -sfn /opt/shared/common common
+
+coverage:  ##@ Calculate test coverage percentage from coverage.out
+	@go tool cover -func=$(REPORTS_DIR)/coverage.out | grep total | awk '{print $$3}'
 
 ##@
 ##@ Misc commands
@@ -115,7 +141,7 @@ debug-setup: ##@ Set up local debug environment
 
 clean: ##@ Clean up generated files
 	rm -rf $(REPORTS_DIR)
-	rm -rf bin/
+	rm -f bin/$(SERVICE_NAME)
 	rm -rf vendor/
 
 
@@ -132,3 +158,4 @@ help: ##@ (Default) Print listing of key targets with their descriptions
 		else \
 			printf "\n    \033[34m%-20s\033[0m %s\n", $$1, $$2; \
 	}'
+
