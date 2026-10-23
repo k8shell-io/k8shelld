@@ -114,7 +114,7 @@ tests/         # Integration smoke-test scripts and config
 
 ## Prerequisites
 
-- Go 1.24+
+- Go 1.27+
 - Docker
 
 ## Local development
