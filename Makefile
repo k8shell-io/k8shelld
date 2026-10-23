@@ -78,7 +78,9 @@ test: install-test-deps
 
 build:      ##@ Build binaries
 	@echo "Building binaries..."
-	CGO_ENABLED=0 go build -gcflags="all=-N -l" -o bin/$(SERVICE_NAME) main.go
+	CGO_ENABLED=0 go build -gcflags="all=-N -l" -o bin/k8shelld ./cmd/k8shelld
+	CGO_ENABLED=0 go build -gcflags="all=-N -l" -o bin/kbox ./cmd/kbox
+	CGO_ENABLED=0 go build -gcflags="all=-N -l" -o bin/sftp ./sftp
 	@echo "Build complete!"
 
 test-binary: ##@ Run binary smoke tests
