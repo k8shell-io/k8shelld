@@ -69,25 +69,25 @@ func HijackAttach(sessionId string) (net.Conn, error) {
 
 	req := fmt.Sprintf("POST /api/v1/shells/%s/attach HTTP/1.1\r\nHost: unix\r\nContent-Length: 0\r\n\r\n", sessionId)
 	if _, err := conn.Write([]byte(req)); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("write HTTP request: %w", err)
 	}
 
 	reader := bufio.NewReader(conn)
 	statusLine, err := reader.ReadString('\n')
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("read HTTP response: %w", err)
 	}
 	if !strings.HasPrefix(statusLine, "HTTP/1.1 101") {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("unexpected response: %s", strings.TrimSpace(statusLine))
 	}
 
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			conn.Close()
+			_ = conn.Close()
 			return nil, fmt.Errorf("read HTTP headers: %w", err)
 		}
 		if line == "\r\n" {
@@ -120,7 +120,7 @@ func GetInitScripts() ([]models.InitScriptState, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if err := CheckApplicationError(resp); err != nil {
 		return nil, err
 	}

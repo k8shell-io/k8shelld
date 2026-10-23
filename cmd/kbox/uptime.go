@@ -36,7 +36,7 @@ var UptimeCmd = &cobra.Command{
 			fmt.Println("Error fetching uptime:", err)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {

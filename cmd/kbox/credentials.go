@@ -96,7 +96,7 @@ func (h *k8shellDockerHelper) Get(serverURL string) (string, string, error) {
 	if err != nil {
 		return "", "", doccredentials.NewErrCredentialsNotFound()
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -176,10 +176,10 @@ func gitCredsHelper(operation string) {
 			url.QueryEscape(creds["protocol"]), url.QueryEscape(creds["host"]))
 		resp, err := client.MakeRequest("GET", url, map[string]string{"Accept": "application/json"}, nil)
 		if err != nil {
-			fmt.Fprint(os.Stdout, "\n")
+			_, _ = fmt.Fprint(os.Stdout, "\n")
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {
@@ -189,12 +189,12 @@ func gitCredsHelper(operation string) {
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			fmt.Fprint(os.Stdout, "\n")
+			_, _ = fmt.Fprint(os.Stdout, "\n")
 			return
 		}
 		username, password := extractCredsFromJSON(body)
-		fmt.Fprintf(os.Stdout, "username=%s\n", username)
-		fmt.Fprintf(os.Stdout, "password=%s\n\n", password)
+		_, _ = fmt.Fprintf(os.Stdout, "username=%s\n", username)
+		_, _ = fmt.Fprintf(os.Stdout, "password=%s\n\n", password)
 
 	case "store":
 		fmt.Println("Storing credentials is not supported.")
@@ -295,7 +295,7 @@ func kubernetesCredsHelper(operation string) {
 	if err != nil {
 		os.Exit(1)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {

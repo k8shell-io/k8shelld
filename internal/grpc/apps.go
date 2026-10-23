@@ -179,7 +179,7 @@ func (s *AppServiceServer) GetLogsStream(req *k8shelldv1.GetLogsStreamRequest,
 		if err != nil {
 			return status.Errorf(codes.Internal, "failed to open %s log file: %v", logType, err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		reader := bufio.NewReader(f)
 		for {
@@ -216,7 +216,7 @@ func (s *AppServiceServer) GetLogsStream(req *k8shelldv1.GetLogsStreamRequest,
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to open %s log file: %v", logType, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	reader := bufio.NewReader(f)
 	ctx := stream.Context()

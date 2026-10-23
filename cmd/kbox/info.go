@@ -220,7 +220,7 @@ func fetchSysInfo() (*sysInfoResp, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error fetching sysinfo: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := client.CheckApplicationError(resp); err != nil {
 		return nil, err
@@ -238,7 +238,7 @@ func fetchSysInfoRaw() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error fetching sysinfo: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := client.CheckApplicationError(resp); err != nil {
 		return nil, err
@@ -261,7 +261,7 @@ func printGroup(title string, rows [][2]string) {
 	// Use tabwriter to guarantee alignment (fixes occasional misalignment).
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	for _, r := range rows {
-		fmt.Fprintf(tw, "  %s:\t%s\n", r[0], r[1])
+		_, _ = fmt.Fprintf(tw, "  %s:\t%s\n", r[0], r[1])
 	}
 	_ = tw.Flush()
 	fmt.Println()

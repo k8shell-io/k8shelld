@@ -296,7 +296,7 @@ func (s *UnixSocketHandler) communicate(uxListener *net.UnixListener, unixsocket
 
 					if rejectReason != "" {
 						s.logger.Warn().Msg(rejectReason)
-						conn.Close()
+						_ = conn.Close()
 						mu.Lock()
 						conn = nil
 						mu.Unlock()
@@ -336,7 +336,7 @@ func (s *UnixSocketHandler) communicate(uxListener *net.UnixListener, unixsocket
 
 				// Close the connection
 				mu.Lock()
-				conn.Close()
+				_ = conn.Close()
 				conn = nil
 				mu.Unlock()
 			}
@@ -372,7 +372,7 @@ func (s *UnixSocketHandler) communicate(uxListener *net.UnixListener, unixsocket
 	}
 
 	s.logger.Info().Msg("Communication ended")
-	uxListener.Close()
+	_ = uxListener.Close()
 	return nil
 }
 

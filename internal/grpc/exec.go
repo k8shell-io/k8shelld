@@ -152,7 +152,7 @@ func (s *ExecHandler) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecReques
 		if err != nil {
 			return status.Errorf(codes.Internal, "failed to open PTY: %v", err)
 		}
-		defer ptmx.Close()
+		defer func() { _ = ptmx.Close() }()
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -172,13 +172,13 @@ func (s *ExecHandler) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecReques
 		if err != nil {
 			return status.Errorf(codes.Internal, "failed to create stdout pipe: %v", err)
 		}
-		defer stdout.Close()
+		defer func() { _ = stdout.Close() }()
 		stderr, stderrW, err := os.Pipe()
 		if err != nil {
 			_ = stdoutW.Close()
 			return status.Errorf(codes.Internal, "failed to create stderr pipe: %v", err)
 		}
-		defer stderr.Close()
+		defer func() { _ = stderr.Close() }()
 		cmd.Stdout = stdoutW
 		cmd.Stderr = stderrW
 		childEnds = []*os.File{stdoutW, stderrW}
@@ -253,7 +253,7 @@ func (s *ExecHandler) Exec(stream grpc.BidiStreamingServer[k8shelldv1.ExecReques
 		// A PTY cannot be half-closed, so stdin stays open until the PTY is
 		// closed after the process exits.
 		if ptmx == nil {
-			defer stdin.Close()
+			defer func() { _ = stdin.Close() }()
 			defer s.logger.Debug().Msgf("Closing stdin, PID=%d", processPID)
 		}
 		for {

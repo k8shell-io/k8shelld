@@ -61,7 +61,7 @@ must confirm your current password before a new one is accepted.`,
 			fmt.Fprintf(os.Stderr, "passwd: %v\n", err)
 			os.Exit(1)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if err := client.CheckApplicationError(resp); err != nil {
 			fmt.Fprintf(os.Stderr, "passwd: %v\n", err)

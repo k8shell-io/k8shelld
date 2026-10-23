@@ -58,7 +58,7 @@ var ValidateCmd = &cobra.Command{
 			fmt.Printf("Error validating k8shell file: %v\n", err)
 			os.Exit(1)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {

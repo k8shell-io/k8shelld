@@ -370,7 +370,7 @@ func scriptInterpreter(scriptPath string) string {
 	if err != nil {
 		return "/bin/sh"
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	if scanner.Scan() {

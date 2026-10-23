@@ -681,7 +681,7 @@ func GetPIDListeningOnPort(port int) (int, error) {
 		if err != nil {
 			return 0, nil
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		sc := bufio.NewScanner(f)
 		if !sc.Scan() {

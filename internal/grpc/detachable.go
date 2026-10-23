@@ -436,7 +436,7 @@ func (a *GRPCService) ServeRESTAttach(sessionId string, conn net.Conn) error {
 // or calls `kbox detach`, the session is detached but remains alive.  When the session exits
 // or the client disconnects without detaching, the session is destroyed and removed from the store
 func (a *GRPCService) runRESTAttachLoop(session *SessionData, conn net.Conn, detachCh <-chan struct{}) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	inputErrCh := make(chan error, 1)
 	clientDetachCh := make(chan struct{}, 1)
@@ -697,7 +697,7 @@ func scanOSCResponse(data []byte, i int) (end int, ok bool) {
 	if j+3 > len(data) {
 		return i, false
 	}
-	if !(data[j] == '1' && (data[j+1] == '0' || data[j+1] == '1') && data[j+2] == ';') {
+	if data[j] != '1' || (data[j+1] != '0' && data[j+1] != '1') || data[j+2] != ';' {
 		return i, false
 	}
 	// scan to ST (ESC \) or BEL (0x07)

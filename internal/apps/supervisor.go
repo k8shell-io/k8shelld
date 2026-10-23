@@ -238,13 +238,13 @@ func (s *AppSupervisor) killApp(cmd *exec.Cmd, doneCh <-chan error, grace time.D
 		} else {
 			_ = cmd.Process.Kill()
 		}
-	case <-doneCh:
+	case <-doneCh: //nolint:errcheck // exit status irrelevant during stop
 		return
 	}
 
 	select {
 	case <-time.After(5 * time.Second):
-	case <-doneCh:
+	case <-doneCh: //nolint:errcheck // exit status irrelevant during stop
 	}
 }
 

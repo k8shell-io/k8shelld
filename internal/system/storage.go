@@ -99,7 +99,7 @@ func readMountInfo(path string) ([]mountInfoEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open mountinfo: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	sc := bufio.NewScanner(f)
 	// mountinfo lines can be long
@@ -212,7 +212,7 @@ func GetDockerUsage(ctx context.Context) (*k8shelld.DockerUsage, *PodmanDetails,
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://unix/version", nil)
 		resp, err := client.Do(req)
 		if err == nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			var v dockerVersion
 			_ = json.NewDecoder(resp.Body).Decode(&v)
 			if v.APIVersion != "" {
@@ -230,7 +230,7 @@ func GetDockerUsage(ctx context.Context) (*k8shelld.DockerUsage, *PodmanDetails,
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return fmt.Errorf("docker %s: status %s", path, resp.Status)
 		}

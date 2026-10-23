@@ -95,7 +95,7 @@ Use the --sort flag to sort the output by one or more fields. Prefix the field n
 			fmt.Printf("Failed to get GRPC status: %v\n", err)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {

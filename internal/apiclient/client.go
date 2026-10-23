@@ -17,7 +17,7 @@ import (
 
 // PATTokenEnv is the environment variable holding the personal access token
 // used to authenticate all outbound API server calls.
-const PATTokenEnv = "K8SHELL_PAT_TOKEN"
+const PATTokenEnv = "K8SHELL_PAT_TOKEN" // #nosec G101 -- this is an env var name, not a credential
 
 // Client wraps a k8shell-go SDK client authenticated with the PAT from
 // K8SHELL_PAT_TOKEN.

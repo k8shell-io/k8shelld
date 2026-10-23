@@ -54,7 +54,7 @@ Detach shortcut: Ctrl+A D  (same as GNU screen)
 			fmt.Fprintf(os.Stderr, "attach: %v\n", err)
 			os.Exit(1)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		// Put stdin in raw mode so all key events are forwarded as-is.
 		// The server intercepts Ctrl+A D and closes the connection cleanly.
@@ -104,7 +104,7 @@ Detach shortcut: Ctrl+A D  (same as GNU screen)
 		// If stdin closes first, shut down the conn so the output goroutine exits.
 		go func() {
 			_, _ = io.Copy(conn, os.Stdin)
-			conn.Close()
+			_ = conn.Close()
 		}()
 
 		// Wait for the output side to finish (server closed the connection).
@@ -125,7 +125,7 @@ func pickSession() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("list sessions: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := client.CheckApplicationError(resp); err != nil {
 		return "", err
@@ -147,14 +147,14 @@ func pickSession() (string, error) {
 
 	// Print a table and ask the user to choose.
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "#\tID\tSHELL\tPID\tCREATED\tDETACHED")
+	_, _ = fmt.Fprintln(tw, "#\tID\tSHELL\tPID\tCREATED\tDETACHED")
 	for i, s := range sessions {
 		created := formatRelTime(s.Created)
 		detached := formatRelTime(s.DetachedAt)
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%d\t%s\t%s\n",
+		_, _ = fmt.Fprintf(tw, "%d\t%s\t%s\t%d\t%s\t%s\n",
 			i+1, s.Id, s.CmdShell, s.Pid, created, detached)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	fmt.Printf("\nEnter number (1-%d): ", len(sessions))
 	scanner := bufio.NewScanner(os.Stdin)

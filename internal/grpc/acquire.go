@@ -154,7 +154,7 @@ func (s *ShellHandler) ListSessions(_ context.Context, _ *k8shelldv1.ListSession
 			SessionId:  session.Id,
 			Owner:      session.user.Username,
 			CmdShell:   session.CmdShell,
-			Pid:        int32(session.Pid),
+			Pid:        int32(session.Pid), // #nosec G115 -- Linux PIDs are capped at 2^22 (pid_max), well within int32
 			Created:    session.Created.Format(timeFormat),
 			DetachedAt: detachedAtStr,
 		})

@@ -205,7 +205,7 @@ func (m *AppManager) appVersion(ctx context.Context, name string) (string, error
 		}
 	case <-time.After(timeout):
 		_ = cmd.Process.Kill()
-		<-done
+		<-done //nolint:errcheck // drain; process was killed
 		return "", fmt.Errorf("version command timed out after %s", timeout)
 	}
 

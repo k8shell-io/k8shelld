@@ -44,7 +44,7 @@ The command displays the following fields:
 			fmt.Println("Error fetching last sessions: ", err)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {

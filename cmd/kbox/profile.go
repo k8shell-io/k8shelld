@@ -32,7 +32,7 @@ var ProfileCmd = &cobra.Command{
 			fmt.Println("Error fetching profile:", err)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if err := client.CheckApplicationError(resp); err != nil {
 			fmt.Printf("%v\n", err)

@@ -75,7 +75,7 @@ var AppsLsCmd = &cobra.Command{
 			fmt.Printf("Failed to get apps status: %v\n", err)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {
@@ -137,7 +137,7 @@ var AppsInstallCmd = &cobra.Command{
 			fmt.Printf("Failed to install app %q: %v\n", name, err)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {
@@ -171,7 +171,7 @@ var AppsLogsCmd = &cobra.Command{
 			fmt.Printf("Failed to get %s logs for app %s: %v\n", logType, name, err)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {
@@ -210,7 +210,7 @@ var AppsStartCmd = &cobra.Command{
 			fmt.Printf("Failed to start app %q: %v\n", name, err)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {
@@ -236,7 +236,7 @@ var AppsStopCmd = &cobra.Command{
 			fmt.Printf("Failed to stop app %q: %v\n", name, err)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		err = client.CheckApplicationError(resp)
 		if err != nil {

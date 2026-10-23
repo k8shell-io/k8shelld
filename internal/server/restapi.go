@@ -771,7 +771,7 @@ func (a *RESTService) GetAppLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to open log file: %v", err), http.StatusInternalServerError)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	reader := bufio.NewReader(f)
 
@@ -812,7 +812,7 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 		select {
 		case <-ctx.Done():
 			a.logger.Info().Msgf("Context cancelled, stopping Unix socket server loop.")
-			os.Remove(a.unixSocketPath)
+			_ = os.Remove(a.unixSocketPath)
 			return
 		default:
 		}
@@ -829,8 +829,8 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 			err = os.Chown(a.unixSocketPath, int(a.user.GetUID()), int(a.user.GetGID()))
 			if err != nil {
 				a.logger.Error().Msgf("Error changing ownership of Unix socket: %v", err)
-				unixListener.Close()
-				os.Remove(a.unixSocketPath)
+				_ = unixListener.Close()
+				_ = os.Remove(a.unixSocketPath)
 				time.Sleep(5 * time.Second)
 				continue
 			}
@@ -854,14 +854,14 @@ func (a *RESTService) manageUnixSocket(ctx context.Context, router http.Handler)
 			if err := server.Shutdown(context.Background()); err != nil {
 				a.logger.Error().Msgf("Error shutting down server: %v", err)
 			}
-			unixListener.Close()
+			_ = unixListener.Close()
 			return
 		case err := <-errCh:
 			if err != nil && err != http.ErrServerClosed {
 				a.logger.Error().Msgf("Socket server error: %v", err)
 			}
 			a.logger.Warn().Msg("Unix socket server terminated. Restarting...")
-			unixListener.Close()
+			_ = unixListener.Close()
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -1002,7 +1002,7 @@ func (a *RESTService) AttachShell(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if buf.Reader.Buffered() > 0 {
 		extra := make([]byte, buf.Reader.Buffered())
 		_, _ = buf.Read(extra)

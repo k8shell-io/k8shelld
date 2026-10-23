@@ -56,7 +56,7 @@ reject values that exceed its configured maximum.`,
 			fmt.Fprintf(os.Stderr, "detach: %v\n", err)
 			os.Exit(1)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if err := client.CheckApplicationError(resp); err != nil {
 			fmt.Fprintf(os.Stderr, "detach: %v\n", err)

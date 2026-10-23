@@ -51,7 +51,7 @@ func fetchProfile() *k8shelld.IdentityInfo {
 		fmt.Println("Error fetching profile:", err)
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := client.CheckApplicationError(resp); err != nil {
 		fmt.Printf("%v\n", err)
